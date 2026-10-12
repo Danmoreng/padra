@@ -1,0 +1,23 @@
+Padra inference engine — source attribution
+
+The source model is JetBrains/Mellum2.1-12B-A2.5B-Thinking, revision
+92ddae9fc7665e9f801d141d2e5a6b2caf2460c4. Model licensing is separate;
+no original or derivative model weights are included in this repository.
+
+Generic native/runtime/HTTP, quantization and CUDA ownership/staging mechanisms
+were adapted from Danmoreng/gem16 (Apache-2.0). Server reference pin:
+c0a807afcbcd2528f304bada513afd11d1e9c979. CUDA/Trellis reference pin:
+c01789a2b46520df8a699ee3338cb19aaccebae2. Mellum arithmetic and its original
+chat template are retained; Gemma model arithmetic/templates were not copied.
+
+CUTLASS ABI, conversions and FP8 support use NVIDIA/CUTLASS (BSD-3-Clause),
+revision db1c288993354c88e551c40c19a8fb93a774a241. External headers are pinned
+and verified by CMake; their license is retained in licenses/.
+
+EXL3/H128 quantization mechanisms derive from turboderp/exllamav3 (MIT).
+The native tokenizer uses Hugging Face Tokenizers0.22.1 (Apache-2.0), with
+locked Rust dependencies. Individual dependency licensing remains applicable.
+
+HTTP transport is cpp-httplib0.40.0 (MIT); upstream license is in third_party/.
+The local transport adaptation preserves bodyless framing/read-ahead and close
+semantics. Source-file copyright notices and license headers are retained.

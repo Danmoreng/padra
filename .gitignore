@@ -1,0 +1,11 @@
+/build/
+/target/
+__pycache__/
+*.pyc
+node_modules/
+*.safetensors
+*.trace
+*.f32
+*.pt
+*.nsys-rep
+*.ncu-rep
