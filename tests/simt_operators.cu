@@ -1,0 +1,42 @@
+#include "runtime/inference.h"
+#include "cuda/device_matrix.cuh"
+#include <cuda_runtime.h>
+#include <cuda_bf16.h>
+#include <cuda_fp8.h>
+#include <cub/device/device_radix_sort.cuh>
+#include <cub/device/device_scan.cuh>
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cfloat>
+#include <cmath>
+#include <cstring>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
+namespace mellum16 {namespace {
+#include "cuda/simt_kernels.cuh"
+void Require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
+__global__ void ComparePascalCodec(int* bad){const unsigned state=blockIdx.x*256+threadIdx.x;if(state<65536 && __float_as_uint(exl3_pascal::Decode(state))!=__float_as_uint(__half2float(exl3_fp16::Mul1(state))))atomicAdd(bad,1);}
+template<class F> float Time(F launch){
+  for(int i=0;i<30;++i)launch();Check(cudaDeviceSynchronize());cudaEvent_t a,b;Check(cudaEventCreate(&a));Check(cudaEventCreate(&b));Check(cudaEventRecord(a));for(int i=0;i<100;++i)launch();Check(cudaEventRecord(b));Check(cudaEventSynchronize(b));float ms=0;Check(cudaEventElapsedTime(&ms,a,b));cudaEventDestroy(a);cudaEventDestroy(b);return ms/100;
+}
+void Projection(int part,bool benchmark){
+  const int rows=part==2?2304:896,cols=part==2?896:2304,pairs=8;
+  const std::size_t bytes=std::size_t(rows)*cols/2;
+  std::vector<unsigned> payload(bytes*pairs/4);unsigned random=19;for(auto& x:payload){random=random*1664525U+1013904223U;x=random;}
+  std::vector<float> input(pairs*cols);for(std::size_t i=0;i<input.size();++i)input[i]=__bfloat162float(__float2bfloat16_rn(i%13==0?0.f:i%17==0?std::ldexp(1.f,-30):std::sin(float(i))*.25f));
+  std::vector<unsigned short> side(pairs*(rows+cols));for(int e=0;e<pairs;++e)for(int i=0;i<rows+cols;++i)side[e*(rows+cols)+i]=__half_as_ushort(__float2half_rn(float((i+e*5)%31-15)/128));
+  Buffer packed(payload.size()*4),sides(side.size()*2),source(input.size()*4),transform(input.size()*4),reference(pairs*rows*4),output(pairs*rows*4),descriptors(64*3*sizeof(DeviceMatrix)),ids(pairs*4),bad(4);
+  Check(cudaMemcpy(packed.p,payload.data(),packed.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(sides.p,side.data(),sides.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(source.p,input.data(),source.bytes,cudaMemcpyHostToDevice));
+  std::vector<DeviceMatrix> table(64*3);std::vector<int> chosen(pairs);
+  for(int e=0;e<pairs;++e){chosen[e]=(e*7)%64;table[chosen[e]*3+part]=DeviceMatrix{packed.As<unsigned char>()+e*bytes,nullptr,nullptr,rows,cols,3,sides.As<unsigned short>()+e*(rows+cols),sides.As<unsigned short>()+e*(rows+cols)+cols};}
+  Check(cudaMemcpy(descriptors.p,table.data(),descriptors.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(ids.p,chosen.data(),ids.bytes,cudaMemcpyHostToDevice));Check(cudaMemset(bad.p,0,4));
+  exl3_expert::InputHad<<<dim3(cols/128,pairs),128>>>(descriptors.As<DeviceMatrix>(),0,part,ids.As<int>(),source.As<float>(),transform.As<float>(),pairs,bad.As<int>());
+  auto old=[&]{exl3_selected::Projection<true><<<dim3(rows/128,pairs),256>>>(descriptors.As<DeviceMatrix>(),0,part,ids.As<int>(),transform.As<float>(),reference.As<float>(),pairs,bad.As<int>());};
+  auto opt=[&]{exl3_selected::Projection<false><<<dim3(rows/128,pairs),256>>>(descriptors.As<DeviceMatrix>(),0,part,ids.As<int>(),transform.As<float>(),output.As<float>(),pairs,bad.As<int>());};
+  old();opt();Check(cudaDeviceSynchronize());std::vector<float> a(pairs*rows),b(pairs*rows);Check(cudaMemcpy(a.data(),reference.p,reference.bytes,cudaMemcpyDeviceToHost));Check(cudaMemcpy(b.data(),output.p,output.bytes,cudaMemcpyDeviceToHost));int flag=0;Check(cudaMemcpy(&flag,bad.p,4,cudaMemcpyDeviceToHost));Require(!flag,"selected projection invalid");Require(!memcmp(a.data(),b.data(),reference.bytes),"real-shape projection codec mismatch");
+  if(benchmark)for(int i=0;i<5;++i){float before,after;if(i%2){after=Time(opt);before=Time(old);}else{before=Time(old);after=Time(opt);}std::cout<<"part="<<part<<" rows="<<rows<<" cols="<<cols<<" rep="<<i<<" original_ms="<<before<<" pascal_ms="<<after<<" speedup="<<before/after<<'\n';}
+}
+}}
+int main(int argc,char**){try{using namespace mellum16;Buffer bad(4);Check(cudaMemset(bad.p,0,4));ComparePascalCodec<<<256,256>>>(bad.As<int>());Check(cudaDeviceSynchronize());int count=0;Check(cudaMemcpy(&count,bad.p,4,cudaMemcpyDeviceToHost));Require(count==0,"Pascal codec differs in exhaustive test");for(int part=0;part<3;++part)Projection(part,argc>1);std::cout<<"All 65536 codec states and distinct real-shape gate/up/down projections are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
