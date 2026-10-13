@@ -38,14 +38,17 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
   for(int k=0;k<m.cols;k+=16){
     const std::uint64_t tile=std::uint64_t(k/16)*std::uint64_t(m.rows/16)+base/16+warp;
     const unsigned word=reinterpret_cast<const unsigned*>(m.data+tile*128)[lane];
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
+    const unsigned previous=Reference?0:exl3_pascal::Previous(word);
+#endif
     #pragma unroll
     for(int half=0;half<2;++half){
       const int index=ki+half*8;const float x=transformed[k+index],y=transformed[k+index+1];
       float2 a,b;
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
       if constexpr(!Reference){
-        a=make_float2(exl3_pascal::DecodeLookup(State(word,index,col),codec),exl3_pascal::DecodeLookup(State(word,index+1,col),codec));
-        b=make_float2(exl3_pascal::DecodeLookup(State(word,index,col+8),codec),exl3_pascal::DecodeLookup(State(word,index+1,col+8),codec));
+        a=exl3_pascal::PairLookup(__funnelshift_r(word,previous,half==0?24:16),codec);
+        b=exl3_pascal::PairLookup(half==0?__funnelshift_r(word,word,8):word,codec);
       }else
 #endif
       {a=__half22float2(DecodePair(word,index,col));b=__half22float2(DecodePair(word,index,col+8));}

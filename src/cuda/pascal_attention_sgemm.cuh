@@ -33,8 +33,8 @@ __global__ void Scatter(const float* packed,float* output,int kvhead,int first,i
   const int head=i/(rows*128),row=first+(i/128)%rows,d=i%128;if(row>=batch->rows)return;
   const float value=B(packed[i]);output[row*4096+(kvhead*8+head)*128+d]=value;Finite(value,bad);
 }
-inline void Prefill(pascal_sgemm::Handle& handle,const float* q,const __nv_bfloat16* k,const __nv_bfloat16* v,const __nv_bfloat16* current,float* out,const SimtBatch* batch,int capacity,bool local,float* weights,float* queries,float* scores,int* bad,cudaStream_t stream){
-  const int count=local?1280:capacity,rows=capacity>8192?64:kSimtBatch;const float alpha=1.f,beta=0.f;
+inline void Prefill(pascal_sgemm::Handle& handle,const float* q,const __nv_bfloat16* k,const __nv_bfloat16* v,const __nv_bfloat16* current,float* out,const SimtBatch* batch,int capacity,bool local,float* weights,float* queries,float* scores,int* bad,cudaStream_t stream,int maximum_keys=0){
+  const int count=local?1280:(maximum_keys?min(capacity,maximum_keys):capacity),rows=capacity>8192?64:kSimtBatch;const float alpha=1.f,beta=0.f;
   float* result=queries+8*rows*128;
   for(int kvhead=0;kvhead<4;++kvhead){
     Gather<<<count*128/256,256,0,stream>>>(k,v,current,weights,count,kvhead,local,batch);

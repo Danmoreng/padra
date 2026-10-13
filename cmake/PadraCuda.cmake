@@ -47,6 +47,9 @@ macro(padra_add_cuda)
   if(NOT backend MATCHES "^(simt|sm120)$" OR (backend STREQUAL "sm120" AND NOT sm EQUAL 120))
     message(FATAL_ERROR "Backend must be auto/simt/sm120; sm120 requires target 120 or 120a")
   endif()
+  if(PADRA_PASCAL_DP4A_PREFILL AND NOT (sm EQUAL 61 AND backend STREQUAL "simt"))
+    message(FATAL_ERROR "PADRA_PASCAL_DP4A_PREFILL requires the SM61 SIMT backend")
+  endif()
   # The optimized backend includes architecture-specific FP4/MMA instructions
   # which ptxas rejects for plain sm_120. A numeric Blackwell selection means
   # the accelerated target; the portable SIMT backend can still use plain 120.

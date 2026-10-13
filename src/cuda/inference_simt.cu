@@ -37,6 +37,9 @@ namespace {
 #include "simt_attention_split.cuh"
 #include "simt_prefill_attention_split.cuh"
 #include "expert_exl3_prefill_fast.cuh"
+#if PADRA_PASCAL_DP4A_PREFILL
+#include "expert_exl3_prefill_dp4a.cuh"
+#endif
 #include "pascal_attention_fast.cuh"
 #if PADRA_CUDA_SM == 61
 #include "pascal_sgemm.cuh"
@@ -193,7 +196,8 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     forward_graph.Capture(stream.s,[&]{forward(0);});
     if(fast_math || !o.simt_reference_attention){middle_graph.Capture(stream.s,[&]{forward(4096);});long_graph.Capture(stream.s,[&]{forward(o.capacity);});}
     head_graph.Capture(stream.s,[&]{Norm<<<1,128,0,stream.s>>>(x,normalized,norm,2304,1);head_bf16_prefetch::Projection<<<24576,128,0,stream.s>>>(head,normalized,logits,bad);});
-    DecodeGraph prefill_graph;
+    DecodeGraph prefill_graph,prefill_1024_graph,prefill_4096_graph;
+    const bool bounded_prefill=PADRA_PASCAL_DP4A_PREFILL && fast_math && !o.simt_reference_prefill && o.capacity==8192;
     SimtBatch* batch=nullptr;float *bx=nullptr,*bn=nullptr,*br=nullptr,*bq=nullptr,*ba=nullptr,*bk=nullptr,*bv=nullptr,*brouter=nullptr,*bg=nullptr,*bu=nullptr,*bd=nullptr,*bt=nullptr;
     unsigned char* be=nullptr;float* bs=nullptr;float* bscore=nullptr;__nv_bfloat16* bkv=nullptr;
     if(!o.simt_reference_prefill){
@@ -220,7 +224,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       simt_batch::FP8Tiled(matrix,be,bs,output,bad,batch,stream.s);
     };
     int diagnostic_batch_base=0,diagnostic_batch_rows=0;
-    const auto prefill=[&]{
+    const auto prefill=[&](int maximum_keys){
       simt_batch::EmbedBatch<<<256,128,0,stream.s>>>(embed,buffer("prompt").As<int>(),bx,bad,batch);
       for(int l=0;l<28;++l){const auto& a=layers[l];
         const auto dump=[&](const char* name,const void* pointer,int stride){
@@ -236,7 +240,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         dump("q_rope",bq,4096);dump("k_rope",bk,512);
         diagnostics.Measure("attention",l,stream.s,[&]{simt_batch::Stage<<<dim3(4,256),128,0,stream.s>>>(bk,bv,bkv,batch);
 #if PADRA_CUDA_SM == 61
-        if(blas && o.capacity<=16384)pascal_attention_sgemm::Prefill(*blas,bq,a.kc,a.vc,bkv,ba,batch,a.capacity,l%4!=3,buffer("sgemm_weights").As<float>(),buffer("sgemm_inputs").As<float>(),bscore,bad,stream.s);
+        if(blas && o.capacity<=16384)pascal_attention_sgemm::Prefill(*blas,bq,a.kc,a.vc,bkv,ba,batch,a.capacity,l%4!=3,buffer("sgemm_weights").As<float>(),buffer("sgemm_inputs").As<float>(),bscore,bad,stream.s,maximum_keys);
         else
 #endif
         for(int first=0;first<256;first+=8){
@@ -259,7 +263,13 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.Measure("group",l,stream.s,[&]{simt_batch::Group<<<64,128,0,stream.s>>>(bids,groups,counts_per_expert,bad,batch);
         simt_batch::Describe<<<1,64,0,stream.s>>>(counts_per_expert,tiles,tile_count,bad,batch);});
         const auto experts=[&](int part,const float* in,float* out){
-          diagnostics.Measure(part==0?"gate":part==1?"up":"down",l,stream.s,[&]{if(fast_math)simt_batch::ExpertsFast(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);else simt_batch::Experts(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);});
+          diagnostics.Measure(part==0?"gate":part==1?"up":"down",l,stream.s,[&]{if(fast_math){
+#if PADRA_PASCAL_DP4A_PREFILL
+            exl3_pascal_dp4a::Launch(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);
+#else
+            simt_batch::ExpertsFast(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);
+#endif
+          }else simt_batch::Experts(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);});
         };
         experts(0,bn,bg);dump("expert_gate",bg,8*896);experts(1,bn,bu);dump("expert_up",bu,8*896);
         diagnostics.Measure("silu",l,stream.s,[&]{simt_batch::Silu<<<256*56,128,0,stream.s>>>(bg,bu,silu,bad,batch);});dump("expert_activation",bg,8*896);
@@ -267,7 +277,8 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.Measure("combine",l,stream.s,[&]{simt_batch::CombineBatch<<<dim3(18,256),128,0,stream.s>>>(bx,bd,weights,bad,batch);});dump("output",bx,2304);
       }
     };
-    if(batch)prefill_graph.Capture(stream.s,prefill);
+    if(batch)prefill_graph.Capture(stream.s,[&]{prefill(o.capacity);});
+    if(bounded_prefill){prefill_1024_graph.Capture(stream.s,[&]{prefill(1024);});prefill_4096_graph.Capture(stream.s,[&]{prefill(4096);});}
     Check(cudaMemGetInfo(&free,&total));const auto after_graph=ServerAvailableBytes(free,total,o.server_device_budget_gib);
     if(after_graph<plan.reserve)return Status(StatusCode::kResourceExhausted,"SIMT post-graph admission violates 700MiB reserve");
     InferenceResult identity;identity.weights_sha256=model.weights_sha256;identity.weights_bytes=weights_bytes;identity.kv_bytes=buffer("kv").bytes;
@@ -280,16 +291,24 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     identity.kernel_profile+=o.simt_reference_attention?";attention-direct-kv-prefetch8-v2":";attention-split-padded-direct-kv-candidate-v2";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     if(fast_math){
-      identity.kernel_profile="exl3-k4-simt-sm61-token-graph-pascal-fp32-v2;attention-tiered-gqa4-parallel-pv-v1";
+      identity.kernel_profile="exl3-k4-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-tiered-gqa4-parallel-pv-v1";
       if(batch)identity.kernel_profile+=o.capacity<=16384?";prefill-gqa8-fp32-sgemm-v1":";prefill-gqa4-fp32-split-v1";
-      if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-sgemm-exl3-m32-n128-sparse-m8";
+      if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-sgemm-exl3-m32-n128-r4-sparse-m8";
       identity.math_profile="mellum16-pascal-fp32-v2;FP8-E4M3-activations/FP32-projections(SGEMM-batch/FMA-vector)/BF16-output;FP32-QK-PV/expf-compensated-softmax/BF16-score-probability-output;EXL3-K4-H128-BF16-input/exact-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     }
+    if(bounded_prefill)identity.kernel_profile+=";prefill-attention-context-1024-4096-8192";
     identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch=batch?"EXL3 K4 prefill grouped M8/N128; decode selected N128/eight-warps; FP32 FMA":"EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";
     if(fast_math && batch){identity.actual_attention_projection="FP8 storage and activations; Prefill cuBLAS FP32 SGEMM; Decode FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 Prefill grouped M32/N128 FP32 tiles, sparse experts M8/N128; Decode selected N128/eight-warps FP32 FMA";}
     const double load_seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-load_begin).count();
-    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
+#if PADRA_PASCAL_DP4A_PREFILL
+    if(fast_math && batch){
+      identity.kernel_profile+=";dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2";
+      identity.math_profile="mellum16-pascal-dp4a-prefill-v2;FP8-E4M3-activations/FP32-projections(SGEMM-batch/FMA-vector)/BF16-output;FP32-QK-PV/expf-compensated-softmax/BF16-score-probability-output;EXL3-K4-storage/H128-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
+      identity.actual_expert_dispatch="EXL3 K4 storage; Prefill dense M32/N128/K64 INT8 DP4A with H128 activation scales; sparse Prefill M8/N128 and Decode selected N128 exact FP32";
+    }
+#endif
+    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}if(bounded_prefill){worker->RecordCapture();worker->RecordCapture();}worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
     const auto check_numerics=[&]{int value=0;Check(cudaMemcpyAsync(&value,bad,sizeof(value),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));if(value)throw std::runtime_error("nonfinite/invalid SIMT forward; session poisoned");};
     const auto checkpoint_copy=[&](bool restore){std::size_t offset=0;for(int l=0;l<28;++l)if(l%4!=3){
       auto* saved=buffer("local_checkpoint").As<unsigned char>()+offset;
@@ -339,7 +358,11 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
           diagnostic_batch_base=executed;diagnostic_batch_rows=rows;diagnostics.position=executed+rows-1;diagnostics.phase="prefill";diagnostics.rows=rows;
           diagnostics.active=!o.simt_diagnostics.empty() && std::any_of(o.simt_diagnostic_positions.begin(),o.simt_diagnostic_positions.end(),[&](int pos){return pos>=executed && pos<executed+rows;});
           SetSimtBatch<<<1,1,0,stream.s>>>(batch,executed,rows,o.capacity,bad);
-          if(diagnostics.active || o.simt_eager)prefill();else prefill_graph.Launch(stream.s);
+          const int maximum_keys=bounded_prefill?(executed+rows<=1024?1024:executed+rows<=4096?4096:o.capacity):o.capacity;
+          if(diagnostics.active || o.simt_eager)prefill(maximum_keys);
+          else if(bounded_prefill && maximum_keys==1024)prefill_1024_graph.Launch(stream.s);
+          else if(bounded_prefill && maximum_keys==4096)prefill_4096_graph.Launch(stream.s);
+          else prefill_graph.Launch(stream.s);
           diagnostics.Flush(stream.s);check_numerics();
           Check(cudaMemcpyAsync(x,bx+(rows-1)*2304,2304*4,cudaMemcpyDeviceToDevice,stream.s));
           executed+=rows;

@@ -30,10 +30,13 @@ __global__ void InputHad(const DeviceMatrix* matrices,int layer,int part,const i
   for(int j=0;j<4;++j){const float value=B(values[j]);transformed[pair*m.cols+first+j]=value;Finite(value,bad);}
 }
 // Weights decode once per eight expert rows. Original K16/eight-warp FMA order.
-template<bool SparseOnly=false> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,const float* input,float* output,int* bad){
+template<bool SparseOnly=false,int DenseTail=0> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,const float* input,float* output,int* bad){
   if(blockIdx.y>=static_cast<unsigned>(*total))return;
   const auto tile=tiles[blockIdx.y];const auto m=matrices[(layer*64+tile.expert)*3+part];
-  if constexpr(SparseOnly)if(counts[tile.expert]>=32)return;
+  if constexpr(SparseOnly){
+    if constexpr(DenseTail>0){const int count=counts[tile.expert],dense_end=(count/32)*32+(count%32>=DenseTail?32:0);if(tile.begin<dense_end)return;}
+    else if(counts[tile.expert]>=32)return;
+  }
   const int lane=threadIdx.x&31,warp=threadIdx.x/32,base=blockIdx.x*128,col=lane/4,ki=(lane&3)*2;
   __shared__ int pairs[8];
   if(threadIdx.x<8)pairs[threadIdx.x]=tile.begin+threadIdx.x<counts[tile.expert]?groups[tile.expert*kSimtBatch+tile.begin+threadIdx.x]:-1;
@@ -45,10 +48,11 @@ template<bool SparseOnly=false> __global__ void Projection(const DeviceMatrix* m
     for(int k=0;k<128;k+=16){
       const std::uint64_t offset=std::uint64_t((at+k)/16)*(m.rows/16)+base/16+warp;
       const unsigned word=reinterpret_cast<const unsigned*>(m.data+offset*128)[lane];
+      const unsigned previous=exl3_pascal::Previous(word);
       #pragma unroll
       for(int half=0;half<2;++half){const int index=ki+half*8;
-        const float2 a=make_float2(exl3_pascal::Decode(exl3_selected::State(word,index,col)),exl3_pascal::Decode(exl3_selected::State(word,index+1,col)));
-        const float2 b=make_float2(exl3_pascal::Decode(exl3_selected::State(word,index,col+8)),exl3_pascal::Decode(exl3_selected::State(word,index+1,col+8)));
+        const float2 a=exl3_pascal::Pair(__funnelshift_r(word,previous,half==0?24:16));
+        const float2 b=exl3_pascal::Pair(half==0?__funnelshift_r(word,word,8):word);
         #pragma unroll
         for(int r=0;r<8;++r)if(pairs[r]>=0){const float x=transformed[r][k+index],y=transformed[r][k+index+1];low[r]=__fmaf_rn(x,a.x,low[r]);low[r]=__fmaf_rn(y,a.y,low[r]);high[r]=__fmaf_rn(x,b.x,high[r]);high[r]=__fmaf_rn(y,b.y,high[r]);}
       }
