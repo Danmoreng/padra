@@ -3,6 +3,7 @@
 #pragma once
 #include "expert_exl3_codec.cuh"
 #include "expert_exl3_pascal_codec.cuh"
+#include "expert_exl3_pascal_had.cuh"
 namespace exl3_selected {
 __device__ __forceinline__ unsigned State(unsigned word,unsigned input,unsigned output){
   const int end=int(exl3_fp16::Permutation(input,output))*4+4+1024;
@@ -26,6 +27,9 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
   const auto m=exl3_expert::Matrix(matrices,layer,part,ids,pair,bad);
   const int base=blockIdx.x*128,col=lane/4,ki=(lane%4)*2;
   if(pair>=pairs||m.format!=3||base+128>m.rows||m.cols%16){if(!threadIdx.x)atomicExch(bad,1);return;}
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
+  __shared__ float codec[1024];if constexpr(!Reference)exl3_pascal::InitLookup(codec);
+#endif
   // Matrix/payload pointers are native64-bit; no uint32 pool-offset cast.
   __shared__ float transformed[2304],raw[128];
   for(int k=threadIdx.x;k<m.cols;k+=256)transformed[k]=input[pair*m.cols+k];
@@ -40,8 +44,8 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
       float2 a,b;
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
       if constexpr(!Reference){
-        a=make_float2(exl3_pascal::Decode(State(word,index,col)),exl3_pascal::Decode(State(word,index+1,col)));
-        b=make_float2(exl3_pascal::Decode(State(word,index,col+8)),exl3_pascal::Decode(State(word,index+1,col+8)));
+        a=make_float2(exl3_pascal::DecodeLookup(State(word,index,col),codec),exl3_pascal::DecodeLookup(State(word,index+1,col),codec));
+        b=make_float2(exl3_pascal::DecodeLookup(State(word,index,col+8),codec),exl3_pascal::DecodeLookup(State(word,index+1,col+8),codec));
       }else
 #endif
       {a=__half22float2(DecodePair(word,index,col));b=__half22float2(DecodePair(word,index,col+8));}
@@ -60,6 +64,10 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
 inline void Launch(const DeviceMatrix* matrices,int layer,int part,const int* ids,
     const float* input,float* output,float* scratch,int pairs,int* bad,cudaStream_t stream,bool reference=false){
   const int rows=part==2?2304:896,cols=part==2?896:2304;
+#if defined(PADRA_CUDA_SM) && PADRA_CUDA_SM == 61
+  if(!reference)exl3_pascal::InputHad<<<dim3(cols/128,(pairs+3)/4),128,0,stream>>>(matrices,layer,part,ids,input,scratch,pairs,bad);
+  else
+#endif
   exl3_expert::InputHad<<<dim3(cols/128,pairs),128,0,stream>>>(matrices,layer,part,ids,input,scratch,pairs,bad);
   if(reference)Projection<true><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
   else Projection<false><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
