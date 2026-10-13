@@ -97,6 +97,46 @@ with log.open("w") as output:
             and '"usage":{' in wire
             and '"finish_reason":"' in wire
         )
+        tool_body = dict(
+            body,
+            messages=[{"role": "user", "content": "Use lookup with the text padra."}],
+            max_completion_tokens=256,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"text": {"type": "string"}},
+                        },
+                    },
+                }
+            ],
+        )
+        tool_result = fetch("/v1/chat/completions", tool_body)
+        tool_wire, _ = request("/v1/chat/completions", dict(tool_body, stream=True))
+        tool_calls = {}
+        for record in tool_wire.split("\n\n"):
+            if not record.startswith("data: ") or record == "data: [DONE]":
+                continue
+            chunk = json.loads(record[6:])
+            assert "error" not in chunk
+            for choice in chunk.get("choices", []):
+                for delta in choice.get("delta", {}).get("tool_calls", []):
+                    call = tool_calls.setdefault(
+                        delta["index"], {"name": "", "arguments": "", "identities": 0}
+                    )
+                    if "id" in delta:
+                        call["identities"] += 1
+                    call["name"] += delta["function"].get("name", "")
+                    call["arguments"] += delta["function"].get("arguments", "")
+        expected_tools = tool_result["choices"][0]["message"].get("tool_calls", [])
+        assert len(tool_calls) == len(expected_tools)
+        for index, call in enumerate(expected_tools):
+            assert tool_calls[index]["identities"] == 1
+            assert tool_calls[index]["name"] == call["function"]["name"]
+            assert tool_calls[index]["arguments"] == call["function"]["arguments"]
         session = fetch("/v1/sessions", {"model": model})["id"]
         turn = fetch("/v1/chat/completions", dict(body, session_id=session))
         history = fetch("/v1/sessions/" + session)["messages"]
@@ -161,6 +201,8 @@ with log.open("w") as output:
             "artifact_identity_verified": True,
             "chat_and_responses_streams": True,
             "session_followup": True,
+            "native_tool_request": True,
+            "native_tool_calls": len(expected_tools),
             "independent_stored_responses": len(ids),
             "stored_lineage_delete": True,
             "metrics": True,

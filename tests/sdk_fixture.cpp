@@ -1,0 +1,122 @@
+// Deterministic, synthetic model/text fixture; never opens a model artifact.
+// All HTTP, retention, streaming and request validation are production code.
+#include "server/http_server.h"
+#include <charconv>
+#include <csignal>
+#include <iostream>
+using namespace mellum16;
+namespace {
+volatile std::sig_atomic_t interrupted = 0;
+void Signal(int) {
+  interrupted = 1;
+}
+class FixtureBackend final : public RuntimeBackend {
+public:
+  explicit FixtureBackend(const text::Tokenizer &tokenizer) : tokenizer_(tokenizer) {}
+  Status Prepare(std::span<const int> ids, int outputs, bool, SamplingOptions) override {
+    auto text = tokenizer_.Decode(ids);
+    if (!text.ok())
+      return text.status();
+    outputs_ = outputs;
+    delay_ = std::chrono::milliseconds(0);
+    std::string output = "hello";
+    if (text.value().find("tool-valid") != std::string::npos ||
+        text.value().find("tool-slow") != std::string::npos) {
+      output =
+          R"(<tool_call>{"name":"lookup","arguments":{"text":"hello €","nested":[1,{"ok":true}]}}</tool_call>)";
+      delay_ = std::chrono::milliseconds(2);
+    }
+    if (text.value().find("tool-reverse") != std::string::npos)
+      output = R"(<tool_call>{"arguments":{"text":"reverse"},"name":"lookup"}</tool_call>)";
+    if (text.value().find("tool-malformed") != std::string::npos)
+      output = R"(<tool_call>{"name":"lookup","arguments":{"text":}}</tool_call>)";
+    if (text.value().find("slow-text") != std::string::npos) {
+      output = std::string(1000, 'x');
+      delay_ = std::chrono::milliseconds(2);
+    }
+    if (text.value().find("queue-blocker") != std::string::npos) {
+      output = std::string(12, 'x');
+      delay_ = std::chrono::milliseconds(50);
+    }
+    auto encoded = tokenizer_.Encode(output);
+    if (!encoded.ok())
+      return encoded.status();
+    tokens_ = std::move(encoded).value();
+    tokens_.push_back(28);
+    return {};
+  }
+  Status Append(std::span<const int> ids, int outputs, bool logits,
+                SamplingOptions sampling) override {
+    return Prepare(ids, outputs, logits, sampling);
+  }
+  Result<InferenceResult> Generate(TokenCallback callback, PrefillCallback) override {
+    InferenceResult result;
+    for (std::size_t i = 0; i < tokens_.size() && i < static_cast<std::size_t>(outputs_); ++i) {
+      if (delay_.count())
+        std::this_thread::sleep_for(delay_);
+      result.generated_ids.push_back(tokens_[i]);
+      if (callback && !callback(tokens_[i])) {
+        result.cancelled = true;
+        break;
+      }
+    }
+    return result;
+  }
+  Status Reset() override {
+    return {};
+  }
+  void Cancel() override {}
+  RuntimeStats Stats() const override {
+    return {};
+  }
+
+private:
+  const text::Tokenizer &tokenizer_;
+  std::vector<int> tokens_;
+  int outputs_ = 1;
+  std::chrono::milliseconds delay_{0};
+};
+} // namespace
+int main(int argc, char **argv) {
+  try {
+    int port = 0;
+    if (argc > 2)
+      throw std::runtime_error("usage: padra-sdk-fixture [PORT]");
+    if (argc == 2) {
+      auto [end, error] =
+          std::from_chars(argv[1], argv[1] + std::char_traits<char>::length(argv[1]), port);
+      if (error != std::errc{} || *end || port < 0 || port > 65535)
+        throw std::runtime_error("invalid fixture port");
+    }
+    auto loaded = text::Tokenizer::Load({}, {});
+    if (!loaded.ok())
+      throw std::runtime_error(loaded.status().message());
+    auto tokenizer = std::move(loaded).value();
+    server::ServerLimits limits;
+    limits.queue_timeout = std::chrono::milliseconds(75);
+    auto runtime = std::make_unique<ModelRuntime>(std::make_unique<FixtureBackend>(*tokenizer));
+    server::Coordinator coordinator(std::move(runtime), *tokenizer, limits);
+    server::HttpServer http(coordinator, *tokenizer, port);
+    port = http.Bind();
+    if (port < 1)
+      throw std::runtime_error("fixture bind failed");
+    std::signal(SIGINT, Signal);
+    std::signal(SIGTERM, Signal);
+    std::atomic<bool> finished{false};
+    std::jthread stop([&](std::stop_token token) {
+      while (!token.stop_requested() && !finished && !interrupted)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      if (interrupted)
+        http.Stop();
+    });
+    std::cout << "{\"port\":" << port << ",\"synthetic\":true}" << std::endl;
+    const bool listened = http.Listen();
+    finished = true;
+    stop.join();
+    coordinator.Shutdown();
+    return listened ? 0 : 1;
+  } catch (const std::exception &error) {
+    std::cerr << error.what() << '\n';
+    return 1;
+  }
+}

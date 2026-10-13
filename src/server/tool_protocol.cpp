@@ -275,6 +275,200 @@ ToolStreamParser::ToolStreamParser(bool enabled, std::size_t maximum, std::size_
     for (auto &raw : raw_)
       raw.reserve(kMaximumToolJson);
 }
+
+void ToolStreamParser::StreamDeltas(const ToolConfig &config, DeltaCallback callback) {
+  if (!enabled_ || count() || delta_ || !callback || config.names.empty() ||
+      config.names.size() > 16 ||
+      std::any_of(config.names.begin(), config.names.end(),
+                  [](const auto &name) { return !ValidFunctionName(name); }))
+    throw std::invalid_argument("tool streaming requires bounded offered names before input");
+  offered_names_ = config.names;
+  delta_ = std::move(callback);
+}
+void ToolStreamParser::Scan(std::size_t index) {
+  auto &state = progress_[index];
+  const auto &raw = raw_[index];
+  for (; state.scanned < raw.size() && !error_; ++state.scanned) {
+    const char c = raw[state.scanned];
+    switch (state.phase) {
+    case FieldPhase::Start:
+      if (Space(c))
+        break;
+      if (c != '{') {
+        Fail("tool stream requires object");
+        break;
+      }
+      state.phase = FieldPhase::Key;
+      break;
+    case FieldPhase::Key:
+      if (Space(c))
+        break;
+      if (c == '"') {
+        state.key_begin = state.scanned;
+        state.escaped = false;
+        state.phase = FieldPhase::KeyString;
+        break;
+      }
+      Fail("tool stream requires field name");
+      break;
+    case FieldPhase::KeyString:
+      if (state.scanned - state.key_begin > 64) {
+        Fail("tool stream field name exceeds bound");
+        break;
+      }
+      if (state.escaped) {
+        state.escaped = false;
+        break;
+      }
+      if (c == '\\') {
+        state.escaped = true;
+        break;
+      }
+      if (c == '"') {
+        auto key = json::Parse(
+            std::string_view(raw).substr(state.key_begin, state.scanned - state.key_begin + 1));
+        if (!key.ok() || !key.value().is_string()) {
+          Fail("invalid tool field name");
+          break;
+        }
+        state.key = key.value().as_string();
+        if ((state.key != "name" && state.key != "arguments") ||
+            (state.key == "name" && state.saw_name) ||
+            (state.key == "arguments" && state.saw_arguments)) {
+          Fail("unknown/duplicate tool field");
+          break;
+        }
+        state.phase = FieldPhase::Colon;
+      }
+      break;
+    case FieldPhase::Colon:
+      if (Space(c))
+        break;
+      if (c != ':') {
+        Fail("tool field missing colon");
+        break;
+      }
+      state.phase = FieldPhase::Value;
+      break;
+    case FieldPhase::Value:
+      if (Space(c))
+        break;
+      state.value_begin = state.scanned;
+      state.escaped = false;
+      if (state.key == "name") {
+        if (c != '"') {
+          Fail("tool name must be string");
+          break;
+        }
+        state.saw_name = true;
+        state.phase = FieldPhase::Name;
+      } else {
+        if (c != '{') {
+          Fail("tool arguments must be object");
+          break;
+        }
+        state.saw_arguments = true;
+        state.arguments_started = true;
+        state.argument_begin = state.scanned;
+        state.argument_end = state.scanned + 1;
+        state.depth = 1;
+        state.brackets[0] = '}';
+        state.in_string = false;
+        state.phase = FieldPhase::Arguments;
+      }
+      break;
+    case FieldPhase::Name:
+      if (state.escaped) {
+        state.escaped = false;
+        break;
+      }
+      if (c == '\\') {
+        state.escaped = true;
+        break;
+      }
+      if (c == '"') {
+        auto name = json::Parse(
+            std::string_view(raw).substr(state.value_begin, state.scanned - state.value_begin + 1));
+        if (!name.ok() || !name.value().is_string() ||
+            std::find(offered_names_.begin(), offered_names_.end(), name.value().as_string()) ==
+                offered_names_.end()) {
+          Fail("model requested unoffered function");
+          break;
+        }
+        state.name = name.value().as_string();
+        state.phase = FieldPhase::AfterValue;
+      }
+      break;
+    case FieldPhase::Arguments:
+      state.argument_end = state.scanned + 1;
+      if (state.in_string) {
+        if (state.escaped)
+          state.escaped = false;
+        else if (c == '\\')
+          state.escaped = true;
+        else if (c == '"')
+          state.in_string = false;
+      } else if (c == '"')
+        state.in_string = true;
+      else if (c == '{' || c == '[') {
+        if (state.depth == state.brackets.size()) {
+          Fail("tool arguments nesting exceeds bound");
+          break;
+        }
+        state.brackets[state.depth++] = c == '{' ? '}' : ']';
+      } else if (c == '}' || c == ']') {
+        if (!state.depth || c != state.brackets[state.depth - 1]) {
+          Fail("mismatched tool argument bracket");
+          break;
+        }
+        if (--state.depth == 0)
+          state.phase = FieldPhase::AfterValue;
+      }
+      break;
+    case FieldPhase::AfterValue:
+      if (Space(c))
+        break;
+      if (c == ',') {
+        state.phase = FieldPhase::Key;
+        break;
+      }
+      if (c == '}' && state.saw_name && state.saw_arguments) {
+        state.phase = FieldPhase::Done;
+        break;
+      }
+      Fail("invalid/incomplete tool object fields");
+      break;
+    case FieldPhase::Done:
+      if (!Space(c))
+        Fail("extra tool JSON suffix");
+      break;
+    }
+  }
+}
+void ToolStreamParser::FlushDeltas() {
+  if (!delta_ || error_ || delivery_failed_)
+    return;
+  for (std::size_t i = 0; i < count(); ++i) {
+    auto &state = progress_[i];
+    if (state.name.empty())
+      continue;
+    const auto name = state.identity_sent ? std::string_view{} : std::string_view(state.name);
+    std::string_view arguments;
+    if (state.arguments_started) {
+      const auto available = state.argument_end - state.argument_begin;
+      arguments = std::string_view(raw_[i]).substr(state.argument_begin + state.arguments_sent,
+                                                   available - state.arguments_sent);
+    }
+    if (name.empty() && arguments.empty())
+      continue;
+    if (!delta_(i, name, arguments)) {
+      delivery_failed_ = true;
+      return;
+    }
+    state.identity_sent = true;
+    state.arguments_sent += arguments.size();
+  }
+}
 void ToolStreamParser::Emit(char c) {
   if (visible_.size() == visible_.capacity()) {
     Fail("tool visible fragment exceeded");
@@ -362,6 +556,9 @@ std::string_view ToolStreamParser::Push(std::string_view input) {
         ended_ = true;
     }
   }
+  if (delta_)
+    for (std::size_t i = 0; i < count() && !error_; ++i)
+      Scan(i);
   return visible_;
 }
 std::string_view ToolStreamParser::Finish() {

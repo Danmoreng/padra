@@ -29,3 +29,22 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: halt_on_error=1
         run: ctest --test-dir build --output-on-failure
+
+  python-sdk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare pinned SDK
+        run: |
+          python3 -m venv sdk-venv
+          sdk-venv/bin/pip install -r tests/sdk-requirements.txt
+      - name: Configure fixture and SDK tests
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DPADRA_ENABLE_CUDA=OFF -DPADRA_ENABLE_NATIVE_TEXT=OFF
+          -DPADRA_ENABLE_SDK_TESTS=ON
+          -DPython3_EXECUTABLE=${{ github.workspace }}/sdk-venv/bin/python
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

@@ -123,6 +123,7 @@ add_executable(padra-server src/cli/server_main.cpp)
 target_link_libraries(padra-server PRIVATE padra_server)
 
 padra_warnings(padra-server)
+option(PADRA_ENABLE_SDK_TESTS "Run optional pinned Python SDK loopback tests" OFF)
 if(BUILD_TESTING)
   add_library(padra_test_server STATIC ${padra_server_sources}
     tests/synthetic_tokenizer.cpp src/text/decoder.cpp src/text/stream.cpp
@@ -146,4 +147,13 @@ if(BUILD_TESTING)
     "-DPADRA_TEST_COMPILER=${CMAKE_CXX_COMPILER}"
     -P "${PROJECT_SOURCE_DIR}/tests/kernel_profiles.cmake")
   set_tests_properties(kernel-profile-configuration PROPERTIES TIMEOUT 90)
+  if(PADRA_ENABLE_SDK_TESTS)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(padra-sdk-fixture tests/sdk_fixture.cpp)
+    target_link_libraries(padra-sdk-fixture PRIVATE padra_test_server)
+    padra_warnings(padra-sdk-fixture)
+    add_test(NAME python-sdk-compatibility COMMAND ${Python3_EXECUTABLE}
+      "${PROJECT_SOURCE_DIR}/tests/sdk_tests.py" --fixture $<TARGET_FILE:padra-sdk-fixture>)
+    set_tests_properties(python-sdk-compatibility PROPERTIES TIMEOUT 60)
+  endif()
 endif()

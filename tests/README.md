@@ -30,14 +30,18 @@ Covered regressions include:
   deletion, expiry, concurrent reservations and rollback on failed generation.
 - Consistent Chat/Responses HTTP queue errors, Retry-After, both SSE protocols,
   real client disconnects, artifact identity and bounded latency histograms.
+- Incremental tool bytes, split markers/fields, Unicode, reordered fields, duplicate
+  and unoffered names, early delivery while the backend is paused, and both HTTP
+  protocols before generation completes.
 - Duplicate JSON keys, Unicode surrogates, split UTF-8/stop/thinking and owner/lease
   isolation.
 - Named kernel profiles, legacy alias compatibility, unsupported profiles and
   conflicting selection.
 
-This suite does not qualify CUDA arithmetic, real model quality, native renderer
-semantics, third-party SDK compatibility, heartbeat/proxy behavior or sustained
-multi-client performance. Those require separate runs with the actual artifact.
+The base host suite does not qualify CUDA arithmetic, real model quality, native
+renderer semantics, heartbeat/proxy behavior or sustained multi-client performance.
+Those require separate runs with the actual artifact. The optional Python SDK
+suite below covers its explicitly supported loopback API subset.
 The 2026-10-13 Pro review's reproductions originally asserted the broken behavior;
 these tests require corrected behavior.
 
@@ -57,3 +61,24 @@ python3 tests/native_http_smoke.py \
 
 Run under an appropriate foreground memory/time limit on the target GPU. This is
 a serving integration check, not numerical quality or performance qualification.
+
+## Python SDK compatibility
+
+The optional suite pins the real Python SDK and starts a synthetic serving fixture.
+It makes only loopback requests. No API key, model artifact or CUDA is required.
+The fixture replaces inference/tokenization; handlers and streaming are production
+code. It covers both APIs, tool/Unicode assembly, the Responses stream helper,
+usage, forty retained Responses, queue errors and SDK stream cancellation.
+
+```sh
+python3 -m venv build/sdk-venv
+build/sdk-venv/bin/pip install -r tests/sdk-requirements.txt
+cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DPADRA_ENABLE_CUDA=OFF -DPADRA_ENABLE_NATIVE_TEXT=OFF \
+  -DPADRA_ENABLE_SDK_TESTS=ON \
+  -DPython3_EXECUTABLE="$PWD/build/sdk-venv/bin/python"
+cmake --build build/sdk -j2
+ctest --test-dir build/sdk --output-on-failure
+```
+
+The event contracts follow the official [function-calling streaming guide](https://developers.openai.com/api/docs/guides/function-calling).

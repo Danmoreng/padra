@@ -82,32 +82,40 @@ public:
     auto final = builder_.FinishRecord();
     Need(job_.PushEnding(final));
   }
-  void Tool(std::size_t index, const ToolCall &call) {
+  void ToolBegin(std::size_t index, std::string_view id, std::string_view name) {
     if (!job_.request.stream)
       return;
     Envelope();
     Need(builder_.Append("[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":"));
     Need(builder_.AppendUnsigned(index));
     Need(builder_.Append(",\"id\":"));
-    Need(builder_.AppendJsonString(call.id));
+    Need(builder_.AppendJsonString(id));
     Need(builder_.Append(",\"type\":\"function\",\"function\":{\"name\":"));
-    Need(builder_.AppendJsonString(call.name));
+    Need(builder_.AppendJsonString(name));
     Need(builder_.Append(",\"arguments\":\"\"}}]},\"finish_reason\":null,\"logprobs\":null}]"));
     End();
-    for (std::size_t begin = 0; begin < call.arguments.size();) {
-      auto end = std::min(begin + 1024, call.arguments.size());
-      while (end < call.arguments.size() &&
-             (static_cast<unsigned char>(call.arguments[end]) & 0xc0) == 0x80)
+  }
+  void ToolArguments(std::size_t index, std::string_view arguments) {
+    if (!job_.request.stream)
+      return;
+    for (std::size_t begin = 0;
+         begin < arguments.size() && job_.cancellation.load() == CancelCause::None;) {
+      auto end = std::min(begin + 1024, arguments.size());
+      while (end < arguments.size() && (static_cast<unsigned char>(arguments[end]) & 0xc0) == 0x80)
         --end;
       Envelope();
       Need(builder_.Append("[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":"));
       Need(builder_.AppendUnsigned(index));
       Need(builder_.Append(",\"function\":{\"arguments\":"));
-      Need(builder_.AppendJsonString(std::string_view(call.arguments).substr(begin, end - begin)));
+      Need(builder_.AppendJsonString(std::string_view(arguments).substr(begin, end - begin)));
       Need(builder_.Append("}}]},\"finish_reason\":null,\"logprobs\":null}]"));
       End();
       begin = end;
     }
+  }
+  void Tool(std::size_t index, const ToolCall &call) {
+    ToolBegin(index, call.id, call.name);
+    ToolArguments(index, call.arguments);
   }
 
 private:
@@ -162,7 +170,7 @@ Job::Job(ChatRequest input, std::size_t maximum) : request(std::move(input)) {
   admitted_bytes = admission::Sum({sizeof(Job), request.body.size(), request.adapter_bytes,
                                    admission::Bytes(request.input_ids.size(), sizeof(int)),
                                    admission::Bytes(output_budget, 2),
-                                   request.tools.parse ? 16 * kMaximumToolJson + 2048 : 0});
+                                   request.tools.parse ? 16 * kMaximumToolJson + 8192 : 0});
 }
 void Job::Cancel(CancelCause cause) {
   if (transport) {
@@ -250,7 +258,7 @@ Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request) {
   const auto predicted = admission::Sum({sizeof(Job), request.body.size(), request.adapter_bytes,
                                          admission::Bytes(request.input_ids.size(), sizeof(int)),
                                          admission::Bytes(output_budget, 2),
-                                         request.tools.parse ? 16 * kMaximumToolJson + 2048 : 0});
+                                         request.tools.parse ? 16 * kMaximumToolJson + 8192 : 0});
   const auto tokens =
       admission::Sum({request.input_ids.size(), static_cast<std::size_t>(request.outputs)});
   std::lock_guard lock(mutex_);
@@ -532,8 +540,20 @@ void Coordinator::Execute(const std::shared_ptr<Job> &job) {
         id = std::move(generated).value();
       }
     Events events(*job);
-    if (job->request.stream)
+    if (job->request.stream) {
       events.Begin();
+      if (job->request.tools.parse)
+        tools.StreamDeltas(job->request.tools, [&](std::size_t index, std::string_view name,
+                                                   std::string_view arguments) {
+          if (job->visible_seconds == 0)
+            job->visible_seconds = std::chrono::duration<double>(Clock::now() - started).count();
+          if (!name.empty())
+            events.ToolBegin(index, call_ids[index], name);
+          if (!arguments.empty())
+            events.ToolArguments(index, arguments);
+          return job->cancellation.load() == CancelCause::None;
+        });
+    }
     const auto accept_output = [&](text::ThinkingOutput output) {
       auto visible = tools.Push(output.content);
       if (!visible.empty() && job->visible_seconds == 0)
@@ -541,6 +561,9 @@ void Coordinator::Execute(const std::shared_ptr<Job> &job) {
       job->content.append(visible);
       job->reasoning.append(output.reasoning);
       events.Delta(visible, output.reasoning);
+      tools.FlushDeltas();
+      if (tools.delivery_failed())
+        job->Cancel(CancelCause::Backpressure);
       if (tools.error())
         job->Cancel(CancelCause::ToolInvalid);
     };
@@ -614,7 +637,8 @@ void Coordinator::Execute(const std::shared_ptr<Job> &job) {
     if (!job->tool_calls.empty() && job->visible_seconds == 0)
       job->visible_seconds = std::chrono::duration<double>(Clock::now() - started).count();
     for (std::size_t i = 0; i < job->tool_calls.size(); ++i)
-      events.Tool(i, job->tool_calls[i]);
+      if (!tools.identity_sent(i))
+        events.Tool(i, job->tool_calls[i]);
     if (job->cancellation.load() != CancelCause::None)
       throw std::runtime_error("generation cancelled during output finalization");
     if (lease && !job->partial_tool_call) {

@@ -1,6 +1,7 @@
 #pragma once
 #include "util/json.h"
 #include <array>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,6 +30,17 @@ public:
   ToolStreamParser(bool enabled, std::size_t maximum_fragment, std::size_t maximum_calls = 8);
   std::string_view Push(std::string_view);
   std::string_view Finish();
+  using DeltaCallback = std::function<bool(std::size_t, std::string_view, std::string_view)>;
+  // Only a complete, offered name starts an identity. Arguments keep their
+  // original JSON bytes. Completed calls still undergo full JSON validation.
+  void StreamDeltas(const ToolConfig &, DeltaCallback);
+  void FlushDeltas();
+  bool identity_sent(std::size_t i) const {
+    return progress_[i].identity_sent;
+  }
+  bool delivery_failed() const {
+    return delivery_failed_;
+  }
   const char *error() const {
     return error_;
   }
@@ -43,6 +55,21 @@ public:
   }
 
 private:
+  enum class FieldPhase { Start, Key, KeyString, Colon, Value, Name, Arguments, AfterValue, Done };
+  struct Progress {
+    FieldPhase phase = FieldPhase::Start;
+    std::size_t scanned = 0, key_begin = 0, value_begin = 0, argument_begin = 0, argument_end = 0,
+                arguments_sent = 0, depth = 0;
+    std::array<char, 128> brackets{};
+    std::string key, name;
+    bool in_string = false, escaped = false, saw_name = false, saw_arguments = false,
+         identity_sent = false, arguments_started = false;
+  };
+  void Scan(std::size_t);
+  std::vector<std::string> offered_names_;
+  DeltaCallback delta_;
+  std::array<Progress, 8> progress_;
+  bool delivery_failed_ = false;
   void Plain(char);
   void Emit(char);
   void Fail(const char *message) {

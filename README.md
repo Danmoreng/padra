@@ -180,7 +180,12 @@ Transport disconnect/backpressure counters include failures after generation end
 
 The review's GPU shape-cache, sampling-algorithm and multi-sequence scheduling
 suggestions require representative workload measurements and numerical validation.
-Tool arguments currently stream as a validated completion burst. Incremental tool
-parsing, SDK/proxy/load qualification, and authenticated external deployment remain
-separate extensions. No throughput or model-quality improvement is implied by
+Tool identity is emitted after a complete offered function name is recognized,
+then argument fragments stream during generation. Arguments retain their original
+JSON bytes; the completed call still undergoes full JSON validation. Clients must
+wait for successful completion before using the arguments. If arguments precede
+the name, their bounded prefix waits for identification. A length-truncated call
+remains partial and does not commit session history. Python SDK compatibility has
+an optional pinned loopback suite; proxy/load qualification and authenticated
+external deployment remain separate extensions. No throughput or model-quality improvement is implied by
 these lifecycle changes.

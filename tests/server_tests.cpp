@@ -19,6 +19,7 @@ struct MockState {
   std::promise<void> entered, release;
   std::shared_future<void> released = release.get_future().share();
   bool block = false;
+  int pause_after = 0;
   std::atomic<int> calls{0};
   std::vector<int> tokens{0};
   std::chrono::milliseconds token_delay{0};
@@ -42,7 +43,8 @@ public:
     return {};
   }
   Result<InferenceResult> Generate(TokenCallback callback, PrefillCallback) override {
-    if (state_->calls.fetch_add(1) == 0 && state_->block) {
+    const bool first = state_->calls.fetch_add(1) == 0;
+    if (first && state_->block) {
       state_->entered.set_value();
       state_->released.wait();
     }
@@ -54,6 +56,10 @@ public:
       if (callback && !callback(token)) {
         result.cancelled = true;
         break;
+      }
+      if (first && state_->pause_after == static_cast<int>(result.generated_ids.size())) {
+        state_->entered.set_value();
+        state_->released.wait();
       }
     }
     return result;
@@ -589,6 +595,245 @@ void TestHttpGenerationDeadline(text::Tokenizer &tokenizer) {
   }
   Require(fixture.coordinator.Sessions().Stats().first == 0, "deadline response leaked root");
 }
+struct CollectedTool {
+  std::string id, name, arguments;
+  int identities = 0;
+};
+std::array<CollectedTool, 8> CollectTools(std::string_view wire) {
+  std::array<CollectedTool, 8> calls;
+  for (std::size_t begin = 0; begin < wire.size();) {
+    const auto end = wire.find("\n\n", begin);
+    if (end == wire.npos)
+      break;
+    auto record = wire.substr(begin, end - begin);
+    begin = end + 2;
+    if (!record.starts_with("data: "))
+      continue;
+    record.remove_prefix(6);
+    if (record == "[DONE]")
+      continue;
+    auto parsed = json::Parse(record);
+    Require(parsed.ok(), "invalid SSE JSON");
+    auto *choices = parsed.value().find("choices");
+    if (!choices)
+      continue;
+    for (const auto &choice : choices->as_array()) {
+      auto *delta = choice.find("delta");
+      auto *tools = delta ? delta->find("tool_calls") : nullptr;
+      if (!tools)
+        continue;
+      for (const auto &tool : tools->as_array()) {
+        const auto i = tool.find("index")->as_integer();
+        Require(i >= 0 && i < 8, "invalid tool index");
+        auto &call = calls[static_cast<std::size_t>(i)];
+        auto *function = tool.find("function");
+        Require(function && function->is_object(), "missing tool function");
+        if (auto *id = tool.find("id")) {
+          Require(call.id.empty(), "duplicate streamed identity");
+          call.id = id->as_string();
+          ++call.identities;
+        }
+        if (auto *name = function->find("name"))
+          call.name += name->as_string();
+        if (auto *arguments = function->find("arguments"))
+          call.arguments += arguments->as_string();
+      }
+    }
+  }
+  return calls;
+}
+void TestIncrementalToolParser() {
+  ToolConfig config;
+  config.parse = true;
+  config.names = {"lookup", "next"};
+  const std::vector<std::string> raw_calls = {
+      R"({"name":"lookup","arguments":{"text":"a\"b\\c","list":[1,true,null,{"x":"<tool_call>"}]}})",
+      R"({"arguments":{"nested":{"n":-2.5e+3}},"na\u006de":"loo\u006bup"})",
+      R"({"name":"next","arguments":{}})"};
+  for (const auto &raw : raw_calls) {
+    const auto wire = "before<tool_call>" + raw + "</tool_call>after";
+    for (std::size_t split = 0; split <= wire.size(); ++split) {
+      ToolStreamParser parser(true, 4096);
+      std::array<CollectedTool, 8> calls;
+      parser.StreamDeltas(config,
+                          [&](std::size_t i, std::string_view name, std::string_view arguments) {
+                            if (!name.empty()) {
+                              ++calls[i].identities;
+                              calls[i].name += name;
+                            }
+                            calls[i].arguments += arguments;
+                            return true;
+                          });
+      std::string visible(parser.Push(std::string_view(wire).substr(0, split)));
+      parser.FlushDeltas();
+      visible += parser.Push(std::string_view(wire).substr(split));
+      parser.FlushDeltas();
+      visible += parser.Finish();
+      Require(!parser.error() && !parser.incomplete() && parser.count() == 1 &&
+                  visible == "beforeafter",
+              "split tool parsing failed");
+      auto expected = ParseGeneratedTool(parser.raw(0), config, "call_test", true);
+      Require(expected.ok(), "valid tool fixture rejected");
+      Require(calls[0].identities == 1 && calls[0].name == expected.value().name &&
+                  calls[0].arguments == expected.value().arguments,
+              "incremental bytes differ from completed call");
+    }
+  }
+  ToolStreamParser parallel(true, 4096);
+  std::array<CollectedTool, 8> calls;
+  parallel.StreamDeltas(config,
+                        [&](std::size_t i, std::string_view name, std::string_view arguments) {
+                          if (!name.empty()) {
+                            ++calls[i].identities;
+                            calls[i].name = name;
+                          }
+                          calls[i].arguments += arguments;
+                          return true;
+                        });
+  for (const auto &raw : raw_calls) {
+    parallel.Push("<tool_call>" + raw + "</tool_call>");
+    parallel.FlushDeltas();
+  }
+  Require(!parallel.error() && parallel.count() == 3 && calls[2].name == "next" &&
+              calls[1].arguments == "{\"nested\":{\"n\":-2.5e+3}}",
+          "parallel tool indexes mixed");
+  for (auto raw :
+       {R"({"name":"missing","arguments":{}})", R"({"name":"lookup","name":"next","arguments":{}})",
+        R"({"name":"lookup","arguments":[1]})", R"({"name":"lookup","arguments":{"x":]}})",
+        R"({"name":"lookup","arguments":{},})"}) {
+    ToolStreamParser parser(true, 4096);
+    parser.StreamDeltas(config,
+                        [](std::size_t, std::string_view, std::string_view) { return true; });
+    parser.Push(std::string("<tool_call>") + raw + "</tool_call>");
+    parser.FlushDeltas();
+    Require(parser.error() != nullptr, "malformed/unoffered/duplicate streamed tool accepted");
+  }
+}
+void TestToolDeltasBeforeCompletion(text::Tokenizer &tokenizer) {
+  auto state = std::make_shared<MockState>();
+  const auto prefix = R"(<tool_call>{"name":"lookup","arguments":{"text":"first)",
+             suffix = R"( € second"}}</tool_call>)";
+  auto encoded = tokenizer.Encode(std::string(prefix) + suffix);
+  Require(encoded.ok(), "tool token fixture failed");
+  state->tokens = std::move(encoded).value();
+  state->tokens.push_back(28);
+  state->pause_after = static_cast<int>(std::string_view(prefix).size());
+  Coordinator coordinator(Runtime(state), tokenizer);
+  ReleaseGuard release{state};
+  auto request = Request("incremental-tool");
+  request.stream = true;
+  request.outputs = 256;
+  request.tools.parse = true;
+  request.tools.names = {"lookup"};
+  auto job = Submit(coordinator, std::move(request));
+  Require(state->entered.get_future().wait_for(2s) == std::future_status::ready,
+          "tool generation did not pause");
+  {
+    std::lock_guard lock(job->mutex);
+    Require(!job->complete, "tool finished before early delta check");
+  }
+  const auto early = Drain(job);
+  auto calls = CollectTools(early);
+  Require(calls[0].name == "lookup" && calls[0].arguments == R"({"text":"first)",
+          "tool arguments were buffered until completion");
+  state->release.set_value();
+  Wait(job);
+  Require(job->failure.ok(), "incremental tool generation failed");
+  calls = CollectTools(early + Drain(job));
+  Require(calls[0].identities == 1 && calls[0].id == job->tool_calls[0].id &&
+              calls[0].arguments == job->tool_calls[0].arguments &&
+              calls[0].arguments == R"({"text":"first € second"})",
+          "tool stream identity/UTF8/arguments not preserved");
+}
+void TestHttpToolDeltasBeforeCompletion(text::Tokenizer &tokenizer) {
+  for (bool responses : {false, true}) {
+    auto state = std::make_shared<MockState>();
+    const std::string prefix = R"(<tool_call>{"name":"lookup","arguments":{"text":"first)";
+    auto encoded = tokenizer.Encode(prefix + R"( second"}}</tool_call>)");
+    Require(encoded.ok(), "HTTP tool token fixture failed");
+    state->tokens = std::move(encoded).value();
+    state->tokens.push_back(28);
+    state->pause_after = static_cast<int>(prefix.size());
+    HttpFixture fixture(tokenizer, state);
+    std::promise<void> observed;
+    auto arrived = observed.get_future();
+    auto client = std::async(std::launch::async, [&] {
+      httplib::Client http("127.0.0.1", fixture.port);
+      http.set_read_timeout(2);
+      std::string wire;
+      bool notified = false;
+      const std::string body =
+          responses
+              ? R"({"model":"mellum21-exl3-k4-research","input":"use lookup","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}],"max_output_tokens":256,"stream":true,"store":false})"
+              : R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"user","content":"use lookup"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"max_completion_tokens":256,"stream":true})";
+      auto result = http.Post(
+          responses ? "/v1/responses" : "/v1/chat/completions", httplib::Headers{}, body,
+          "application/json", [&](const char *data, std::size_t size) {
+            wire.append(data, size);
+            if (!notified && wire.find(responses ? "response.function_call_arguments.delta"
+                                                 : R"("arguments":"{)") != wire.npos) {
+              notified = true;
+              observed.set_value();
+            }
+            return true;
+          });
+      Require(result && result->status == 200, "HTTP incremental tool request failed");
+      return wire;
+    });
+    ReleaseGuard release{state};
+    Require(state->entered.get_future().wait_for(2s) == std::future_status::ready,
+            "HTTP tool backend did not pause");
+    Require(arrived.wait_for(1s) == std::future_status::ready,
+            "HTTP tool arguments not delivered until generation completed");
+    Require(client.wait_for(0ms) == std::future_status::timeout,
+            "HTTP tool stream ended before backend resume");
+    state->release.set_value();
+    const auto wire = client.get();
+    Require(wire.find(responses ? "response.completed" : "[DONE]") != wire.npos,
+            "HTTP early tool stream lost completion");
+  }
+}
+void TestPartialAndInvalidStreamedTools(text::Tokenizer &tokenizer) {
+  for (const auto &output : std::vector<std::string>{
+           R"(<tool_call>{"name":"lookup","arguments":{"text":"unfinished)",
+           R"(<tool_call>{"name":"loo)",
+           R"(<tool_call>{"name":"lookup","arguments":{"text":}}</tool_call>)"}) {
+    auto state = std::make_shared<MockState>();
+    auto tokens = tokenizer.Encode(output);
+    state->tokens = std::move(tokens).value();
+    const bool invalid = output.ends_with("</tool_call>");
+    if (invalid)
+      state->tokens.push_back(28);
+    Coordinator coordinator(Runtime(state), tokenizer);
+    auto session = coordinator.Sessions().Create("owner");
+    Require(session.ok(), "partial tool session setup");
+    auto request = Request("partial-tool");
+    request.stream = true;
+    request.outputs = 256;
+    request.tools.parse = true;
+    request.tools.names = {"lookup"};
+    request.session_id = session.value().id;
+    request.session_owner = "owner";
+    auto job = Submit(coordinator, std::move(request));
+    Wait(job);
+    auto wire = Drain(job);
+    if (invalid)
+      Require(!job->failure.ok() && job->cancellation.load() == CancelCause::ToolInvalid &&
+                  wire.find("invalid_tool_output") != wire.npos && wire.find("[DONE]") == wire.npos,
+              "invalid streamed arguments reported success");
+    else {
+      auto calls = CollectTools(wire);
+      Require(job->failure.ok() && job->partial_tool_call && job->finish_reason == "length" &&
+                  job->tool_calls.size() == 1,
+              "length-truncated tool state lost");
+      Require(calls[0].identities == 1 && calls[0].arguments == job->tool_calls[0].arguments &&
+                  calls[0].name == job->tool_calls[0].name,
+              "partial tool identity/arguments duplicated or lost");
+    }
+    Require(coordinator.Sessions().Get(session.value().id, "owner").value().history == "[]",
+            "partial/invalid tool committed session history");
+  }
+}
 int main() {
   try {
     auto loaded = text::Tokenizer::Load({}, {});
@@ -612,6 +857,10 @@ int main() {
     std::cout << "PASS HTTP Chat/Responses streams\n";
     TestGracefulDrain(tokenizer);
     TestStoreLifetimes();
+    TestIncrementalToolParser();
+    TestToolDeltasBeforeCompletion(tokenizer);
+    TestHttpToolDeltasBeforeCompletion(tokenizer);
+    TestPartialAndInvalidStreamedTools(tokenizer);
     TestToolFrames(tokenizer);
     TestMetricsAndIdentity(tokenizer);
     TestHttpDisconnect(tokenizer);

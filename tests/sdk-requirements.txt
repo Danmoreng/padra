@@ -1,0 +1,2 @@
+# Optional local loopback compatibility tests; no OpenAI cloud requests.
+openai==3.29.0
