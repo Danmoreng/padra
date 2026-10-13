@@ -62,6 +62,10 @@ void Experts(int tokens,int part,bool skew,bool benchmark=false){
   simt_batch::Describe<<<1,64>>>(counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),bad.As<int>(),state.As<SimtBatch>());
   auto fast=[&]{simt_batch::ExpertsFast(desc.As<DeviceMatrix>(),0,part,chosen.As<int>(),source.As<float>(),output.As<float>(),transformed.As<float>(),groups.As<int>(),counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),bad.As<int>(),state.As<SimtBatch>(),nullptr);};
   fast();Check(cudaDeviceSynchronize());Check(cudaMemcpy(x.data(),output.p,x.size()*4,cudaMemcpyDeviceToHost));Close(x,y,"EXL3 M32 FP32 tile",.0005);
+  // Retiling must preserve every accumulator's K order, including sparse/tail rows.
+  simt_batch::ProjectionFast<128,16,2><<<dim3(rows/128,simt_batch::kExpertTiles),256>>>(desc.As<DeviceMatrix>(),0,part,groups.As<int>(),counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),transformed.As<float>(),output.As<float>());
+  simt_batch::OutputHadFast<<<dim3(rows/128,512),128>>>(desc.As<DeviceMatrix>(),0,part,chosen.As<int>(),counts.As<int>(),output.As<float>(),bad.As<int>(),state.As<SimtBatch>());
+  Check(cudaDeviceSynchronize());std::vector<float> previous(x.size());Check(cudaMemcpy(previous.data(),output.p,previous.size()*4,cudaMemcpyDeviceToHost));Require(!memcmp(x.data(),previous.data(),x.size()*4),"R4 tile differs from R2 accumulator order");
   if(benchmark){const float candidate=ExpertTime(fast);
     simt_batch::Describe<<<1,64>>>(counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),bad.As<int>(),state.As<SimtBatch>());
     const float original=ExpertTime([&]{simt_batch::Experts(desc.As<DeviceMatrix>(),0,part,chosen.As<int>(),source.As<float>(),reference.As<float>(),transformed.As<float>(),groups.As<int>(),counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),bad.As<int>(),state.As<SimtBatch>(),nullptr);});
@@ -104,6 +108,11 @@ void Attention(bool local,int base,int rows,int context_capacity=8192){
   Buffer gemm_weights(std::max(1280,capacity)*128ULL*8),gemm_queries(8ULL*256*128*8),gemm_scores(8ULL*(capacity>8192?64:256)*std::max(1280,capacity)*4),gemm_workspace(16ULL*1024*1024);Stream attention_stream;pascal_sgemm::Handle attention_blas(attention_stream.s,gemm_workspace.p,gemm_workspace.bytes);
   auto batched_attention=[&]{pascal_attention_sgemm::Prefill(attention_blas,q.As<float>(),k.As<__nv_bfloat16>(),v.As<__nv_bfloat16>(),stage.As<__nv_bfloat16>(),result.As<float>(),state.As<SimtBatch>(),capacity,local,gemm_weights.As<float>(),gemm_queries.As<float>(),gemm_scores.As<float>(),bad.As<int>(),attention_stream.s);};
   batched_attention();Check(cudaDeviceSynchronize());DecodeGraph attention_graph;attention_graph.Capture(attention_stream.s,batched_attention);attention_graph.Launch(attention_stream.s);Check(cudaDeviceSynchronize());std::vector<float> gemm_batch(rows*4096);Check(cudaMemcpy(gemm_batch.data(),result.p,gemm_batch.size()*4,cudaMemcpyDeviceToHost));
+  if(!local && context_capacity==8192){
+    const int bound=base+rows<=1024?1024:base+rows<=4096?4096:8192;
+    pascal_attention_sgemm::Prefill(attention_blas,q.As<float>(),k.As<__nv_bfloat16>(),v.As<__nv_bfloat16>(),stage.As<__nv_bfloat16>(),result.As<float>(),state.As<SimtBatch>(),capacity,local,gemm_weights.As<float>(),gemm_queries.As<float>(),gemm_scores.As<float>(),bad.As<int>(),attention_stream.s,bound);
+    Check(cudaDeviceSynchronize());std::vector<float> bounded(rows*4096);Check(cudaMemcpy(bounded.data(),result.p,bounded.size()*4,cudaMemcpyDeviceToHost));Close(bounded,gemm_batch,"bounded context excludes poisoned future KV",.002,.0001,.0005);
+  }
   SetSimtBatch<<<1,1>>>(state.As<SimtBatch>(),base,1,context_capacity,bad.As<int>());attention_graph.Launch(attention_stream.s);Check(cudaDeviceSynchronize());std::vector<float> tail(4096);Check(cudaMemcpy(tail.data(),result.p,4096*4,cudaMemcpyDeviceToHost));Close(tail,std::vector<float>(gemm_batch.begin(),gemm_batch.begin()+4096),"SGEMM graph active-row tail",.002,.0001,.0005);SetSimtBatch<<<1,1>>>(state.As<SimtBatch>(),base,rows,context_capacity,bad.As<int>());
   // Only after all batched reads: sequential baseline updates the same ring.
   for(int row=0;row<rows;++row){const int pos=base+row;Check(cudaMemcpy(k.As<__nv_bfloat16>()+(pos%capacity)*512,current.data()+row*512,1024,cudaMemcpyHostToDevice));Check(cudaMemcpy(v.As<__nv_bfloat16>()+(pos%capacity)*512,current.data()+(256+row)*512,1024,cudaMemcpyHostToDevice));SetSimtCommand<<<1,1>>>(command.As<SimtCommand>(),0,pos);

@@ -20,4 +20,17 @@ __device__ __forceinline__ float DecodeLookup(unsigned state,const float* lookup
   return lookup[(hash&255)+((hash>>8)&255)+((hash>>16)&255)+(hash>>24)];
 #endif
 }
+// With col=lane/4 and ki=(lane%4)*2, all eight weights owned by this
+// lane are in its own compressed word and the preceding word. Reuse that
+// window instead of performing two arbitrary shuffles for every weight.
+// The two states in each pair overlap by twelve bits.
+__device__ __forceinline__ float2 PairLookup(unsigned window,const float* lookup){
+  return make_float2(DecodeLookup((window>>4)&65535U,lookup),DecodeLookup(window&65535U,lookup));
+}
+__device__ __forceinline__ float2 Pair(unsigned window){
+  return make_float2(Decode((window>>4)&65535U),Decode(window&65535U));
+}
+__device__ __forceinline__ unsigned Previous(unsigned word){
+  return __shfl_sync(0xffffffffU,word,((threadIdx.x&31)+31)&31);
+}
 }
