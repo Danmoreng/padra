@@ -50,11 +50,21 @@ headers receive the same hash checks as downloaded headers. See
 and cache/toolchain options.
 
 Optional `-DPADRA_EXL3_PREFILL_ASYNC64=ON` enables experimental K64 weight/input
-transport for EXL3 K4 prefill requests of at least 128 tokens. Shorter requests
-retain the existing kernel. Paired 2K/4K measurements with BF16 KV and chunk 2048
-showed about 3.5%/5.2% faster prefill with unchanged checked outputs. Decode is
-unchanged. The option is off by default; these measurements do not qualify
-full-context performance or resolve the open quality gates below.
+transport for EXL3 K4 prefill batches of at least four tokens; smaller batches
+retain the existing SIMT path. Initial paired 2K/4K measurements with BF16 KV and
+chunk 2048 showed about 3.5%/5.2% faster prefill. The subsequent P2 weights-as-A
+mapping added about 0.8–1.0% at P4000/G1000 in separate six-block comparisons.
+
+The option now also includes the D2 compensated register-row decode postnorm.
+Extending K64 to short batches repairs the earlier natural-prompt prefill loss:
+against P2, final paired measurements show 10.6–11.5% faster short prefill and
+0.56%/0.62% faster decode at P4000/G1000 and P2000/G500. Long prefill has no
+resolved change. The checked full-vocabulary outputs and session states match;
+no extra buffers or launches are added. The option remains off by default.
+These RTX 5080 Laptop results do not qualify full-context performance or resolve
+the open quality gates below. See [the D2 report](PERFORMANCE_D2.md) for evidence,
+uncertainty and validation scope, and [the performance plan](SOL_PERFORMANCE_PLAN.md)
+for the retained experiment history.
 
 ## Run
 

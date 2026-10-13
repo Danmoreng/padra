@@ -4,6 +4,7 @@
 // Requests below 128 tokens retain the existing K32 projection geometry.
 #pragma once
 #include "expert_exl3_prefill_packed_activations.cuh"
+#include "expert_exl3_lane_codec.cuh"
 namespace exl3_transport_async64 {
 using exl3_packed_activations::Tile;
 using exl3_packed_activations::Capacity;
@@ -44,7 +45,9 @@ __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const
   __syncthreads();if(invalid){if(!threadIdx.x)atomicExch(bad,1);return;}
   const int lane=threadIdx.x&31,warp=threadIdx.x/32,group=lane/4,tid=lane%4;
   const int nBase=blockIdx.x*128;
-  float accum[2][2][4]={};
+  // Weights own operand A: Four reconstructs all fragments with one shuffle.
+  // Four 8-token B fragments preserve the sequential K16 accumulation order.
+  float accum[4][4]={};
   Stage(ad[0],b_stage[0],input,slots,matrix,nBase,0);
   asm volatile("cp.async.wait_group 0;":::"memory");__syncthreads();
   for(int kBase=0;kBase<matrix.cols;kBase+=64){const int stage=(kBase/64)&1;
@@ -52,27 +55,20 @@ __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const
     #pragma unroll
     for(int k=0;k<64;k+=16){
       const unsigned word=b_stage[stage][k/16][warp][lane];
-      unsigned fragment[2][2];
+      unsigned a[4];exl3_lane_codec::Four(word,a);
       #pragma unroll
-      for(int n=0;n<2;++n){
-        #pragma unroll
-        for(int j=0;j<2;++j)fragment[n][j]=exl3_dot_codec::Bits(exl3_dot_codec::Pair(word,tid*2+j*8,group+n*8));
+      for(int n=0;n<4;++n){
+        const unsigned b[2]={Pack(ad[stage]+(n*8+group)*S+k+tid*2),Pack(ad[stage]+(n*8+group)*S+k+tid*2+8)};
+        Mma(a,b,accum[n]);
       }
-      #pragma unroll
-      for(int m=0;m<2;++m){unsigned a[4];
-        #pragma unroll
-        for(int j=0;j<4;++j)a[j]=Pack(ad[stage]+(m*16+group+(j%2)*8)*S+k+tid*2+(j/2)*8);
-        #pragma unroll
-        for(int n=0;n<2;++n){Mma(a,fragment[n],accum[m][n]);}}
     }
     asm volatile("cp.async.wait_group 0;":::"memory");__syncthreads();
   }
   #pragma unroll
-  for(int m=0;m<2;++m){
+  for(int n=0;n<4;++n){
     #pragma unroll
-    for(int n=0;n<2;++n){
-      #pragma unroll
-      for(int j=0;j<4;++j)projected[m*16+group+(j/2)*8][warp*16+n*8+tid*2+(j%2)]=accum[m][n][j];}}
+    for(int j=0;j<4;++j)projected[n*8+tid*2+(j%2)][warp*16+group+(j/2)*8]=accum[n][j];
+  }
   __syncthreads();
   for(int row=warp;row<32;row+=8){float v[4];
     #pragma unroll
@@ -87,7 +83,7 @@ __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const
 inline void Launch(const DeviceMatrix* matrices,int layer,int part,const int* ids,const int* groups,const int* counts,const Tile* tiles,const int* tileCount,const float* input,unsigned short* output,const unsigned short* gate,const unsigned short* up,const unsigned short* table,__half* transformed,int tokens,int* bad,cudaStream_t stream,unsigned* stats=nullptr,bool wideInput=false){
  const int cols=part==2?896:2304,rows=part==2?2304:896,pairs=tokens*8;
  if(tokens<4||part<0||part>2)throw std::runtime_error("packed BF16 prefill part requires declared T>=4");
- if(tokens<128){exl3_packed_activations::Launch(matrices,layer,part,ids,groups,counts,tiles,tileCount,input,output,gate,up,table,transformed,tokens,bad,stream,stats,wideInput);return;}
+ // K64 is also faster for short expert groups; T<4 keeps the caller's SIMT path.
  if(part==2)InputActivated<<<(pairs*7+3)/4,128,0,stream>>>(matrices,layer,ids,gate,up,table,transformed,pairs,bad,stats);
  else if(wideInput)exl3_input_wide_vector::Input<<<(pairs*(cols/128)+7)/8,256,0,stream>>>(matrices,layer,part,ids,input,transformed,pairs,bad,stats);
  else exl3_warp_input::Input<<<(pairs*(cols/128)+3)/4,128,0,stream>>>(matrices,layer,part,ids,input,transformed,pairs,bad,stats);

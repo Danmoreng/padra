@@ -694,7 +694,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     }
     if(worker && o.diagnostic_decode_token>=0)result.math_profile+=";fixed-teacher-decode-token="+std::to_string(o.diagnostic_decode_token)+";diagnostic-only/no-append/no-sampling";
 #if PADRA_EXL3_PREFILL_ASYNC64
-    if(o.exl3_packed_activations)result.kernel_profile+="+research-asyncAB-M32N128K64-shared-overlay-Tge128-v1;short-exactM32K32";
+    if(o.exl3_packed_activations)result.kernel_profile+="+research-asyncAB-M32N128K64-weightsA-shared-overlay-Tge4-v2;Tlt4-originalSIMT";
 #endif
     const auto baseKernelProfile=result.kernel_profile,baseMathProfile=result.math_profile;
     const auto loadSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
@@ -748,7 +748,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     if(o.exl3_decode_dot){result.kernel_profile+="+decode-exact-UDP4A-codebook";result.math_profile+=";decode-codebook=exact-UDP4A-byte-sum;BF16-H128-explicit-FP16-RN-cast;FP32-MMA-order-immutable;separate-Gate-Up/rn-two-BF16-SiLU/full-H128;no-fallback";result.actual_expert_dispatch+=o.exl3_decode_fused?";decode=dot-codec-M1-FP16-MMA/N128-warps8/fused-H128":";decode=dot-codec-M1-FP16-MMA/N64-warps4/separate-H128";}
     if(o.exl3_decode_fused){result.kernel_profile+="+decode-fused-H128-N128-warps8";result.math_profile+=";fused-input/full-output-H128=immutable-operation-order/BF16-boundary,explicit-FP16-input;MMA-order-unchanged";result.actual_expert_dispatch+=";decode=fused-H128-M1-N128-warps8";}
     if(o.exl3_decode_dual){result.kernel_profile+="+decode-paired-gateup-gridZ2";result.math_profile+=";paired-gate/up=separate-matrices/suh/H128/native-K4-MMA-operation-order,gridZ2,no-sharing-transforms";result.actual_expert_dispatch+=";decode=paired-distinct-gateup-gridZ2+single-down";}
+#if PADRA_EXL3_PREFILL_ASYNC64
+    if(o.wide_rms_dataflow){result.kernel_profile+="+same128-compensated-input-RMS-256-output-dataflow+postnorm-compensated-tree256-registerrow";result.math_profile+=";input-RMS=unchanged128-product/warp32/four-real-warp-tail-tree/BF16/stats/E4,256-independent-output-ownership";}
+#else
     if(o.wide_rms_dataflow){result.kernel_profile+="+same128-compensated-RMS-256-output-dataflow";result.math_profile+=";RMS=unchanged128-product/warp32/four-real-warp-tail-tree/BF16/stats/E4,256-independent-output-ownership";}
+#endif
     if(o.wide_attention_merge){result.kernel_profile+="+exact-N4a-merge-512-workers";result.math_profile+=";merge=unchanged-per-head32-split-FMA/BF16/amax/scales/encoder,512ownership";}
     if(o.paired_attention_o){result.kernel_profile+="+exact-O-SIMT-pairedrows";result.math_profile+=";O=unchanged-per-row-ordinary-FMA/reduction/scales/BF16,shared-E4-input-decode";}
     if(o.exact_router_rank){result.kernel_profile+="+exact-probability-rank-router-decode";result.math_profile+=";router=unchanged-RNexp/ascending-compensated-sums/probability-ties/BF16/ascendingIDs,direct-ranks";}
@@ -763,7 +767,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     if(o.exl3_wide_input){result.kernel_profile+="+prefill-H128-vector-warps8-v1";result.math_profile+=";Gate-Up-H128=distinct-sidecars/same-butterfly-BF16-F16,8-independentwarps/vector-source-sidecar-store,T<4-originaldeclaredSIMT,no-precisionchange";}
     if(o.exl3_packed_activations){result.kernel_profile+="+prefill-exact-BF16-storage-SiLU-downH128-v1";result.math_profile+=";prefill-expert-storage=same-BF16-values/16bit-physical-gate-up-down,T>=4;unchanged-M32/MMA/H128/FP16-input;fused-exact-table-RN-SiLU/BF16-product/downH128,T<4-unchanged-widened-SIMT;no-newprecision/no-loopallocation";result.actual_expert_dispatch+=";prefill-BF16-packed-storage/exact-SiLU-downH128";}
     if(o.exl3_silu_table){result.kernel_profile+="+exact-BF16-SiLU-table";result.math_profile+=";SiLU=exact-finite-BF16-RN-exp-add-div/BF16-product,128KiB-table-built-before-timers,no-loop-allocation";}
+#if PADRA_EXL3_PREFILL_ASYNC64
+    if(o.exl3_bf16_postnorm){result.kernel_profile+="+EXL3-BF16-only-postnorm";result.math_profile+=";postnorm=compensated-FP32/BF16-residual-and-two-BF16-output-stages,no-unused-FP8-encoding";}
+#else
     if(o.exl3_bf16_postnorm){result.kernel_profile+="+EXL3-BF16-only-postnorm";result.math_profile+=";postnorm=exact-compensated-N4b-BF16,no-unused-FP8-encoding";}
+#endif
     const auto activateExl3=[&](float* g,const float* u,int tokens){if(o.exl3_silu_table)exl3_silu_lut::Activate<<<tokens*56,128,0,stream.s>>>(g,u,exl3SiLU.As<unsigned short>(),tokens*8*896,bad.As<int>());else Activate<<<tokens*56,128,0,stream.s>>>(g,u,tokens);};
     if(o.attention_fp8_mma){result.kernel_profile+="+attention-decode-FP8-MMA-explicit-override";result.math_profile+=";attention-override=unchanged-FP8-weights/E4M3-input/scales,FP32-MMA-accumulation/BF16-output,new-reduction-order";result.actual_attention_projection="explicit decode FP8-MMA override; unchanged weights/activation codec; numerical variant";}
     if(o.exl3_decode_n32){result.kernel_profile+="+exl3-k4-decode-n32-warps4-kpart2-rd1";result.math_profile+=";R-D1-decode=BF16-H128-input-widened-FP32;exact-FP16-frozen-codec;ordinary-FP32-FMA/even-odd-K16/four-lane-reduction/two-part-RN-add;separate-full-H128-BF16;separate-Gate-Up/rn-two-BF16-SiLU";result.actual_expert_dispatch+=";decode=N32/four-warps/two-K-partitions/raw-scratch/full-H128-R-D1";}
