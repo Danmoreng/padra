@@ -16,6 +16,7 @@
 #include <vector>
 namespace mellum16 { namespace {
 #include "cuda/simt_kernels.cuh"
+#include "cuda/simt_attention_split.cuh"
 void Require(bool ok,const char* what){if(!ok)throw std::runtime_error(what);}
 float RoundedBF(float x){auto u=std::bit_cast<unsigned>(x);u=(u+0x7fff+((u>>16)&1))&0xffff0000;return std::bit_cast<float>(u);}
 unsigned Bits(float x){return std::bit_cast<unsigned>(x);}
@@ -137,6 +138,7 @@ void TestCausalAttention(){
     double total=0;for(auto& x:p){x=float(std::exp(double(x-mx)));total+=x;}for(auto& x:p)x=RoundedBF(x/float(total));
     for(int d=0;d<128;++d){double sum=0;for(int row=0;row<visible;++row)sum+=double(p[row])*__bfloat162float(v[row*512+(h/8)*128+d]);Require(Bits(result[h*128+d])==Bits(RoundedBF(float(sum))),"causal nonzero attention differs from CPU reference");}
   }
+  simt_attention_split::Launch(query.As<float>(),keys.As<__nv_bfloat16>(),values.As<__nv_bfloat16>(),out.As<float>(),command.As<SimtCommand>(),cap,false,workspace.As<float>(),bad.As<int>(),nullptr);Check(cudaDeviceSynchronize());std::vector<float> split(4096);Check(cudaMemcpy(split.data(),out.p,out.bytes,cudaMemcpyDeviceToHost));Require(!memcmp(split.data(),result.data(),out.bytes),"split attention differs from exact reference");
   int flag=0;Check(cudaMemcpy(&flag,bad.p,4,cudaMemcpyDeviceToHost));Require(!flag,"causal attention read poisoned future rows");
 }
 void TestSampling(){

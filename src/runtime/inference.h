@@ -28,7 +28,8 @@ struct InferenceOptions {
   int server_device_budget_gib=0; // Explicit ceiling; never reduces context/chunk/precision.
   bool server_kv_checkpoint=false; // Explicit one42MiB local-ring snapshot; no default promotion.
   // Offline SIMT qualification controls, never set by HTTP requests.
-  bool simt_reference_codec=false,simt_reference_prefill=false,simt_eager=false;
+  bool simt_reference_codec=false,simt_reference_prefill=false,simt_eager=false,simt_reference_attention=true;
+  bool simt_capture_tensors=true;
   std::filesystem::path simt_diagnostics;
   int simt_diagnostic_layer=0;
   std::vector<int> simt_diagnostic_positions,simt_teacher_tokens;

@@ -373,7 +373,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     if(o.exl3_decode_mma)Check(cudaFuncGetAttributes(&attributes,exl3_mma_decode::Projection));
     if(o.exl3_prefill_register)Check(cudaFuncGetAttributes(&attributes,exl3_register::Projection));
     if(o.exl3_decode_n32)Check(cudaFuncGetAttributes(&attributes,exl3_n32::Projection));
-    if(o.exl3_decode_selected)Check(cudaFuncGetAttributes(&attributes,exl3_selected::Projection));
+    if(o.exl3_decode_selected)Check(cudaFuncGetAttributes(&attributes,exl3_selected::Projection<false>));
     if(o.exl3_prefill_fp16)for(const auto kernel:{reinterpret_cast<const void*>(exl3_fp16::Input),reinterpret_cast<const void*>(exl3_fp16::Projection),reinterpret_cast<const void*>(exl3_fp16::Schedule),reinterpret_cast<const void*>(exl3_fp16::TailDot),reinterpret_cast<const void*>(exl3_fp16::TailOutput)})Check(cudaFuncGetAttributes(&attributes,kernel));
     if(o.exl3_prefill_masked)for(const auto kernel:{reinterpret_cast<const void*>(exl3_masked::Input),reinterpret_cast<const void*>(exl3_masked::Projection),reinterpret_cast<const void*>(exl3_masked::Schedule)})Check(cudaFuncGetAttributes(&attributes,kernel));
     if(o.diagnostic_exl3_layer>=0)Check(cudaFuncGetAttributes(&attributes,reinterpret_cast<const void*>(CaptureExl3Fixture)));

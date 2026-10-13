@@ -60,6 +60,24 @@ with request('/v1/chat/completions',body) as r:
         for choice in frame.get('choices',[]):chunks.append(choice.get('delta',{}).get('content',''))
 streamed=''.join(chunks);assert done and usage;assert streamed==plain['choices'][0]['message']['content']
 (OUT/'stream.json').write_text(json.dumps(dict(seconds=time.monotonic()-start,content=streamed,usage=usage),indent=2));print('stream',repr(streamed),usage,flush=True)
+# Close a live stream and require both cancellation accounting and recovery.
+def metric(name):
+    with request('/metrics') as r:text=r.read().decode()
+    return int(next(line.split()[1] for line in text.splitlines() if line.startswith(name+' ')))
+before=metric('mellum_disconnects_total')
+cancel_body=dict(model=MODEL,messages=user('Write a complete Python module with 100 numbered functions. Include every function in full.'),max_completion_tokens=1000,temperature=0,enable_thinking=False,stream=True)
+with request('/v1/chat/completions',cancel_body) as r:
+    for line in r:
+        if line.startswith(b'data: ') and b'[DONE]' not in line:
+            frame=json.loads(line[6:])
+            if any(choice.get('delta',{}).get('content') for choice in frame.get('choices',[])):break
+    else:raise AssertionError('disconnect check did not receive a content token')
+deadline=time.monotonic()+20
+while metric('mellum_disconnects_total')<=before:
+    assert time.monotonic()<deadline,'stream disconnect was not accounted for'
+    time.sleep(.1)
+recovered=chat('disconnect-recovery',user('Count from 1 to 5, separated by commas.'),max_completion_tokens=32)
+assert recovered['choices'][0]['message']==plain['choices'][0]['message']
 if args.long:
     long=chat('local-ring-wrap',user('# padding line\n'*270+'\nIgnore the comments above and reply with exactly OK.'),max_completion_tokens=8)
     assert long['usage']['prompt_tokens']>1024,long['usage']
@@ -79,7 +97,8 @@ with request('/metrics') as r:metrics=r.read().decode()
 assert 'mellum_model_loads_total 1\n' in metrics and 'mellum_weight_uploads_total 1\n' in metrics
 with request('/v1/models') as r:models=json.load(r)
 if '-simt-' in models['data'][0]['execution_profile']:
-    captures=3 if '-layer-batch256-' in models['data'][0]['execution_profile'] else 2
+    profile=models['data'][0]['execution_profile']
+    captures=5 if '-attention-tiered-' in profile else 3 if '-layer-batch256-' in profile else 2
     assert f'mellum_graph_captures_total {captures}\n' in metrics
 with request('/readyz') as r:assert json.load(r)['ready']
 print('ALL SMOKE CHECKS PASSED',flush=True)

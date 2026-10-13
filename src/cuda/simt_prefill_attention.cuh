@@ -1,11 +1,11 @@
 #pragma once
 #include "simt_batch_state.cuh"
-template<bool Local>
+template<bool Local,bool FastAddress=true,int Prefetch=1>
 __global__ void AttendSimtBatch(const float* q,const __nv_bfloat16* kc,const __nv_bfloat16* vc,float* out,
     const SimtBatch* batch,int cap,float* workspace,int* bad,const __nv_bfloat16* current,int first){
   const int row=first+blockIdx.y;if(row>=batch->rows)return;
   const int pos=batch->base+row;q+=row*4096;out+=row*4096;
-  if(pos<0 || (!Local && pos>=cap) || cap<1 || blockDim.x!=256){if(!threadIdx.x)atomicExch(bad,1);return;}
+  if(pos<0 || (!Local && pos>=cap) || cap<1 || (FastAddress && Local && cap!=1024) || blockDim.x!=256){if(!threadIdx.x)atomicExch(bad,1);return;}
   const int h=blockIdx.x,kvh=h/8,start=Local?max(0,pos-1023):0,n=pos-start+1;
   float* scores=workspace+(blockIdx.y*32+h)*cap;
   __shared__ float scratch[16],maximum,total;
@@ -16,7 +16,7 @@ __global__ void AttendSimtBatch(const float* q,const __nv_bfloat16* kc,const __n
   for(int i=0;i<16;++i)query[i]=q[h*128+lane+i*8];
   float mx=-INFINITY;
   for(int j=group;j<n;j+=32){
-    float dot=0,error=0;const int offset=((start+j)%cap)*512+kvh*128+lane;
+    float dot=0,error=0;const int offset=SimtKVSlot<Local,FastAddress>(start+j,cap)*512+kvh*128+lane;
     #pragma unroll
     for(int i=0;i<16;++i)Accumulate(__fmul_rn(query[i],__bfloat162float(start+j>=batch->base?current[(start+j-batch->base)*512+kvh*128+lane+i*8]:kc[offset+i*8])),dot,error);
     #pragma unroll
@@ -31,7 +31,16 @@ __global__ void AttendSimtBatch(const float* q,const __nv_bfloat16* kc,const __n
   if(threadIdx.x<128)for(int j=threadIdx.x;j<n;j+=128)scores[j]=B(__fdiv_rn(scores[j],total));
   __syncthreads();
   if(threadIdx.x<128){float value=0,low=0;
-    for(int j=0;j<n;++j)Accumulate(__fmul_rn(scores[j],__bfloat162float(start+j>=batch->base?current[(kSimtBatch+start+j-batch->base)*512+kvh*128+threadIdx.x]:vc[((start+j)%cap)*512+kvh*128+threadIdx.x])),value,low);
+    if constexpr(Prefetch==1){
+      for(int j=0;j<n;++j)Accumulate(__fmul_rn(scores[j],__bfloat162float(start+j>=batch->base?current[(kSimtBatch+start+j-batch->base)*512+kvh*128+threadIdx.x]:vc[SimtKVSlot<Local,FastAddress>(start+j,cap)*512+kvh*128+threadIdx.x])),value,low);
+    }else{
+      for(int base=0;base<n;base+=Prefetch){float probabilities[Prefetch],values[Prefetch];
+        #pragma unroll
+        for(int j=0;j<Prefetch;++j)if(base+j<n){const int absolute=start+base+j;probabilities[j]=scores[base+j];values[j]=__bfloat162float(absolute>=batch->base?current[(kSimtBatch+absolute-batch->base)*512+kvh*128+threadIdx.x]:vc[SimtKVSlot<Local,FastAddress>(absolute,cap)*512+kvh*128+threadIdx.x]);}
+        #pragma unroll
+        for(int j=0;j<Prefetch;++j)if(base+j<n)Accumulate(__fmul_rn(probabilities[j],values[j]),value,low);
+      }
+    }
     out[h*128+threadIdx.x]=B(__fadd_rn(value,low));Finite(value,bad);
   }
 }
