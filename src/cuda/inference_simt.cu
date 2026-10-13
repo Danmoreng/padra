@@ -241,7 +241,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     identity.kernel_profile+=o.simt_reference_codec?"-decode-reference-codec-v1":"-pascal-codec-lut-warp-h128-v3";
 #endif
     if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-fp8-m8-n32-grouped-exl3-m8-n128-v4";
-    identity.kernel_profile+=o.simt_reference_attention?";attention-direct-kv-prefetch8-v2":";attention-split-candidate-v1";
+    identity.kernel_profile+=o.simt_reference_attention?";attention-direct-kv-prefetch8-v2":";attention-split-padded-direct-kv-candidate-v2";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch=batch?"EXL3 K4 prefill grouped M8/N128; decode selected N128/eight-warps; FP32 FMA":"EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";
