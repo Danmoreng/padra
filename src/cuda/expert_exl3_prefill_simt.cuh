@@ -34,9 +34,9 @@ __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const
   if(blockIdx.y>=static_cast<unsigned>(*total))return;
   const auto tile=tiles[blockIdx.y];const auto m=matrices[(layer*64+tile.expert)*3+part];
   const int lane=threadIdx.x&31,warp=threadIdx.x/32,base=blockIdx.x*128,col=lane/4,ki=(lane&3)*2;
-  int pairs[8];
-  #pragma unroll
-  for(int r=0;r<8;++r)pairs[r]=tile.begin+r<counts[tile.expert]?groups[tile.expert*kSimtBatch+tile.begin+r]:-1;
+  __shared__ int pairs[8];
+  if(threadIdx.x<8)pairs[threadIdx.x]=tile.begin+threadIdx.x<counts[tile.expert]?groups[tile.expert*kSimtBatch+tile.begin+threadIdx.x]:-1;
+  __syncthreads();
   __shared__ float transformed[8][128],raw[8][128];float low[8]={},high[8]={};
   for(int at=0;at<m.cols;at+=128){
     for(int i=threadIdx.x;i<8*128;i+=256){const int r=i/128,c=i%128;transformed[r][c]=pairs[r]>=0?input[pairs[r]*m.cols+at+c]:0.f;}__syncthreads();
