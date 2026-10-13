@@ -16,11 +16,17 @@ __global__ void StoreSimt(const float* k,const float* v,__nv_bfloat16* kc,__nv_b
   kc[offset]=__float2bfloat16_rn(k[i]);vc[offset]=__float2bfloat16_rn(v[i]);
 }
 #include "attention_cta.cuh"
-template<bool Local>
+template<bool Local,bool FastAddress=true>
+__device__ __forceinline__ int SimtKVSlot(int absolute,int capacity){
+  if constexpr(!FastAddress)return absolute%capacity;
+  else if constexpr(Local)return absolute&1023;
+  else return absolute;
+}
+template<bool Local,int Prefetch=1,bool FastAddress=true>
 __global__ void AttendSimt(const float* q,const __nv_bfloat16* kc,const __nv_bfloat16* vc,float* out,
     const SimtCommand* command,int cap,float* workspace,int* bad){
   const int pos=command->position;
-  if(pos<0 || (!Local && pos>=cap) || cap<1 || blockDim.x!=256){if(!threadIdx.x)atomicExch(bad,1);return;}
+  if(pos<0 || (!Local && pos>=cap) || cap<1 || (FastAddress && Local && cap!=1024) || blockDim.x!=256){if(!threadIdx.x)atomicExch(bad,1);return;}
   const int h=blockIdx.x,kvh=h/8,start=Local?max(0,pos-1023):0,n=pos-start+1;
   float* scores=workspace+h*cap;
   __shared__ float scratch[16],maximum,total;
@@ -31,7 +37,7 @@ __global__ void AttendSimt(const float* q,const __nv_bfloat16* kc,const __nv_bfl
   for(int i=0;i<16;++i)query[i]=q[h*128+lane+i*8];
   float mx=-INFINITY;
   for(int j=group;j<n;j+=32){
-    float dot=0,error=0;const int offset=((start+j)%cap)*512+kvh*128+lane;
+    float dot=0,error=0;const int offset=SimtKVSlot<Local,FastAddress>(start+j,cap)*512+kvh*128+lane;
     #pragma unroll
     for(int i=0;i<16;++i)Accumulate(__fmul_rn(query[i],__bfloat162float(kc[offset+i*8])),dot,error);
     #pragma unroll
@@ -46,7 +52,17 @@ __global__ void AttendSimt(const float* q,const __nv_bfloat16* kc,const __nv_bfl
   if(threadIdx.x<128)for(int j=threadIdx.x;j<n;j+=128)scores[j]=B(__fdiv_rn(scores[j],total));
   __syncthreads();
   if(threadIdx.x<128){float value=0,low=0;
-    for(int j=0;j<n;++j)Accumulate(__fmul_rn(scores[j],__bfloat162float(vc[((start+j)%cap)*512+kvh*128+threadIdx.x])),value,low);
+    if constexpr(Prefetch==1){
+      for(int j=0;j<n;++j)Accumulate(__fmul_rn(scores[j],__bfloat162float(vc[SimtKVSlot<Local,FastAddress>(start+j,cap)*512+kvh*128+threadIdx.x])),value,low);
+    }else{
+      // Issue independent loads ahead of the compensated, ordered accumulation.
+      for(int base=0;base<n;base+=Prefetch){float probabilities[Prefetch],values[Prefetch];
+        #pragma unroll
+        for(int j=0;j<Prefetch;++j)if(base+j<n){probabilities[j]=scores[base+j];values[j]=__bfloat162float(vc[SimtKVSlot<Local,FastAddress>(start+base+j,cap)*512+kvh*128+threadIdx.x]);}
+        #pragma unroll
+        for(int j=0;j<Prefetch;++j)if(base+j<n)Accumulate(__fmul_rn(probabilities[j],values[j]),value,low);
+      }
+    }
     out[h*128+threadIdx.x]=B(__fadd_rn(value,low));Finite(value,bad);
   }
 }

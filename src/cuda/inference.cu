@@ -1320,7 +1320,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_decode_n32)
       Check(cudaFuncGetAttributes(&attributes, exl3_n32::Projection));
     if (o.exl3_decode_selected)
-      Check(cudaFuncGetAttributes(&attributes, exl3_selected::Projection));
+      Check(cudaFuncGetAttributes(&attributes, exl3_selected::Projection<false>));
     if (o.exl3_prefill_fp16)
       for (const auto kernel : {reinterpret_cast<const void *>(exl3_fp16::Input),
                                 reinterpret_cast<const void *>(exl3_fp16::Projection),
