@@ -30,6 +30,7 @@ namespace {
 #include "simt_prefill.cuh"
 #include "simt_prefill_attention.cuh"
 #include "fp8_prefill_simt.cuh"
+#include "expert_exl3_prefill_simt.cuh"
 
 struct Layer {
   DeviceMatrix norm,post,qn,kn,q,k,v,out,router;
@@ -212,9 +213,12 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         simt_batch::Rank<<<256,64,0,stream.s>>>(brouter,buffer("batch_ids").As<int>(),buffer("batch_routing").As<float>(),bad,batch);
         auto* bids=buffer("batch_ids").As<int>();auto* weights=buffer("batch_routing").As<float>();
         dump("post_norm",bn,2304);dump("router_ids_i32",bids,8);dump("routing_weights",weights,8);
-        const auto experts=[&](int part,const float* in,float* out){const int cols=part==2?896:2304,rows=part==2?2304:896;
-          simt_batch::InputHadRows<<<dim3(cols/128,256*8),128,0,stream.s>>>(descriptors,l,part,bids,in,bt,bad,batch);
-          exl3_selected::Projection<false><<<dim3(rows/128,256*8),256,0,stream.s>>>(descriptors,l,part,bids,bt,out,256*8,bad,&batch->rows);
+        auto* groups=buffer("batch_groups").As<int>();auto* counts_per_expert=buffer("batch_counts").As<int>();
+        auto* tiles=buffer("batch_tiles").As<simt_batch::ExpertTile>();auto* tile_count=buffer("batch_tile_count").As<int>();
+        simt_batch::Group<<<64,128,0,stream.s>>>(bids,groups,counts_per_expert,bad,batch);
+        simt_batch::Describe<<<1,64,0,stream.s>>>(counts_per_expert,tiles,tile_count,bad,batch);
+        const auto experts=[&](int part,const float* in,float* out){
+          simt_batch::Experts(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);
         };
         experts(0,bn,bg);dump("expert_gate",bg,8*896);experts(1,bn,bu);dump("expert_up",bu,8*896);
         simt_batch::Silu<<<256*56,128,0,stream.s>>>(bg,bu,silu,bad,batch);dump("expert_activation",bg,8*896);
@@ -228,7 +232,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     InferenceResult identity;identity.weights_sha256=model.weights_sha256;identity.weights_bytes=weights_bytes;identity.kv_bytes=buffer("kv").bytes;
     identity.resident_buffer_bytes=plan.resident;identity.device_free_before=free_before;identity.device_free_after_initialization=free;
     identity.kernel_profile="exl3-k4-simt-sm" MELLUM16_ARCHITECTURE "-token-graph-pascal-codec-v2";
-    if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-fp8-m8-v2";
+    if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-fp8-m8-grouped-exl3-m8-v3";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";

@@ -19,8 +19,24 @@ namespace mellum16 {namespace {
 #include "cuda/simt_prefill.cuh"
 #include "cuda/simt_prefill_attention.cuh"
 #include "cuda/fp8_prefill_simt.cuh"
+#include "cuda/expert_exl3_prefill_simt.cuh"
 void Require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 __nv_bfloat16 Value(int pos,int d,bool key){return __float2bfloat16_rn(float((pos*(key?3:5)+d)%17-8)/(key?32:8));}
+void Experts(int tokens,int part,bool skew){
+  const int rows=part==2?2304:896,cols=part==2?896:2304;const std::size_t bytes=std::size_t(rows)*cols/2;
+  std::vector<unsigned> weights(bytes*64/4);unsigned seed=23;for(auto& word:weights){seed=1664525U*seed+1013904223U;word=seed;}
+  std::vector<unsigned short> side(64*(rows+cols));for(int e=0;e<64;++e)for(int i=0;i<rows+cols;++i)side[e*(rows+cols)+i]=__half_as_ushort(__float2half_rn(float((e*7+i)%17-8)/64));
+  std::vector<float> input(256*8*cols);for(std::size_t i=0;i<input.size();++i)input[i]=__bfloat162float(__float2bfloat16_rn(std::sin(float(i))*.5f));
+  std::vector<int> ids(tokens*8);for(int row=0;row<tokens;++row){for(int slot=0;slot<8;++slot)ids[row*8+slot]=skew?slot:(row*11+slot*7)%64;std::sort(ids.begin()+row*8,ids.begin()+row*8+8);}
+  Buffer w(weights.size()*4),sides(side.size()*2),source(input.size()*4),chosen(256*8*4),desc(64*3*sizeof(DeviceMatrix)),transformed(input.size()*4),reference_input(input.size()*4),output(256*8*rows*4),reference(256*8*rows*4),state(sizeof(SimtBatch)),groups(64*256*4),counts(64*4),tiles(319*sizeof(simt_batch::ExpertTile)),total(4),bad(4);
+  Check(cudaMemcpy(w.p,weights.data(),w.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(sides.p,side.data(),sides.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(source.p,input.data(),source.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(chosen.p,ids.data(),ids.size()*4,cudaMemcpyHostToDevice));Check(cudaMemset(bad.p,0,4));
+  std::vector<DeviceMatrix> table(64*3);for(int e=0;e<64;++e)table[e*3+part]=DeviceMatrix{w.As<unsigned char>()+e*bytes,nullptr,nullptr,rows,cols,3,sides.As<unsigned short>()+e*(rows+cols),sides.As<unsigned short>()+e*(rows+cols)+cols};Check(cudaMemcpy(desc.p,table.data(),desc.bytes,cudaMemcpyHostToDevice));SetSimtBatch<<<1,1>>>(state.As<SimtBatch>(),0,tokens,8192,bad.As<int>());
+  simt_batch::Group<<<64,128>>>(chosen.As<int>(),groups.As<int>(),counts.As<int>(),bad.As<int>(),state.As<SimtBatch>());simt_batch::Describe<<<1,64>>>(counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),bad.As<int>(),state.As<SimtBatch>());
+  simt_batch::Experts(desc.As<DeviceMatrix>(),0,part,chosen.As<int>(),source.As<float>(),output.As<float>(),transformed.As<float>(),groups.As<int>(),counts.As<int>(),tiles.As<simt_batch::ExpertTile>(),total.As<int>(),bad.As<int>(),state.As<SimtBatch>(),nullptr);
+  simt_batch::InputHadRows<<<dim3(cols/128,256*8),128>>>(desc.As<DeviceMatrix>(),0,part,chosen.As<int>(),source.As<float>(),reference_input.As<float>(),bad.As<int>(),state.As<SimtBatch>());
+  exl3_selected::Projection<false><<<dim3(rows/128,tokens*8),256>>>(desc.As<DeviceMatrix>(),0,part,chosen.As<int>(),reference_input.As<float>(),reference.As<float>(),tokens*8,bad.As<int>());Check(cudaDeviceSynchronize());
+  std::vector<float> x(tokens*8*rows),y(x),a(tokens*8*cols),b(a);Check(cudaMemcpy(x.data(),output.p,x.size()*4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(y.data(),reference.p,y.size()*4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(a.data(),transformed.p,a.size()*4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(b.data(),reference_input.p,b.size()*4,cudaMemcpyDeviceToHost));Require(!memcmp(a.data(),b.data(),a.size()*4),"warp input H128 changed arithmetic");Require(!memcmp(x.data(),y.data(),x.size()*4),"grouped expert reuse/scatter changed arithmetic");int flag=0,n=0;Check(cudaMemcpy(&flag,bad.p,4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(&n,total.p,4,cudaMemcpyDeviceToHost));Require(!flag && n<=319,"invalid expert grouping/descriptor count");
+}
 void FP8(int tokens,int cols){
   const int rows=512;std::vector<unsigned char> weights(rows*cols),activation(tokens*cols);unsigned seed=23;
   for(auto* data:{&weights,&activation})for(auto& value:*data){seed=1664525U*seed+1013904223U;value=static_cast<unsigned char>(seed>>24);if((value&127)==127)--value;}
@@ -47,4 +63,4 @@ void Attention(bool local,int base,int rows){
   Check(cudaDeviceSynchronize());std::vector<float> a(rows*4096),b(a);Check(cudaMemcpy(a.data(),result.p,a.size()*4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(b.data(),reference.p,b.size()*4,cudaMemcpyDeviceToHost));Require(!memcmp(a.data(),b.data(),a.size()*4),"batch attention differs from sequential causal/ring reference");int flag=0;Check(cudaMemcpy(&flag,bad.p,4,cudaMemcpyDeviceToHost));Require(!flag,"batch attention read poisoned future/tail rows");
 }
 }}
-int main(){try{using namespace mellum16;for(int tokens:{1,3,16,31,64,128,256})for(int cols:{2304,4096})FP8(tokens,cols);for(bool local:{false,true})for(auto shape:std::array<std::pair<int,int>,5>{{{0,3},{1017,31},{1024,256},{2000,16},{8000,128}}})Attention(local,shape.first,shape.second);std::cout<<"Staged causal batch attention, tails and local ring wrap are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{using namespace mellum16;for(int tokens:{1,3,17,256})for(int part:{0,1,2})for(bool skew:{false,true})Experts(tokens,part,skew);for(int tokens:{1,3,16,31,64,128,256})for(int cols:{2304,4096})FP8(tokens,cols);for(bool local:{false,true})for(auto shape:std::array<std::pair<int,int>,5>{{{0,3},{1017,31},{1024,256},{2000,16},{8000,128}}})Attention(local,shape.first,shape.second);std::cout<<"Staged causal batch attention, tails and local ring wrap are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
