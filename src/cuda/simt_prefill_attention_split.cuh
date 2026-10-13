@@ -5,9 +5,10 @@ __global__ void QK(const float* q,const __nv_bfloat16* keys,const __nv_bfloat16*
   const int common_start=local?max(0,batch->base+first-1023):0,key_first=common_start+blockIdx.x*64;
   const int last=batch->base+min(batch->rows-1,first+7);
   if(first>=batch->rows || key_first>last)return;
-  __shared__ __nv_bfloat16 tile[64][128];
+  // Pad the BF16 row so adjacent eight-lane key groups use different banks.
+  __shared__ __nv_bfloat16 tile[64][136];
   for(int i=threadIdx.x;i<64*128;i+=256){const int absolute=key_first+i/128,d=i%128;
-    tile[i/128][d]=absolute>last?__float2bfloat16_rn(0.f):absolute>=batch->base?current[(absolute-batch->base)*512+(head/8)*128+d]:keys[(absolute%capacity)*512+(head/8)*128+d];}
+    tile[i/128][d]=absolute>last?__float2bfloat16_rn(0.f):absolute>=batch->base?current[(absolute-batch->base)*512+(head/8)*128+d]:keys[(local?(absolute&1023):absolute)*512+(head/8)*128+d];}
   __syncthreads();if(row>=batch->rows)return;
   const int pos=batch->base+row,start=local?max(0,pos-1023):0;
   float query[16];
@@ -33,17 +34,17 @@ __global__ void Softmax(float* workspace,const SimtBatch* batch,int capacity,boo
   sum=AttentionAccurateReduce8(sum,error,scratch);if(!threadIdx.x)total=sum;__syncthreads();
   if(threadIdx.x<128)for(int j=threadIdx.x;j<n;j+=128)scores[j]=B(__fdiv_rn(scores[j],total));
 }
-__device__ __forceinline__ float V(const __nv_bfloat16* cache,const __nv_bfloat16* current,int absolute,int base,int capacity,int head,int d){return __bfloat162float(absolute>=base?current[(256+absolute-base)*512+(head/8)*128+d]:cache[(absolute%capacity)*512+(head/8)*128+d]);}
+__device__ __forceinline__ float V(const __nv_bfloat16* cache,const __nv_bfloat16* current,int absolute,int base,int capacity,int head,int d,bool local){return __bfloat162float(absolute>=base?current[(256+absolute-base)*512+(head/8)*128+d]:cache[(local?(absolute&1023):absolute)*512+(head/8)*128+d]);}
 __global__ void PV(const __nv_bfloat16* cache,const __nv_bfloat16* current,const float* workspace,float* output,const SimtBatch* batch,int capacity,bool local,int first,int* bad){
   const int row=first+blockIdx.y;if(row>=batch->rows)return;
   const int pos=batch->base+row,start=local?max(0,pos-1023):0,n=pos-start+1,h=blockIdx.x,d=threadIdx.x;
   const float* scores=workspace+(blockIdx.y*32+h)*capacity;float probability[8],value[8];
   #pragma unroll
-  for(int i=0;i<8;++i){probability[i]=i<n?scores[i]:0.f;value[i]=i<n?V(cache,current,start+i,batch->base,capacity,h,d):0.f;}
+  for(int i=0;i<8;++i){probability[i]=i<n?scores[i]:0.f;value[i]=i<n?V(cache,current,start+i,batch->base,capacity,h,d,local):0.f;}
   float sum=0,error=0;
   for(int base=0;base<n;base+=8){
     #pragma unroll
-    for(int i=0;i<8;++i){const float p=probability[i],v=value[i];const int next=base+i+8;if(next<n){probability[i]=scores[next];value[i]=V(cache,current,start+next,batch->base,capacity,h,d);}if(base+i<n)Accumulate(__fmul_rn(p,v),sum,error);}
+    for(int i=0;i<8;++i){const float p=probability[i],v=value[i];const int next=base+i+8;if(next<n){probability[i]=scores[next];value[i]=V(cache,current,start+next,batch->base,capacity,h,d,local);}if(base+i<n)Accumulate(__fmul_rn(p,v),sum,error);}
   }
   output[row*4096+h*128+d]=B(__fadd_rn(sum,error));Finite(sum,bad);
 }

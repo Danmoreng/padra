@@ -5,8 +5,9 @@ __global__ void QK(const float* q,const __nv_bfloat16* keys,float* scores,const 
   const int pos=command->position,start=local?max(0,pos-1023):0,n=pos-start+1,first=blockIdx.x*64;
   if(first>=n)return;if(pos<0 || (!local && pos>=capacity)){if(!threadIdx.x)atomicExch(bad,1);return;}
   const int head=blockIdx.y*4+threadIdx.x/64,kv_head=head/8,lane=threadIdx.x&7,group=(threadIdx.x&63)/8;
-  __shared__ __nv_bfloat16 tile[64][128];
-  for(int i=threadIdx.x;i<64*128;i+=256){const int j=i/128,d=i%128;tile[j][d]=first+j<n?keys[((start+first+j)%capacity)*512+kv_head*128+d]:__float2bfloat16_rn(0.f);}
+  // Pad the BF16 row so adjacent eight-lane key groups use different banks.
+  __shared__ __nv_bfloat16 tile[64][136];
+  for(int i=threadIdx.x;i<64*128;i+=256){const int j=i/128,d=i%128;tile[j][d]=first+j<n?keys[(local?((start+first+j)&1023):(start+first+j))*512+kv_head*128+d]:__float2bfloat16_rn(0.f);}
   __syncthreads();float query[16];
   #pragma unroll
   for(int i=0;i<16;++i)query[i]=q[head*128+lane+i*8];
@@ -32,11 +33,11 @@ __global__ void PV(const __nv_bfloat16* values,const float* workspace,float* out
   const int pos=command->position,start=local?max(0,pos-1023):0,n=pos-start+1,h=blockIdx.x,d=threadIdx.x;
   const float* scores=workspace+h*capacity;float probability[8],value[8];
   #pragma unroll
-  for(int i=0;i<8;++i){probability[i]=i<n?scores[i]:0.f;value[i]=i<n?__bfloat162float(values[((start+i)%capacity)*512+(h/8)*128+d]):0.f;}
+  for(int i=0;i<8;++i){probability[i]=i<n?scores[i]:0.f;value[i]=i<n?__bfloat162float(values[(local?((start+i)&1023):(start+i))*512+(h/8)*128+d]):0.f;}
   float sum=0,error=0;
   for(int base=0;base<n;base+=8){
     #pragma unroll
-    for(int i=0;i<8;++i){const float p=probability[i],v=value[i];const int next=base+i+8;if(next<n){probability[i]=scores[next];value[i]=__bfloat162float(values[((start+next)%capacity)*512+(h/8)*128+d]);}if(base+i<n)Accumulate(__fmul_rn(p,v),sum,error);}
+    for(int i=0;i<8;++i){const float p=probability[i],v=value[i];const int next=base+i+8;if(next<n){probability[i]=scores[next];value[i]=__bfloat162float(values[(local?((start+next)&1023):(start+next))*512+(h/8)*128+d]);}if(base+i<n)Accumulate(__fmul_rn(p,v),sum,error);}
   }
   output[h*128+d]=B(__fadd_rn(sum,error));Finite(sum,bad);
 }
