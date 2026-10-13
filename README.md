@@ -11,7 +11,7 @@ Padra is inspired by Padparadscha; its name is independent of GPU memory size.
 The server includes native tokenization, the original model chat/thinking template,
 GPU sampling with frequency/presence/repetition penalties, Chat Completions,
 Responses, streaming, function calls and bounded session/KV reuse. Weights remain
-GPU-resident. Default context is 131,072 tokens with BF16 KV. Explicit
+GPU-resident. SM120 default context is 131,072 tokens with BF16 KV. Explicit
 [16/12/8 GB profiles](docs/gpu-profiles.md) provide 131K context and MTP with
 K6/BF16-KV, K6/Q8_0-KV and K3/Q8_0-KV respectively. Physical 8/12 GB GPUs are
 not qualified; their memory ceilings are checked on the tested 16 GB GPU.
@@ -51,6 +51,11 @@ cmake --build build/sm61
 Architecture auto-detection selects the SIMT backend for non-SM120 devices.
 An explicit target is required when cross-compiling. CUDA 13 cannot compile
 Pascal; use a CUDA 12.x compiler and toolkit.
+
+SIMT prefill runs by layer in batches of up to 256 rows, with staged local KV
+and reusable decode graphs. Offline captures, operator timing and teacher replay
+are available through `PADRA_BUILD_DIAGNOSTICS=ON`. See the
+[Pascal performance report](docs/pascal-sm61-performance-results.md) for measurements.
 
 ## Build
 
