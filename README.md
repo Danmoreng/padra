@@ -34,6 +34,24 @@ required licenses. A prepared native artifact is required; weights and conversio
 outputs are not distributed here. The runtime uses the `mellum16` namespace and
 the pinned native K3/K4/K6 artifact identities.
 
+## Pascal / portable SIMT backend
+
+The separate SIMT backend supports SM61 and newer, including the GTX 1070,
+with CUDA Toolkit 12.x for Pascal. It uses the pinned EXL3 K4 artifact,
+BF16 KV and an 8192-token default context with 256-token chunks. MTP,
+Q8/Q8_0 KV and the stored shared Q8 head require additional SIMT porting;
+the SM120 GPU profiles above do not enable these features on Pascal.
+
+```sh
+cmake -S . -B build/sm61 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DPADRA_CUDA_ARCHITECTURE=61 -DPADRA_CUDA_BACKEND=simt
+cmake --build build/sm61
+```
+
+Architecture auto-detection selects the SIMT backend for non-SM120 devices.
+An explicit target is required when cross-compiling. CUDA 13 cannot compile
+Pascal; use a CUDA 12.x compiler and toolkit.
+
 ## Build
 
 Linux requirements: CMake 3.28+, Ninja, C++20 compiler, CUDA 12.8+ with SM120 support,

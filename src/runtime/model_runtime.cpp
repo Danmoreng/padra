@@ -1,4 +1,5 @@
 #include "runtime/model_runtime.h"
+#include "runtime/gpu_build_config.h"
 #include "runtime/native_artifacts.h"
 #include "compiler/sha256.h"
 #include <fstream>
@@ -13,6 +14,12 @@ InferenceOptions SelectedServerOptions(const std::filesystem::path &path,
   o.tokenizer_sha256 = tokenizer;
   o.capacity = 8192;
   o.prefill_chunk = 2048;
+#if PADRA_BUILD_SIMT
+  o.prefill_chunk = kDefaultServerChunk;
+  o.exl3_experts = true;
+  o.exl3_rate = expert_rate;
+  return o;
+#else
   o.native_prefill = o.fp8_expert_activations = o.native_decode = true;
   o.online_prefill_attention = o.gqa8_prefill_attention = o.packed_bf16_prefill_attention =
       o.padded_bf16_prefill_attention = true;
@@ -33,6 +40,7 @@ InferenceOptions SelectedServerOptions(const std::filesystem::path &path,
       o.exl3_wide_input = true;
   o.device_decode = o.decode_graphs = o.full_decode_graph = o.fast_w4a8 = true;
   return o;
+#endif
 }
 #if MELLUM16_HAS_CUDA
 Result<std::unique_ptr<RuntimeBackend>> LoadCudaModelRuntime(InferenceOptions);
@@ -117,7 +125,7 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
   (void)device_budget_gib;
   (void)enable_checkpoint;
   (void)mtp;
-  return Status(StatusCode::kUnsupported, "persistent model runtime requires compiled CUDA/SM120");
+  return Status(StatusCode::kUnsupported, "persistent model runtime requires compiled CUDA");
 #endif
 }
 } // namespace mellum16

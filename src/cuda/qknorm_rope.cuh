@@ -4,7 +4,14 @@
 __global__ void QKNormRope(float *q, float *k, DeviceMatrix qn, DeviceMatrix kn, const float *table,
                            int position, int *bad, float *capturedQ = nullptr,
                            float *capturedK = nullptr, const PrefillState *prefill = nullptr,
-                           int maximum = 8192) {
+                           int maximum = 8192, const int *device_position = nullptr) {
+  if (device_position) {
+    position = *device_position;
+    if (position < 0 || position >= maximum) {
+      if (threadIdx.x == 0 && bad) atomicExch(bad, 1);
+      return;
+    }
+  }
   if (prefill) {
     if (!ValidPrefillState(*prefill, static_cast<int>(gridDim.y), prefill->capacity, 1, maximum)) {
       if (threadIdx.x == 0 && bad)

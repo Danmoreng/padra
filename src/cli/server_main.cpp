@@ -1,4 +1,5 @@
 #include "runtime/model_runtime.h"
+#include "runtime/gpu_build_config.h"
 #include "server/http_server.h"
 #include "text/tokenizer.h"
 #include "util/json.h"
@@ -112,7 +113,7 @@ int main(int argc, char **argv) {
         throw std::runtime_error("generation timeout must be1..600000ms");
       limits.generation_timeout = std::chrono::milliseconds(milliseconds);
     }
-    int capacity = 131072;
+    int capacity = mellum16::kDefaultServerContext;
     if (positional_argc <= 5)
       limits.generation_timeout = std::chrono::milliseconds(600000);
     if (positional_argc > 6) {
@@ -121,7 +122,7 @@ int main(int argc, char **argv) {
       if (code != std::errc{} || *stop)
         throw std::runtime_error("invalid context capacity integer");
     }
-    int chunk = 2048, budget = 0;
+    int chunk = mellum16::kDefaultServerChunk, budget = 0;
     for (int argument = 7; argument < std::min(positional_argc, 9); ++argument) {
       int &value = argument == 7 ? chunk : budget;
       auto [stop, code] = std::from_chars(

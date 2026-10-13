@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime/inference.h"
+#include "runtime/gpu_build_config.h"
 #include "runtime/context_capacity.h"
 #include "runtime/server_profile.h"
 #include "runtime/session_state.h"
@@ -14,8 +15,15 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
                                           KVCacheFormat kv_format = KVCacheFormat::BF16,
                                           int chunk = 2048, int budget_gib = 0,
                                           bool checkpoint = false, int expert_rate = 4) {
-  return std::string("exl3-k") + std::to_string(expert_rate) +
-         (chunks ? "-chunk-graph-eager-tail-" : "-all-rows-wide-vector-") +
+#if PADRA_BUILD_SIMT
+  (void)chunks;
+  const auto base = std::string("exl3-k") + std::to_string(expert_rate) +
+                    "-simt-sm" + kBuildArchitecture + "-token-graph-";
+#else
+  const auto base = std::string("exl3-k") + std::to_string(expert_rate) +
+                    (chunks ? "-chunk-graph-eager-tail-" : "-all-rows-wide-vector-");
+#endif
+  return base +
          std::to_string(capacity) + "-v1" +
          (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1 ? "-q8-token-head128-f32scale-v1"
           : kv_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2

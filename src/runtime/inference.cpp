@@ -1,4 +1,5 @@
 #include "runtime/inference.h"
+#include "runtime/gpu_build_config.h"
 #include <algorithm>
 namespace mellum16 {
 #if MELLUM16_HAS_CUDA
@@ -45,6 +46,13 @@ std::vector<SnapshotRegion> OperatorSnapshotLayout(int layer, int position) {
   return regions;
 }
 Result<InferenceResult> RunInference(const InferenceOptions &o) {
+#if MELLUM16_HAS_CUDA && PADRA_BUILD_SIMT
+  // SIMT owns option admission; SM120 research dependencies do not apply.
+  if (o.diagnostic_cancel_after < -1 || (o.diagnostic_cancel_after >= 0 &&
+      (o.diagnostic_cancel_after < 1 || o.diagnostic_cancel_after >= o.generate)))
+    return Status(StatusCode::kInvalidArgument, "invalid diagnostic cancellation boundary");
+  return RunCudaInference(o);
+#else
   if ((o.cancellation_requested || o.diagnostic_cancel_after >= 0) && !o.device_decode)
     return Status(StatusCode::kUnsupported,
                   "token-boundary cancellation requires device decode state");
@@ -268,6 +276,7 @@ Result<InferenceResult> RunInference(const InferenceOptions &o) {
   return RunCudaInference(o);
 #else
   return Status(StatusCode::kUnsupported, "native inference requires the CUDA build");
+#endif
 #endif
 }
 } // namespace mellum16
