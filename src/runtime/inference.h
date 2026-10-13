@@ -44,6 +44,11 @@ struct InferenceOptions {
   int prefill_chunk = 128;
   int server_device_budget_gib = 0;  // Explicit ceiling; never reduces context/chunk/precision.
   bool server_kv_checkpoint = false; // One local-ring snapshot in the selected KV format.
+  // Offline SIMT qualification controls, never set by HTTP requests.
+  bool simt_reference_codec=false,simt_reference_prefill=false,simt_eager=false;
+  std::filesystem::path simt_diagnostics;
+  int simt_diagnostic_layer=0;
+  std::vector<int> simt_diagnostic_positions,simt_teacher_tokens;
   bool native_prefill = false;
   bool accurate_native_prefill = false;
   bool fp8_expert_activations = false;
