@@ -29,6 +29,7 @@ namespace {
 #include "simt_diagnostics.h"
 #include "simt_prefill.cuh"
 #include "simt_prefill_attention.cuh"
+#include "fp8_prefill_simt.cuh"
 
 struct Layer {
   DeviceMatrix norm,post,qn,kn,q,k,v,out,router;
@@ -191,9 +192,9 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         };
         dump("input",bx,2304);
         simt_batch::InputNorm<<<256,256,0,stream.s>>>(bx,bn,a.norm,be,bs,bad,batch);dump("input_norm",bn,2304);
-        simt_batch::FP8Rows<<<dim3(1024,256),128,0,stream.s>>>(a.q,be,bs,bq,bad,batch);
-        simt_batch::FP8Rows<<<dim3(128,256),128,0,stream.s>>>(a.k,be,bs,bk,bad,batch);
-        simt_batch::FP8Rows<<<dim3(128,256),128,0,stream.s>>>(a.v,be,bs,bv,bad,batch);
+        simt_batch::FP8(a.q,be,bs,bq,bad,batch,stream.s);
+        simt_batch::FP8(a.k,be,bs,bk,bad,batch,stream.s);
+        simt_batch::FP8(a.v,be,bs,bv,bad,batch,stream.s);
         dump("q_proj",bq,4096);dump("k_proj",bk,512);dump("v_proj",bv,512);
         simt_batch::QKRope<<<dim3(36,256),128,0,stream.s>>>(bq,bk,a.qn,a.kn,l%4==3?rope_global:rope_local,bad,batch);
         dump("q_rope",bq,4096);dump("k_rope",bk,512);
@@ -205,7 +206,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         // Current chunk cannot overwrite old local-ring rows before attention.
         simt_batch::Commit<<<dim3(4,256),128,0,stream.s>>>(bkv,a.kc,a.vc,a.capacity,batch);dump("attention",ba,4096);
         simt_batch::Quantize<<<256,128,0,stream.s>>>(ba,be,bs,bad,batch);
-        simt_batch::FP8Rows<<<dim3(576,256),128,0,stream.s>>>(a.out,be,bs,br,bad,batch);dump("o_proj",br,2304);
+        simt_batch::FP8(a.out,be,bs,br,bad,batch,stream.s);dump("o_proj",br,2304);
         simt_batch::PostNorm<<<dim3(1,256),128,0,stream.s>>>(bx,br,bn,a.post,bad,batch);
         simt_batch::Router<<<dim3(64,256),32,0,stream.s>>>(a.router,bn,brouter,bad,batch);
         simt_batch::Rank<<<256,64,0,stream.s>>>(brouter,buffer("batch_ids").As<int>(),buffer("batch_routing").As<float>(),bad,batch);
@@ -227,7 +228,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     InferenceResult identity;identity.weights_sha256=model.weights_sha256;identity.weights_bytes=weights_bytes;identity.kv_bytes=buffer("kv").bytes;
     identity.resident_buffer_bytes=plan.resident;identity.device_free_before=free_before;identity.device_free_after_initialization=free;
     identity.kernel_profile="exl3-k4-simt-sm" MELLUM16_ARCHITECTURE "-token-graph-pascal-codec-v2";
-    if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-v1";
+    if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-fp8-m8-v2";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";

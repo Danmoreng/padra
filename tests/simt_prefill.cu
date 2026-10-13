@@ -18,8 +18,18 @@ namespace mellum16 {namespace {
 #include "cuda/simt_kernels.cuh"
 #include "cuda/simt_prefill.cuh"
 #include "cuda/simt_prefill_attention.cuh"
+#include "cuda/fp8_prefill_simt.cuh"
 void Require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 __nv_bfloat16 Value(int pos,int d,bool key){return __float2bfloat16_rn(float((pos*(key?3:5)+d)%17-8)/(key?32:8));}
+void FP8(int tokens,int cols){
+  const int rows=512;std::vector<unsigned char> weights(rows*cols),activation(tokens*cols);unsigned seed=23;
+  for(auto* data:{&weights,&activation})for(auto& value:*data){seed=1664525U*seed+1013904223U;value=static_cast<unsigned char>(seed>>24);if((value&127)==127)--value;}
+  std::vector<unsigned short> ws(rows,0x3c00);std::vector<float> scales(tokens);for(int i=0;i<tokens;++i)scales[i]=float(i%13+1)/128;
+  Buffer w(weights.size()),a(256ULL*cols),side(rows*2),scale(256*4),output(256ULL*rows*4),reference(256ULL*rows*4),state(sizeof(SimtBatch)),bad(4);
+  Check(cudaMemcpy(w.p,weights.data(),w.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(a.p,activation.data(),activation.size(),cudaMemcpyHostToDevice));Check(cudaMemcpy(side.p,ws.data(),side.bytes,cudaMemcpyHostToDevice));Check(cudaMemcpy(scale.p,scales.data(),scales.size()*4,cudaMemcpyHostToDevice));Check(cudaMemset(bad.p,0,4));SetSimtBatch<<<1,1>>>(state.As<SimtBatch>(),0,tokens,8192,bad.As<int>());
+  DeviceMatrix m{w.As<unsigned char>(),side.As<unsigned char>(),nullptr,rows,cols,1};simt_batch::FP8Projection<<<dim3(rows/4,32),128>>>(m,a.As<unsigned char>(),scale.As<float>(),output.As<float>(),bad.As<int>(),state.As<SimtBatch>());
+  simt_batch::FP8Rows<<<dim3(rows/4,256),128>>>(m,a.As<unsigned char>(),scale.As<float>(),reference.As<float>(),bad.As<int>(),state.As<SimtBatch>());Check(cudaDeviceSynchronize());std::vector<float> x(tokens*rows),y(x);Check(cudaMemcpy(x.data(),output.p,x.size()*4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(y.data(),reference.p,y.size()*4,cudaMemcpyDeviceToHost));Require(!memcmp(x.data(),y.data(),x.size()*4),"tiled FP8 batch changed lane/FMA/scale arithmetic");int flag=0;Check(cudaMemcpy(&flag,bad.p,4,cudaMemcpyDeviceToHost));Require(!flag,"tiled FP8 batch flagged bad");
+}
 void Attention(bool local,int base,int rows){
   const int capacity=local?1024:8192;
   std::vector<__nv_bfloat16> keys(capacity*512,__float2bfloat16_rn(NAN)),values(keys),current(256*1024,__float2bfloat16_rn(NAN));
@@ -37,4 +47,4 @@ void Attention(bool local,int base,int rows){
   Check(cudaDeviceSynchronize());std::vector<float> a(rows*4096),b(a);Check(cudaMemcpy(a.data(),result.p,a.size()*4,cudaMemcpyDeviceToHost));Check(cudaMemcpy(b.data(),reference.p,b.size()*4,cudaMemcpyDeviceToHost));Require(!memcmp(a.data(),b.data(),a.size()*4),"batch attention differs from sequential causal/ring reference");int flag=0;Check(cudaMemcpy(&flag,bad.p,4,cudaMemcpyDeviceToHost));Require(!flag,"batch attention read poisoned future/tail rows");
 }
 }}
-int main(){try{using namespace mellum16;for(bool local:{false,true})for(auto shape:std::array<std::pair<int,int>,5>{{{0,3},{1017,31},{1024,256},{2000,16},{8000,128}}})Attention(local,shape.first,shape.second);std::cout<<"Staged causal batch attention, tails and local ring wrap are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{using namespace mellum16;for(int tokens:{1,3,16,31,64,128,256})for(int cols:{2304,4096})FP8(tokens,cols);for(bool local:{false,true})for(auto shape:std::array<std::pair<int,int>,5>{{{0,3},{1017,31},{1024,256},{2000,16},{8000,128}}})Attention(local,shape.first,shape.second);std::cout<<"Staged causal batch attention, tails and local ring wrap are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
