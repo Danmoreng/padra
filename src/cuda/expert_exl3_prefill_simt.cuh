@@ -30,9 +30,10 @@ __global__ void InputHad(const DeviceMatrix* matrices,int layer,int part,const i
   for(int j=0;j<4;++j){const float value=B(values[j]);transformed[pair*m.cols+first+j]=value;Finite(value,bad);}
 }
 // Weights decode once per eight expert rows. Original K16/eight-warp FMA order.
-__global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,const float* input,float* output,int* bad){
+template<bool SparseOnly=false> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,const float* input,float* output,int* bad){
   if(blockIdx.y>=static_cast<unsigned>(*total))return;
   const auto tile=tiles[blockIdx.y];const auto m=matrices[(layer*64+tile.expert)*3+part];
+  if constexpr(SparseOnly)if(counts[tile.expert]>=32)return;
   const int lane=threadIdx.x&31,warp=threadIdx.x/32,base=blockIdx.x*128,col=lane/4,ki=(lane&3)*2;
   __shared__ int pairs[8];
   if(threadIdx.x<8)pairs[threadIdx.x]=tile.begin+threadIdx.x<counts[tile.expert]?groups[tile.expert*kSimtBatch+tile.begin+threadIdx.x]:-1;

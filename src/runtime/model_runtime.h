@@ -17,7 +17,11 @@ inline std::string ServerExecutionProfile(int capacity,bool chunks,KVCacheFormat
 #else
   const std::string base=chunks?"exl3-k4-chunk-graph-eager-tail-":"exl3-k4-all-rows-wide-vector-";
 #endif
-  return base+std::to_string(capacity)+"-v1"+(kv_format==KVCacheFormat::Q8TokenHead128F32ScaleV1?"-q8-token-head128-f32scale-v1":"")+(chunk==2048?"":"-chunk"+std::to_string(chunk))+(budget_gib?"-budget"+std::to_string(budget_gib)+"GiB":"")+(checkpoint?"-local-checkpoint-bf16-v1":"");
+  std::string math;
+#if PADRA_BUILD_SIMT
+  if(std::string(kBuildArchitecture)=="61")math="-pascal-fp32-v2-attention-tiered-";
+#endif
+  return base+math+std::to_string(capacity)+"-v1"+(kv_format==KVCacheFormat::Q8TokenHead128F32ScaleV1?"-q8-token-head128-f32scale-v1":"")+(chunk==2048?"":"-chunk"+std::to_string(chunk))+(budget_gib?"-budget"+std::to_string(budget_gib)+"GiB":"")+(checkpoint?"-local-checkpoint-bf16-v1":"");
 }
 struct RuntimeStats {
   int capacity=8192,prefill_chunk=2048,device_budget_gib=0;

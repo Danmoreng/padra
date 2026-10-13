@@ -8,6 +8,9 @@
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #include <cuda_fp8.h>
+#if PADRA_CUDA_SM == 61
+#include <cublas_v2.h>
+#endif
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/device/device_scan.cuh>
 #include <algorithm>
@@ -33,6 +36,12 @@ namespace {
 #include "expert_exl3_prefill_simt.cuh"
 #include "simt_attention_split.cuh"
 #include "simt_prefill_attention_split.cuh"
+#include "expert_exl3_prefill_fast.cuh"
+#include "pascal_attention_fast.cuh"
+#if PADRA_CUDA_SM == 61
+#include "pascal_sgemm.cuh"
+#include "pascal_attention_sgemm.cuh"
+#endif
 
 struct Layer {
   DeviceMatrix norm,post,qn,kn,q,k,v,out,router;
@@ -55,6 +64,8 @@ Status ValidateSimtOptions(const InferenceOptions& o,bool persistent){
   if(o.simt_diagnostic_layer<0 || o.simt_diagnostic_layer>=28)
     return {StatusCode::kInvalidArgument,"invalid SIMT diagnostic layer"};
   for(int id:o.simt_teacher_tokens)if(id<0 || id>=98304)return {StatusCode::kInvalidArgument,"invalid SIMT teacher token"};
+  for(const auto& sequence:o.simt_teacher_sequences)for(int id:sequence)if(id<0 || id>=98304)return {StatusCode::kInvalidArgument,"invalid SIMT teacher sequence token"};
+  if(!o.simt_teacher_sequences.empty() && (o.simt_diagnostics.empty() || !o.simt_teacher_tokens.empty()))return {StatusCode::kInvalidArgument,"teacher sequences require offline diagnostics and no global teacher tokens"};
   if(!o.simt_teacher_tokens.empty() && (o.simt_diagnostics.empty() || o.simt_teacher_tokens.size()<static_cast<std::size_t>(std::max(0,o.generate-1))))
     return {StatusCode::kInvalidArgument,"SIMT teacher replay requires offline diagnostics and enough teacher tokens"};
   if(!persistent && o.server_kv_checkpoint)
@@ -88,7 +99,12 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       return Status(StatusCode::kDataLoss,"persistent runtime requires pinned K4 checkpoint");
     const auto weights_bytes=model.weights.size();
     const auto sampler_bytes=gpu_sampling::WorkspaceBytes();
-    const auto plan=PlanSimtMemory(weights_bytes,o.capacity,sampler_bytes,o.server_kv_checkpoint,!o.simt_reference_prefill);
+#if PADRA_CUDA_SM == 61
+    const bool fast_math=!o.simt_reference_math;
+#else
+    const bool fast_math=false;
+#endif
+    const auto plan=PlanSimtMemory(weights_bytes,o.capacity,sampler_bytes,o.server_kv_checkpoint,!o.simt_reference_prefill,fast_math);
     std::size_t free=0,total=0;Check(cudaMemGetInfo(&free,&total));
     const auto free_before=free;
     const auto available=ServerAvailableBytes(free,total,o.server_device_budget_gib);
@@ -151,7 +167,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.Measure("qknorm_rope_store",l,stream.s,[&]{QKNormRope<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,l%4==3?rope_global:rope_local,0,bad,nullptr,nullptr,nullptr,o.capacity,buffer("command").As<int>()+1);
         StoreSimt<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,command,a.capacity);});
         dump("q_rope",q,4096*4);dump("k_rope",k,512*4);
-        diagnostics.Measure("attention",l,stream.s,[&]{if(attention_keys)simt_attention_split::Launch(q,a.kc,a.vc,attention,command,a.capacity,l%4!=3,scores,bad,stream.s,attention_keys);else if(l%4==3)AttendSimt<false,8><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);
+        diagnostics.Measure("attention",l,stream.s,[&]{if(fast_math)pascal_attention::Decode(q,a.kc,a.vc,attention,command,a.capacity,l%4!=3,scores,bad,stream.s,attention_keys?attention_keys:1024,attention_keys?buffer("attention_partials").As<float>():nullptr);else if(attention_keys)simt_attention_split::Launch(q,a.kc,a.vc,attention,command,a.capacity,l%4!=3,scores,bad,stream.s,attention_keys);else if(l%4==3)AttendSimt<false,8><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);
         else AttendSimt<true,8><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);});
         dump("attention",attention,4096*4);
         diagnostics.Measure("o",l,stream.s,[&]{QuantizeSimt<<<1,128,0,stream.s>>>(attention,encoded,scale,4096,bad);
@@ -175,7 +191,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     };
     DecodeGraph middle_graph,long_graph;
     forward_graph.Capture(stream.s,[&]{forward(0);});
-    if(!o.simt_reference_attention){middle_graph.Capture(stream.s,[&]{forward(4096);});long_graph.Capture(stream.s,[&]{forward(o.capacity);});}
+    if(fast_math || !o.simt_reference_attention){middle_graph.Capture(stream.s,[&]{forward(4096);});long_graph.Capture(stream.s,[&]{forward(o.capacity);});}
     head_graph.Capture(stream.s,[&]{Norm<<<1,128,0,stream.s>>>(x,normalized,norm,2304,1);head_bf16_prefetch::Projection<<<24576,128,0,stream.s>>>(head,normalized,logits,bad);});
     DecodeGraph prefill_graph;
     SimtBatch* batch=nullptr;float *bx=nullptr,*bn=nullptr,*br=nullptr,*bq=nullptr,*ba=nullptr,*bk=nullptr,*bv=nullptr,*brouter=nullptr,*bg=nullptr,*bu=nullptr,*bd=nullptr,*bt=nullptr;
@@ -186,6 +202,23 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       bg=buffer("batch_experts").As<float>();bu=bg+256*8*896;bd=bu+256*8*896;bt=buffer("batch_transform").As<float>();
       be=buffer("batch_encoded").As<unsigned char>();bs=buffer("batch_scales").As<float>();bscore=buffer("batch_scores").As<float>();bkv=buffer("batch_kv").As<__nv_bfloat16>();
     }
+#if PADRA_CUDA_SM == 61
+    std::unique_ptr<pascal_sgemm::Handle> blas;
+    if(fast_math && batch){
+      blas=std::make_unique<pascal_sgemm::Handle>(stream.s,buffer("sgemm_workspace").p,buffer("sgemm_workspace").bytes);
+      // Initialize/warm cuBLAS outside capture. No request allocations/uploads.
+      Check(cudaMemsetAsync(be,0,buffer("batch_encoded").bytes,stream.s));Check(cudaMemsetAsync(bs,0,buffer("batch_scales").bytes,stream.s));Check(cudaMemsetAsync(bad,0,4,stream.s));
+      SetSimtBatch<<<1,1,0,stream.s>>>(batch,0,1,o.capacity,bad);
+      for(auto matrix:{layers[0].q,layers[0].k,layers[0].v,layers[0].out})pascal_sgemm::Projection(*blas,matrix,be,bs,bq,buffer("sgemm_weights").As<float>(),buffer("sgemm_inputs").As<float>(),bad,batch,stream.s);
+      Check(cudaStreamSynchronize(stream.s));
+    }
+#endif
+    const auto batch_projection=[&](DeviceMatrix matrix,float* output){
+#if PADRA_CUDA_SM == 61
+      if(blas){pascal_sgemm::Projection(*blas,matrix,be,bs,output,buffer("sgemm_weights").As<float>(),buffer("sgemm_inputs").As<float>(),bad,batch,stream.s);return;}
+#endif
+      simt_batch::FP8Tiled(matrix,be,bs,output,bad,batch,stream.s);
+    };
     int diagnostic_batch_base=0,diagnostic_batch_rows=0;
     const auto prefill=[&]{
       simt_batch::EmbedBatch<<<256,128,0,stream.s>>>(embed,buffer("prompt").As<int>(),bx,bad,batch);
@@ -197,22 +230,25 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         };
         dump("input",bx,2304);
         diagnostics.Measure("norm",l,stream.s,[&]{simt_batch::InputNorm<<<256,256,0,stream.s>>>(bx,bn,a.norm,be,bs,bad,batch);});dump("input_norm",bn,2304);
-        diagnostics.Measure("qkv",l,stream.s,[&]{simt_batch::FP8Tiled(a.q,be,bs,bq,bad,batch,stream.s);
-        simt_batch::FP8Tiled(a.k,be,bs,bk,bad,batch,stream.s);
-        simt_batch::FP8Tiled(a.v,be,bs,bv,bad,batch,stream.s);});
+        diagnostics.Measure("qkv",l,stream.s,[&]{batch_projection(a.q,bq);batch_projection(a.k,bk);batch_projection(a.v,bv);});
         dump("q_proj",bq,4096);dump("k_proj",bk,512);dump("v_proj",bv,512);
         diagnostics.Measure("qknorm_rope",l,stream.s,[&]{simt_batch::QKRope<<<dim3(36,256),128,0,stream.s>>>(bq,bk,a.qn,a.kn,l%4==3?rope_global:rope_local,bad,batch);});
         dump("q_rope",bq,4096);dump("k_rope",bk,512);
         diagnostics.Measure("attention",l,stream.s,[&]{simt_batch::Stage<<<dim3(4,256),128,0,stream.s>>>(bk,bv,bkv,batch);
+#if PADRA_CUDA_SM == 61
+        if(blas && o.capacity<=16384)pascal_attention_sgemm::Prefill(*blas,bq,a.kc,a.vc,bkv,ba,batch,a.capacity,l%4!=3,buffer("sgemm_weights").As<float>(),buffer("sgemm_inputs").As<float>(),bscore,bad,stream.s);
+        else
+#endif
         for(int first=0;first<256;first+=8){
-          if(!o.simt_reference_attention)simt_prefill_attention_split::Launch(bq,a.kc,a.vc,ba,batch,a.capacity,l%4!=3,bscore,bad,bkv,first,stream.s);
+          if(fast_math)pascal_attention::Prefill(bq,a.kc,a.vc,ba,batch,a.capacity,l%4!=3,bscore,bad,bkv,first,stream.s);
+          else if(!o.simt_reference_attention)simt_prefill_attention_split::Launch(bq,a.kc,a.vc,ba,batch,a.capacity,l%4!=3,bscore,bad,bkv,first,stream.s);
           else if(l%4==3)AttendSimtBatch<false><<<dim3(32,8),256,0,stream.s>>>(bq,a.kc,a.vc,ba,batch,a.capacity,bscore,bad,bkv,first);
           else AttendSimtBatch<true><<<dim3(32,8),256,0,stream.s>>>(bq,a.kc,a.vc,ba,batch,a.capacity,bscore,bad,bkv,first);
         }
         // Current chunk cannot overwrite old local-ring rows before attention.
         simt_batch::Commit<<<dim3(4,256),128,0,stream.s>>>(bkv,a.kc,a.vc,a.capacity,batch);});dump("attention",ba,4096);
         diagnostics.Measure("o",l,stream.s,[&]{simt_batch::Quantize<<<256,128,0,stream.s>>>(ba,be,bs,bad,batch);
-        simt_batch::FP8Tiled(a.out,be,bs,br,bad,batch,stream.s);});dump("o_proj",br,2304);
+        batch_projection(a.out,br);});dump("o_proj",br,2304);
         diagnostics.Measure("postnorm_router",l,stream.s,[&]{simt_batch::PostNorm<<<dim3(1,256),128,0,stream.s>>>(bx,br,bn,a.post,bad,batch);
         simt_batch::Router<<<dim3(64,256),32,0,stream.s>>>(a.router,bn,brouter,bad,batch);
         simt_batch::Rank<<<256,64,0,stream.s>>>(brouter,buffer("batch_ids").As<int>(),buffer("batch_routing").As<float>(),bad,batch);});
@@ -223,7 +259,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.Measure("group",l,stream.s,[&]{simt_batch::Group<<<64,128,0,stream.s>>>(bids,groups,counts_per_expert,bad,batch);
         simt_batch::Describe<<<1,64,0,stream.s>>>(counts_per_expert,tiles,tile_count,bad,batch);});
         const auto experts=[&](int part,const float* in,float* out){
-          diagnostics.Measure(part==0?"gate":part==1?"up":"down",l,stream.s,[&]{simt_batch::Experts(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);});
+          diagnostics.Measure(part==0?"gate":part==1?"up":"down",l,stream.s,[&]{if(fast_math)simt_batch::ExpertsFast(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);else simt_batch::Experts(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);});
         };
         experts(0,bn,bg);dump("expert_gate",bg,8*896);experts(1,bn,bu);dump("expert_up",bu,8*896);
         diagnostics.Measure("silu",l,stream.s,[&]{simt_batch::Silu<<<256*56,128,0,stream.s>>>(bg,bu,silu,bad,batch);});dump("expert_activation",bg,8*896);
@@ -243,10 +279,17 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-fp8-m8-n32-grouped-exl3-m8-n128-v4";
     identity.kernel_profile+=o.simt_reference_attention?";attention-direct-kv-prefetch8-v2":";attention-split-padded-direct-kv-candidate-v2";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
+    if(fast_math){
+      identity.kernel_profile="exl3-k4-simt-sm61-token-graph-pascal-fp32-v2;attention-tiered-gqa4-parallel-pv-v1";
+      if(batch)identity.kernel_profile+=o.capacity<=16384?";prefill-gqa8-fp32-sgemm-v1":";prefill-gqa4-fp32-split-v1";
+      if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-sgemm-exl3-m32-n128-sparse-m8";
+      identity.math_profile="mellum16-pascal-fp32-v2;FP8-E4M3-activations/FP32-projections(SGEMM-batch/FMA-vector)/BF16-output;FP32-QK-PV/expf-compensated-softmax/BF16-score-probability-output;EXL3-K4-H128-BF16-input/exact-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
+    }
     identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch=batch?"EXL3 K4 prefill grouped M8/N128; decode selected N128/eight-warps; FP32 FMA":"EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";
+    if(fast_math && batch){identity.actual_attention_projection="FP8 storage and activations; Prefill cuBLAS FP32 SGEMM; Decode FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 Prefill grouped M32/N128 FP32 tiles, sparse experts M8/N128; Decode selected N128/eight-warps FP32 FMA";}
     const double load_seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-load_begin).count();
-    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(!o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
+    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
     const auto check_numerics=[&]{int value=0;Check(cudaMemcpyAsync(&value,bad,sizeof(value),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));if(value)throw std::runtime_error("nonfinite/invalid SIMT forward; session poisoned");};
     const auto checkpoint_copy=[&](bool restore){std::size_t offset=0;for(int l=0;l<28;++l)if(l%4!=3){
       auto* saved=buffer("local_checkpoint").As<unsigned char>()+offset;
@@ -269,6 +312,9 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       Check(cudaStreamSynchronize(stream.s));
       if(worker && !worker->AwaitGenerate())break;
       if(worker && worker->dropped)continue;
+      if(!o.simt_teacher_sequences.empty() && diagnostic_request>static_cast<int>(o.simt_teacher_sequences.size()))throw std::runtime_error("missing SIMT request teacher sequence");
+      const auto& teacher_tokens=o.simt_teacher_sequences.empty()?o.simt_teacher_tokens:o.simt_teacher_sequences[diagnostic_request-1];
+      if(!teacher_tokens.empty() && teacher_tokens.size()<static_cast<std::size_t>(std::max(0,o.generate-1)))throw std::runtime_error("too few SIMT request teacher tokens");
       InferenceResult result=identity;result.initialization_seconds=load_seconds;
       const auto started=std::chrono::steady_clock::now();auto prefill_finished=started;
       int executed=worker?worker->append_base:0,token=0;
@@ -276,7 +322,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.position=pos;diagnostics.phase="decode";diagnostics.rows=1;
         diagnostics.active=!o.simt_diagnostics.empty() && (o.simt_diagnostic_positions.empty()?pos>=static_cast<int>(o.input_ids.size())-1:std::find(o.simt_diagnostic_positions.begin(),o.simt_diagnostic_positions.end(),pos)!=o.simt_diagnostic_positions.end());
         SetSimtCommand<<<1,1,0,stream.s>>>(command,next_token,pos);
-        if(diagnostics.active || o.simt_eager)forward(o.simt_reference_attention || pos<1024?0:pos<4096?4096:o.capacity);else if(o.simt_reference_attention || pos<1024)forward_graph.Launch(stream.s);else if(pos<4096)middle_graph.Launch(stream.s);else long_graph.Launch(stream.s);
+        if(diagnostics.active || o.simt_eager)forward((!fast_math && o.simt_reference_attention) || pos<1024?0:pos<4096?4096:o.capacity);else if((!fast_math && o.simt_reference_attention) || pos<1024)forward_graph.Launch(stream.s);else if(pos<4096)middle_graph.Launch(stream.s);else long_graph.Launch(stream.s);
         diagnostics.Flush(stream.s);
       };
       const auto run_head=[&](int pos){
@@ -318,7 +364,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         run_head(static_cast<int>(o.input_ids.size())-1);check_numerics();
         for(int step=0;step<o.generate && !result.cancelled;++step){
           if(cancelled()){result.cancelled=true;break;}
-          if(step){run_forward(o.simt_teacher_tokens.empty()?token:o.simt_teacher_tokens[step-1],static_cast<int>(o.input_ids.size())+step-1);run_head(static_cast<int>(o.input_ids.size())+step-1);++result.decode_steps;}
+          if(step){run_forward(teacher_tokens.empty()?token:teacher_tokens[step-1],static_cast<int>(o.input_ids.size())+step-1);run_head(static_cast<int>(o.input_ids.size())+step-1);++result.decode_steps;}
           if(o.sampling.stochastic())gpu_sampling::Launch(logits,adjusted,sorted,sample_ids,sorted_ids,cumulative,rng,control,bad,buffer("sampling_workspace").p,sampler_bytes,stream.s,o.sampling,counts);
           else {
             const float* selection_logits=logits;
@@ -335,7 +381,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
           token=chosen.token;result.generated_ids.push_back(token);
           if(step==0)prefill_finished=std::chrono::steady_clock::now();
           if(worker && !worker->Emit(token,step==0))result.cancelled=true;
-          if(token==28 && o.simt_teacher_tokens.empty())break;
+          if(token==28 && teacher_tokens.empty())break;
         }
         if(o.generate==0)prefill_finished=std::chrono::steady_clock::now();
         if(o.capture_logits){result.logits.resize(98304);Check(cudaMemcpyAsync(result.logits.data(),logits,98304*4,cudaMemcpyDeviceToHost,stream.s));}
