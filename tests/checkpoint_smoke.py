@@ -78,6 +78,8 @@ with request('/metrics') as r:metrics=r.read().decode()
 (OUT/'metrics_after_smoke.txt').write_text(metrics)
 assert 'mellum_model_loads_total 1\n' in metrics and 'mellum_weight_uploads_total 1\n' in metrics
 with request('/v1/models') as r:models=json.load(r)
-if '-simt-' in models['data'][0]['execution_profile']:assert 'mellum_graph_captures_total 2\n' in metrics
+if '-simt-' in models['data'][0]['execution_profile']:
+    captures=3 if '-layer-batch256-' in models['data'][0]['execution_profile'] else 2
+    assert f'mellum_graph_captures_total {captures}\n' in metrics
 with request('/readyz') as r:assert json.load(r)['ready']
 print('ALL SMOKE CHECKS PASSED',flush=True)

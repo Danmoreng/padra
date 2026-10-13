@@ -13,7 +13,7 @@ inline constexpr const char* kServerProfile="exl3-k4-all-rows-wide-vector-8192-v
 inline constexpr const char* kServerChunkProfile="exl3-k4-chunk-graph-eager-tail-8192-v1";
 inline std::string ServerExecutionProfile(int capacity,bool chunks,KVCacheFormat kv_format=KVCacheFormat::BF16,int chunk=2048,int budget_gib=0,bool checkpoint=false){
 #if PADRA_BUILD_SIMT
-  (void)chunks;const std::string base=std::string("exl3-k4-simt-sm")+kBuildArchitecture+"-token-graph-";
+  (void)chunks;const std::string base=std::string("exl3-k4-simt-sm")+kBuildArchitecture+"-layer-batch256-staged-kv-";
 #else
   const std::string base=chunks?"exl3-k4-chunk-graph-eager-tail-":"exl3-k4-all-rows-wide-vector-";
 #endif
