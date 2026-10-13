@@ -1,5 +1,8 @@
 # Pascal SM61 performance implementation, 2026-10-13
 
+The later [Pascal FP32 matrix and Attention profile](pascal-sm61-fp32-performance-results.md)
+records the qualified alternative-arithmetic implementation and its measurements.
+
 The exact Pascal implementation improves both long profiles substantially, but
 **does not meet the llama.cpp targets** in the [performance plan](pascal-sm61-performance-plan.md).
 Measured engine code: `640c662`, branch `codex/pascal-sm61-port`. The checkpoint, tokenizer,
@@ -143,7 +146,8 @@ For offline diagnosis, build with `PADRA_BUILD_DIAGNOSTICS=ON` and run
 The JSON specifies `capacity`, `chunk`, `requests` (native token `ids` and
 `generate`), `diagnostics`, selected `layer`/`positions`, and optionally
 `teacher_tokens`, `reference_codec`, `reference_prefill`, `eager` or
-`events_only`. `split_attention=true` explicitly selects the rejected exact
+`events_only`. In current builds use `reference_math=true` to select this exact
+profile. Combined with it, `split_attention=true` explicitly selects the rejected exact
 split candidate for research comparison; HTTP requests cannot enable it.
 
 The later experimental update `92f6dff` pads shared BF16 rows to 136 and removes
