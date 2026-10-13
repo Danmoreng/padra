@@ -1,6 +1,6 @@
 # Dependencies
 
-CMake owns the server build, including fetching CUTLASS headers and invoking
+CMake owns the server build, including fetching CUTLASS headers for SM120 and invoking
 Cargo. No dependency checkout beside this repository is required. CMake, the
 C++/CUDA compilers, Ninja and Rust/Cargo are installed build tools; Padra does not
 install or replace system toolchains. Dependencies are not downloaded at runtime.
@@ -14,6 +14,10 @@ install or replace system toolchains. Dependencies are not downloaded at runtime
 | OpenSSL Crypto | Installed system version, optional | CMake `find_package`; existing native SHA-256 when absent | See installed distribution |
 
 ## CUTLASS
+
+CUTLASS is only required by `PADRA_CUDA_BACKEND=sm120` (selected automatically
+for targets 120/120a). The SIMT backend for Pascal and other SM61+ targets uses
+CUDA Toolkit headers and libcudart directly and does not fetch CUTLASS.
 
 `cmake/PadraCutlass.cmake` downloads the fixed upstream commit archive into the
 build tree using FetchContent. The archive SHA-256 is

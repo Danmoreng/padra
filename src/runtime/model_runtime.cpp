@@ -1,7 +1,13 @@
 #include "runtime/model_runtime.h"
+#include "runtime/gpu_build_config.h"
 namespace mellum16 {
 InferenceOptions SelectedServerOptions(const std::filesystem::path& path,const std::string& tokenizer){
   InferenceOptions o;o.artifact=path;o.tokenizer_sha256=tokenizer;o.capacity=8192;o.prefill_chunk=2048;
+#if PADRA_BUILD_SIMT
+  o.prefill_chunk=kDefaultServerChunk;
+  o.exl3_experts=true;o.exl3_rate=4;
+  return o;
+#else
   o.native_prefill=o.fp8_expert_activations=o.native_decode=true;
   o.online_prefill_attention=o.gqa8_prefill_attention=o.packed_bf16_prefill_attention=o.padded_bf16_prefill_attention=true;
   o.ordinary_fp8_projections=o.ordinary_fp8_simt=o.compact_experts=o.staged_experts=true;
@@ -12,6 +18,7 @@ InferenceOptions SelectedServerOptions(const std::filesystem::path& path,const s
   o.wide_attention_merge=o.paired_attention_o=o.wide_rms_dataflow=o.exl3_packed_activations=true;
   o.quad_router_prefill=o.pair64_qknorm_prefill=o.exact_norm_prefill=o.prefill_graphs=o.exl3_wide_input=true;
   o.device_decode=o.decode_graphs=o.full_decode_graph=o.fast_w4a8=true;return o;
+#endif
 }
 #if MELLUM16_HAS_CUDA
 Result<std::unique_ptr<RuntimeBackend>> LoadCudaModelRuntime(InferenceOptions);
@@ -30,7 +37,7 @@ Result<std::unique_ptr<ModelRuntime>> ModelRuntime::Load(const std::filesystem::
   auto backend=LoadCudaModelRuntime(std::move(profile));if(!backend.ok())return backend.status();
   return std::make_unique<ModelRuntime>(std::move(backend).value());
 #else
-  (void)path;(void)tokenizer;(void)controlled_chunks;(void)capacity;(void)kv_format;(void)diagnostic_decode_token;(void)prefill_chunk;(void)device_budget_gib;(void)enable_checkpoint;return Status(StatusCode::kUnsupported,"persistent model runtime requires compiled CUDA/SM120");
+  (void)path;(void)tokenizer;(void)controlled_chunks;(void)capacity;(void)kv_format;(void)diagnostic_decode_token;(void)prefill_chunk;(void)device_budget_gib;(void)enable_checkpoint;return Status(StatusCode::kUnsupported,"persistent model runtime requires compiled CUDA");
 #endif
 }
 }

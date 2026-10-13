@@ -11,21 +11,24 @@ Padra is inspired by Padparadscha; its name is independent of GPU memory size.
 The server includes native tokenization, the original model chat/thinking template,
 GPU sampling with frequency/presence/repetition penalties, Chat Completions,
 Responses, streaming, function calls and bounded session/KV reuse. Weights remain
-GPU-resident. Default context is 131,072 tokens with BF16 KV. 8/12 GiB memory ceilings
-are explicit profiles; alternative-bpw checkpoints and physical smaller GPUs remain
-future qualification targets.
+GPU-resident. SM120 defaults to 131,072 tokens with BF16 KV; the SIMT backend
+defaults to 8,192 tokens. 8/12 GiB memory ceilings are explicit profiles.
+Alternative-bpw checkpoints and complete-model Pascal qualification remain pending.
 
 This repository contains serving source, build files and required licenses only.
 Historical tests, reviews, benchmarks, captures and conversion campaigns remain in
-the separate research project. A prepared native artifact is required; weights and
+the separate research project; checkpoint-free portability tests live in `tests/`.
+A prepared native artifact is required; weights and
 conversion outputs are not distributed here. Internal namespaces/checkpoint IDs
 retain their legacy names for compatibility.
 
 ## Build
 
-Linux requirements: CMake 3.28+, Ninja, C++20 compiler, CUDA 12.8+ with SM120 support,
-Rust 1.89+ and Cargo. The measured toolchain is CUDA 13.4 / GCC 15 / SM120a.
-Dependencies are prepared automatically: CMake downloads the pinned CUTLASS
+Linux requirements: CMake 3.28+, Ninja, a CUDA-compatible C++20 host compiler,
+Rust 1.89+ and Cargo. Pascal needs CUDA Toolkit 12.x (tested with 12.4 / GCC 13);
+CUDA 13 removed compilation for targets older than SM75. SM120 needs CUDA 12.8+
+with SM120 support. The original measured toolchain is CUDA 13.4 / GCC 15 / SM120a.
+Dependencies are prepared automatically: the SM120 build downloads pinned CUTLASS
 headers, and the build runs Cargo for the locked native tokenizer. The first
 build needs internet access; no separate CUTLASS build, Git submodule setup or
 Python preparation script is required.
@@ -42,6 +45,48 @@ text are on by default. `PADRA_ENABLE_CUDA=OFF` and
 `PADRA_ENABLE_NATIVE_TEXT=OFF` permit a host compile check; such a build cannot run
 native model inference.
 
+`PADRA_CUDA_ARCHITECTURE=auto` (default) queries CUDA device 0 with a host-only
+probe, honoring `CUDA_VISIBLE_DEVICES` without requiring `nvidia-smi`.
+Set one target explicitly for cross-compilation or builds without an installed GPU:
+
+```sh
+# GTX 1070 / Pascal, with the local CUDA 12.4 host compiler:
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DPADRA_CUDA_ARCHITECTURE=61 -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13
+cmake --build build -j2
+
+# RTX 5080 / Blackwell (requires an appropriate CUDA toolkit):
+# add -DPADRA_CUDA_ARCHITECTURE=120a to the configure command
+```
+
+`PADRA_CUDA_BACKEND=auto` selects the existing optimized Tensor Core backend
+for SM120/SM120a, and a portable SIMT backend for other SM61+ targets. A numeric
+`120` selection uses `120a` for this backend, as its FP4/MMA instructions require
+the accelerated target. Explicit
+`simt` enables comparison on newer GPUs; `sm120` requires a 120/120a target.
+The compiler must support the chosen target. Other architectures currently use
+the SIMT backend; additional architecture-specific Tensor Core backends are future
+work. A single GPU target is built per binary.
+
+The SIMT backend keeps the original K4 payload, FP8 attention weights/activations
+and BF16 KV storage. It uses selected EXL3 FP32 FMA kernels, compensated scalar
+attention and reusable single-token CUDA graphs for both prefill and decode.
+It does not download CUTLASS or compile SM120/FP4/MMA/`cp.async` kernels.
+Prefill chunk size controls progress/cancellation commit boundaries; its workspace
+is independent of that size. Session append and local KV snapshot/restore use
+the existing worker protocol. Reduction order differs from the Tensor Core path;
+complete-model logits, quality and speed need the original checkpoint for validation.
+Q8 KV and the SM120 research capture/teacher-forcing options are currently unsupported
+in SIMT and fail explicitly.
+
+Checkpoint-free checks (the GPU test requires a device compatible with the target):
+
+```sh
+cmake -S . -B build -DPADRA_BUILD_TESTS=ON
+cmake --build build -j2
+ctest --test-dir build --output-on-failure
+```
+
 For an offline build, set `-DPADRA_CUTLASS_ROOT=/path/to/cutlass` to the pinned
 source tree or an existing prepared header cache, and use
 `-DPADRA_CARGO_OFFLINE=ON` with an already populated Cargo cache. Local CUTLASS
@@ -49,7 +94,8 @@ headers receive the same hash checks as downloaded headers. See
 [Dependencies](DEPENDENCIES.md) for versions, licenses, local HTTP adaptations
 and cache/toolchain options.
 
-Optional `-DPADRA_EXL3_PREFILL_ASYNC64=ON` enables experimental K64 weight/input
+On the SM120 backend, optional `-DPADRA_EXL3_PREFILL_ASYNC64=ON` enables
+experimental K64 weight/input
 transport for EXL3 K4 prefill batches of at least four tokens; smaller batches
 retain the existing SIMT path. Initial paired 2K/4K measurements with BF16 KV and
 chunk 2048 showed about 3.5%/5.2% faster prefill. The subsequent P2 weights-as-A
@@ -80,7 +126,8 @@ ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT
 [GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] [DEVICE_BUDGET_GIB]
 ```
 
-Defaults: 600000 ms, 131072 tokens, chunk 2048, actual-free-memory admission.
+Defaults: 600000 ms and actual-free-memory admission. SM120: 131072 tokens,
+chunk 2048. SIMT: 8192 tokens, chunk 256. Explicit arguments override build defaults.
 Explicit chunks 512/256 and ceilings 8/12 GiB are supported. Admission includes a
 700 MiB reserve and 42 MiB session snapshot. Unsupported or oversized configurations
 fail explicitly; no silent context/precision/chunk/CPU-offload fallback.
@@ -102,7 +149,9 @@ Experimental: source/NLL/SQL/task and full product-quality gates remain open.
 The research version passed bounded native Python/TypeScript server workflows;
 long/load/expiry/concurrency/deployment qualification remains unfinished. Source
 extraction/build checks are not new model-inference or performance qualification.
-Other GPU architectures and physical 8/12 GB cards have not been qualified.
+SM61 builds and synthetic kernel tests run on a GTX 1070 Max-Q (8 GiB).
+Complete-model inference on Pascal and other architectures has not been qualified;
+the original checkpoint and tokenizer must be supplied for those tests.
 
 Padra is licensed under [Apache 2.0](LICENSE). See [NOTICE](NOTICE) and
 licenses/ for third-party attribution.

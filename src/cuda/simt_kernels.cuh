@@ -1,0 +1,27 @@
+// Include inside a Mellum implementation namespace, after CUDA/CUB and model headers.
+#pragma once
+#include "scalar_casts.cuh"
+#include "scalar_reductions.cuh"
+#include "scalar_warp_reduce.cuh"
+#include "scalar_norm.cuh"
+#include "scalar_max.cuh"
+#include "scalar_router.cuh"
+#include "scalar_combine.cuh"
+#include "qknorm_rope.cuh"
+__device__ unsigned Load32(const unsigned char* p){return *reinterpret_cast<const unsigned*>(p);}
+#include "fp8_vector.cuh"
+#include "fp8_projection_simt.cuh"
+#include "norm_fp8_wide_exact.cuh"
+#include "residual_norm_bf16.cuh"
+#include "router_bf16_warp32_exact.cuh"
+#include "router_rank_exact.cuh"
+#include "expert_exl3.cuh"
+#include "expert_exl3_selected.cuh"
+#include "exl3_silu_lut.cuh"
+#include "head_bf16_prefetch.cuh"
+#include "simt_attention.cuh"
+struct Control {int token,bad;};
+#include "selection.cuh"
+#include "cuda_resources.cuh"
+#include "cuda_graph.cuh"
+#include "rope_table.cuh"

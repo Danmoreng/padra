@@ -43,11 +43,7 @@ using internal::WeightFormat;
 namespace scaled_prefill=::mellum16::expert_scaled_bf16_layer;
 __constant__ float e4m3[256];
 __constant__ float e2m1[16];
-__device__ float B(float x){return __bfloat162float(__float2bfloat16_rn(x));}
-// Accuracy baseline: evaluate this scalar transcendental in FP64 and immediately
-// round to FP32. No FP64 model tensors or accumulation. Explicit rnexp profile.
-__device__ float ExpRN(float x){return __double2float_rn(exp(static_cast<double>(x)));}
-__device__ float BF(const unsigned char* p,int i){return __bfloat162float(reinterpret_cast<const __nv_bfloat16*>(p)[i]);}
+#include "scalar_casts.cuh"
 __device__ float W(DeviceMatrix m,int r,int c){
   const int i=r*m.cols+c;
   if(m.format==0)return BF(m.data,i);
@@ -68,22 +64,7 @@ __device__ float WWarp(DeviceMatrix m,int r,int c){const int i=r*m.cols+c;
   const auto packed=m.data[i/2];const int code=(i&1)?packed>>4:packed&15;
   return B(DecodeFP4(code)*DecodeFP8(m.scales[i/16])/(*m.divisor));
 }
-// BF16 products are exactly representable in FP32. Retain FP32 roundoff from
-// both the per-thread sum and cross-warp merge before the BF16 output cast.
-// Explicit intrinsics prevent compiler reassociation from erasing compensation.
-__device__ void Accumulate(float value,float& sum,float& error){
-  const float next=__fadd_rn(sum,value);
-  const float residual=fabsf(sum)>=fabsf(value)?__fadd_rn(__fsub_rn(sum,next),value):__fadd_rn(__fsub_rn(value,next),sum);
-  error=__fadd_rn(error,residual);sum=next;
-}
-__device__ float AccurateReduce(float sum,float error,float* scratch){
-  for(int d=16;d;d/=2){const float other=__shfl_down_sync(0xffffffff,sum,d),low=__shfl_down_sync(0xffffffff,error,d);if((threadIdx.x&31)+d<32){Accumulate(other,sum,error);Accumulate(low,sum,error);}}
-  if((threadIdx.x&31)==0){scratch[threadIdx.x/32]=sum;scratch[4+threadIdx.x/32]=error;}
-  __syncthreads();sum=threadIdx.x<4?scratch[threadIdx.x]:0;error=threadIdx.x<4?scratch[4+threadIdx.x]:0;
-  if(threadIdx.x<32)for(int d=16;d;d/=2){const float other=__shfl_down_sync(0xffffffff,sum,d),low=__shfl_down_sync(0xffffffff,error,d);if(threadIdx.x+d<32){Accumulate(other,sum,error);Accumulate(low,sum,error);}}
-  return __fadd_rn(sum,error);
-}
-__device__ void Finite(float x,int* bad){if(!isfinite(x))atomicExch(bad,1);}
+#include "scalar_reductions.cuh"
 __global__ void Gemv(DeviceMatrix m,const float* x,float* y,int* bad){
   __shared__ float sums[8];float sum=0,error=0;const int r=blockIdx.x;
   for(int c=threadIdx.x;c<m.cols;c+=128)Accumulate(__fmul_rn(W(m,r,c),x[c]),sum,error);
@@ -91,11 +72,7 @@ __global__ void Gemv(DeviceMatrix m,const float* x,float* y,int* bad){
 }
 // Four independent rows per CTA. The compensation/cast contract is preserved;
 // only the work partition changes. Full warps (including tail CTAs) are required.
-__device__ float WarpAccurateReduce(float sum,float error){
-  for(int d=16;d;d/=2){const float other=__shfl_down_sync(0xffffffff,sum,d),low=__shfl_down_sync(0xffffffff,error,d);
-    if((threadIdx.x&31)+d<32){Accumulate(other,sum,error);Accumulate(low,sum,error);}}
-  return __fadd_rn(sum,error);
-}
+#include "scalar_warp_reduce.cuh"
 __global__ void GemvWarp(DeviceMatrix m,const float* x,float* y,int* bad){
   const int lane=threadIdx.x&31,r=blockIdx.x*4+threadIdx.x/32;if(r>=m.rows)return;
   float sum=0,error=0;for(int c=lane;c<m.cols;c+=32)Accumulate(__fmul_rn(WWarp(m,r,c),x[c]),sum,error);
@@ -103,23 +80,7 @@ __global__ void GemvWarp(DeviceMatrix m,const float* x,float* y,int* bad){
 }
 #include "head_bf16_prefetch.cuh"
 #include "head_bf16_mma.cuh"
-__global__ void Embed(DeviceMatrix m,int token,float* x,const int* tokens=nullptr){if(tokens)token=tokens[token+blockIdx.x];x+=blockIdx.x*2304;for(int i=threadIdx.x;i<2304;i+=128)x[i]=BF(m.data,token*2304+i);}
-__global__ void Norm(const float* x,float* out,DeviceMatrix weights,int dim,int heads,float* statistics=nullptr){
-  __shared__ float sums[8];__shared__ float inv;const int h=blockIdx.x; x+=blockIdx.y*dim*heads;out+=blockIdx.y*dim*heads;
-  if(h>=heads)return;
-  float sum=0,error=0;for(int i=threadIdx.x;i<dim;i+=128)Accumulate(__fmul_rn(x[h*dim+i],x[h*dim+i]),sum,error);
-  // Upstream CPU rsqrt uses rounded sqrt followed by rounded division. CUDA's
-  // approximate reciprocal-root can move the subsequent BF16 cast across a tie.
-  sum=AccurateReduce(sum,error,sums);if(threadIdx.x==0){const float variance=__fdiv_rn(sum,static_cast<float>(dim));inv=__fdiv_rn(1.f,__fsqrt_rn(__fadd_rn(variance,1e-6f)));if(statistics){statistics[2*h]=variance;statistics[2*h+1]=inv;}}__syncthreads();
-  for(int i=threadIdx.x;i<dim;i+=128)out[h*dim+i]=B(B(x[h*dim+i]*inv)*BF(weights.data,i));
-}
-__global__ void Rope(float* q,float* k,const float* table,int position){
-  position+=blockIdx.y;q+=blockIdx.y*4096;k+=blockIdx.y*512;
-  const int h=blockIdx.x,i=threadIdx.x;float* x=h<32?q+h*128:k+(h-32)*128;
-  __shared__ float old[128];old[i]=x[i];__syncthreads();
-  const float c=table[position*128+(i%64)],s=table[position*128+64+(i%64)];
-  const float rotated=i<64?-old[i+64]:old[i-64];x[i]=B(B(old[i]*c)+B(rotated*s));
-}
+#include "scalar_norm.cuh"
 #include "expert_exl3.cuh"
 #include "expert_exl3_prefill_fp16.cuh"
 #include "expert_exl3_prefill_masked.cuh"
@@ -144,12 +105,7 @@ __global__ void Store(const float* k,const float* v,__nv_bfloat16* kc,__nv_bfloa
   position+=blockIdx.y;k+=blockIdx.y*512;v+=blockIdx.y*512;
   const int i=blockIdx.x*128+threadIdx.x;kc[(position%cap)*512+i]=__float2bfloat16_rn(k[i]);vc[(position%cap)*512+i]=__float2bfloat16_rn(v[i]);
 }
-__device__ float MaxReduce(float x,float* scratch){
-  for(int d=16;d;d/=2)x=fmaxf(x,__shfl_down_sync(0xffffffff,x,d));
-  if((threadIdx.x&31)==0)scratch[threadIdx.x/32]=x;__syncthreads();
-  x=threadIdx.x<4?scratch[threadIdx.x]:-INFINITY;
-  if(threadIdx.x<32)for(int d=16;d;d/=2)x=fmaxf(x,__shfl_down_sync(0xffffffff,x,d));return x;
-}
+#include "scalar_max.cuh"
 #include "norm_fp8.cuh"
 #include "norm_fp8_exact.cuh"
 #include "norm_fp8_positive_exact.cuh"
@@ -230,26 +186,7 @@ void DecodeAttention(const float* q,const __nv_bfloat16* kc,const __nv_bfloat16*
   if(local)AttendDecodeCTA256<true><<<32,256,std::min(pos+1,1024)*sizeof(float),stream>>>(q,kc,vc,out,pos,cap,bad,scores,probabilities);
   else AttendDecodeCTA256<false><<<32,256,(pos+1)*sizeof(float),stream>>>(q,kc,vc,out,pos,cap,bad,scores,probabilities);
 }
-__global__ void Add(float* x,const float* y,int n,int* bad){const int i=blockIdx.x*128+threadIdx.x;if(i<n){x[i]=B(x[i]+y[i]);Finite(x[i],bad);}}
-__global__ void Route(const float* logits,int* ids,float* weights,int* bad){
-  // One deterministic route: softmax FP32, top eight, normalize, then ascending expert order.
-  if(threadIdx.x!=0)return;logits+=blockIdx.x*64;ids+=blockIdx.x*8;weights+=blockIdx.x*8;
-  // Preserve safe descriptor indices after a sticky numerical failure. The host
-  // rejects the token; dummy routes never become a successful continuation.
-  if(*bad){for(int s=0;s<8;++s){ids[s]=0;weights[s]=0;}return;}
-  float probabilities[64],mx=-INFINITY,total=0,total_error=0;
-  for(int i=0;i<64;++i)mx=fmaxf(mx,logits[i]);
-  for(int i=0;i<64;++i){probabilities[i]=ExpRN(__fsub_rn(logits[i],mx));Accumulate(probabilities[i],total,total_error);}
-  total=__fadd_rn(total,total_error);
-  for(int i=0;i<64;++i)probabilities[i]=__fdiv_rn(probabilities[i],total);
-  float selected=0,selected_error=0;
-  for(int s=0;s<8;++s){int best=-1;float p=-1;for(int i=0;i<64;++i)if(probabilities[i]>p){p=probabilities[i];best=i;}
-    ids[s]=best;weights[s]=p;Accumulate(p,selected,selected_error);probabilities[best]=-1;}
-  selected=__fadd_rn(selected,selected_error);
-  for(int s=0;s<8;++s)weights[s]=B(__fdiv_rn(weights[s],selected));
-  for(int a=0;a<8;++a)for(int b=a+1;b<8;++b)if(ids[b]<ids[a]){int id=ids[a];ids[a]=ids[b];ids[b]=id;float w=weights[a];weights[a]=weights[b];weights[b]=w;}
-  Finite(selected,bad);
-}
+#include "scalar_router.cuh"
 #include "router_parallel.cuh"
 #include "router_bf16_warp32_exact.cuh"
 #include "router_rank_exact.cuh"
@@ -268,12 +205,7 @@ __global__ void ExpertWarp(const DeviceMatrix* experts,int layer,int part,const 
 }
 #include "expert_vector.cuh"
 #include "exl3_silu_lut.cuh"
-__global__ void Activate(float* gate,const float* up,int tokens=1){const int i=blockIdx.x*128+threadIdx.x;if(i<tokens*8*896)gate[i]=B(B(__fdiv_rn(gate[i],__fadd_rn(1.f,ExpRN(-gate[i]))))*up[i]);}
-__global__ void Combine(float* x,const float* down,const float* weights,int* bad){
-  x+=blockIdx.y*2304;down+=blockIdx.y*8*2304;weights+=blockIdx.y*8;
-  const int i=blockIdx.x*128+threadIdx.x;if(i>=2304)return;float sum=0;
-  for(int s=0;s<8;++s)sum=B(sum+B(down[s*2304+i]*weights[s]));x[i]=B(x[i]+sum);Finite(x[i],bad);
-}
+#include "scalar_combine.cuh"
 #include "combine_norm_exact.cuh"
 // X1 bounded record: actual frozen K4 postnorm and free routes, one layer/chunk.
 __global__ void CaptureExl3Fixture(unsigned char* dst,const float* input,const int* ids,const float* routing,int tokens){
@@ -317,17 +249,7 @@ static_assert(alignof(scaled_prefill::Tail)==alignof(fast_expert::Tile));
 __global__ void ExpandBF16(const std::uint16_t* input,float* out,int n){const int i=blockIdx.x*128+threadIdx.x;if(i<n)out[i]=__bfloat162float(__ushort_as_bfloat16(input[i]));}
 struct Control {int token;int bad;};
 #include "selection.cuh"
-void Check(cudaError_t e){if(e!=cudaSuccess)throw std::runtime_error(cudaGetErrorString(e));}
-#include "sampling.cuh"
-struct Buffer {
-  void* p=nullptr;std::size_t bytes=0;
-  explicit Buffer(std::size_t n):bytes(n){Check(cudaMalloc(&p,n));}
-  ~Buffer(){if(p)cudaFree(p);}
-  Buffer(const Buffer&)=delete;
-  template<class T>T* As(){return static_cast<T*>(p);}
-};
-struct Stream{cudaStream_t s=nullptr;Stream(){Check(cudaStreamCreate(&s));}~Stream(){if(s)cudaStreamDestroy(s);}};
-struct Pinned{Control* p=nullptr;Pinned(){Check(cudaMallocHost(&p,sizeof(Control)));}~Pinned(){if(p)cudaFreeHost(p);}};
+#include "cuda_resources.cuh"
 #include "decode_control.cuh"
 #include "attention_decode_fast.cuh"
 #include "attention_gqa8.cuh"
@@ -341,27 +263,12 @@ struct Pinned{Control* p=nullptr;Pinned(){Check(cudaMallocHost(&p,sizeof(Control
 #include "attention_prefill_q8.cuh"
 #include "attention_gqa8_fp8.cuh"
 #include "attention_prefill_fp8.cuh"
-float BHost(float x){std::uint32_t bits;std::memcpy(&bits,&x,4);bits=(bits+0x7fff+((bits>>16)&1))&0xffff0000;std::memcpy(&x,&bits,4);return x;}
+#include "rope_table.cuh"
 void InitializeCodecTables(){
     std::array<float,256> fp8{};std::array<float,16> fp4{};const float magnitudes[]={0,.5,1,1.5,2,3,4,6};
     for(int i=0;i<256;++i){const int exp=(i&127)>>3,mant=i&7;fp8[i]=std::ldexp(exp?1.f+mant/8.f:mant/8.f,exp?exp-7:-6);if(i&128)fp8[i]=-fp8[i];}
     for(int i=0;i<16;++i)fp4[i]=(i&8)?-magnitudes[i&7]:magnitudes[i&7];
     Check(cudaMemcpyToSymbol(e4m3,fp8.data(),sizeof(fp8)));Check(cudaMemcpyToSymbol(e2m1,fp4.data(),sizeof(fp4)));
-}
-std::vector<float> RopeTable(int capacity,bool local){
-  std::array<float,64> frequencies{};
-  const double pi=std::acos(-1.0),base=500000.;
-  const float low=static_cast<float>(std::max(0.,std::floor(128*std::log(8192/(32*2*pi))/(2*std::log(base)))));
-  const float high=static_cast<float>(std::min(127.,std::ceil(128*std::log(8192/(2*pi))/(2*std::log(base)))));
-  for(int i=0;i<64;++i){const float freq=std::pow(500000.f,static_cast<float>(2*i)/128);
-    const float ramp=std::clamp((i-low)/(high-low),0.f,1.f),extra=1-ramp;
-    frequencies[i]=local?1/freq:(1/(16*freq))*(1-extra)+(1/freq)*extra;
-  }
-  std::vector<float> table(static_cast<std::size_t>(capacity)*128);
-  const float scale=local?1.f:static_cast<float>(1+0.1*std::log(16.));
-  for(int p=0;p<capacity;++p)for(int i=0;i<64;++i){const float angle=static_cast<float>(p)*frequencies[i];
-    table[p*128+i]=BHost(std::cos(angle)*scale);table[p*128+64+i]=BHost(std::sin(angle)*scale);}
-  return table;
 }
 #include "prefill_kv_commit.cuh"
 }
@@ -1071,7 +978,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
             std::size_t beforeFree=0,afterFree=0;Check(cudaMemGetInfo(&beforeFree,&total));
             const int active=startupShapes[index];chunkGraphs[index].Capture(stream.s,[&]{prefillChunk(0,active,prefillCommand.As<PrefillState>());});
             Check(cudaMemGetInfo(&afterFree,&total));
-            ChunkGraphKey key{model.weights_sha256,compiler::Sha256Hex(result.math_profile.data(),result.math_profile.size()),__DATE__ " " __TIME__ "/SM120", q8Cache?"q8_token_head128_f32scale_v1":"bf16",o.capacity,batch,active,1};
+            ChunkGraphKey key{model.weights_sha256,compiler::Sha256Hex(result.math_profile.data(),result.math_profile.size()),__DATE__ " " __TIME__ "/SM" MELLUM16_ARCHITECTURE, q8Cache?"q8_token_head128_f32scale_v1":"bf16",o.capacity,batch,active,1};
             const auto status=chunkShapes.Admit(std::move(key),chunkGraphs[index].nodes,beforeFree>afterFree?beforeFree-afterFree:0);if(!status.ok())throw std::runtime_error(status.message());worker->RecordCapture();
           }
         }

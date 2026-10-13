@@ -1,5 +1,6 @@
 #include "server/http_server.h"
 #include "runtime/model_runtime.h"
+#include "runtime/gpu_build_config.h"
 #include "text/tokenizer.h"
 #include "util/json.h"
 #include <charconv>
@@ -14,9 +15,9 @@ int main(int argc,char** argv){try{
  int port=0;auto [end,error]=std::from_chars(argv[4],argv[4]+std::char_traits<char>::length(argv[4]),port);if(error!=std::errc{} || *end || port<1024 || port>65535)throw std::runtime_error("port must be1024..65535");
  mellum16::server::ServerLimits limits;
  if(argc>5){int milliseconds=0;auto [stop,code]=std::from_chars(argv[5],argv[5]+std::char_traits<char>::length(argv[5]),milliseconds);if(code!=std::errc{} || *stop || milliseconds<1 || milliseconds>600000)throw std::runtime_error("generation timeout must be1..600000ms");limits.generation_timeout=std::chrono::milliseconds(milliseconds);}
- int capacity=131072;if(argc<=5)limits.generation_timeout=std::chrono::milliseconds(600000);
+ int capacity=mellum16::kDefaultServerContext;if(argc<=5)limits.generation_timeout=std::chrono::milliseconds(600000);
  if(argc>6){auto [stop,code]=std::from_chars(argv[6],argv[6]+std::char_traits<char>::length(argv[6]),capacity);if(code!=std::errc{} || *stop)throw std::runtime_error("invalid context capacity integer");}
- int chunk=2048,budget=0;
+ int chunk=mellum16::kDefaultServerChunk,budget=0;
  for(int argument=7;argument<argc;++argument){int& value=argument==7?chunk:budget;auto [stop,code]=std::from_chars(argv[argument],argv[argument]+std::char_traits<char>::length(argv[argument]),value);if(code!=std::errc{} || *stop)throw std::runtime_error("invalid explicit chunk/device budget");}
  if(!mellum16::ValidServerChunk(chunk) || !mellum16::ValidServerBudget(budget))throw std::runtime_error("server requires chunk2048/512/256 and budget0/8/12GiB");
  auto context=mellum16::AdmitNativeContext(capacity);if(!context.ok())throw std::runtime_error(context.status().message());limits.queued_tokens=static_cast<std::size_t>(capacity)*8;

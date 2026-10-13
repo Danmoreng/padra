@@ -4,13 +4,21 @@
 #include "runtime/server_profile.h"
 #include "runtime/session_state.h"
 #include "runtime/kv_checkpoint.h"
+#include "runtime/gpu_build_config.h"
 #include <functional>
 #include <memory>
 #include <span>
 namespace mellum16 {
 inline constexpr const char* kServerProfile="exl3-k4-all-rows-wide-vector-8192-v1";
 inline constexpr const char* kServerChunkProfile="exl3-k4-chunk-graph-eager-tail-8192-v1";
-inline std::string ServerExecutionProfile(int capacity,bool chunks,KVCacheFormat kv_format=KVCacheFormat::BF16,int chunk=2048,int budget_gib=0,bool checkpoint=false){return std::string(chunks?"exl3-k4-chunk-graph-eager-tail-":"exl3-k4-all-rows-wide-vector-")+std::to_string(capacity)+"-v1"+(kv_format==KVCacheFormat::Q8TokenHead128F32ScaleV1?"-q8-token-head128-f32scale-v1":"")+(chunk==2048?"":"-chunk"+std::to_string(chunk))+(budget_gib?"-budget"+std::to_string(budget_gib)+"GiB":"")+(checkpoint?"-local-checkpoint-bf16-v1":"");}
+inline std::string ServerExecutionProfile(int capacity,bool chunks,KVCacheFormat kv_format=KVCacheFormat::BF16,int chunk=2048,int budget_gib=0,bool checkpoint=false){
+#if PADRA_BUILD_SIMT
+  (void)chunks;const std::string base=std::string("exl3-k4-simt-sm")+kBuildArchitecture+"-token-graph-";
+#else
+  const std::string base=chunks?"exl3-k4-chunk-graph-eager-tail-":"exl3-k4-all-rows-wide-vector-";
+#endif
+  return base+std::to_string(capacity)+"-v1"+(kv_format==KVCacheFormat::Q8TokenHead128F32ScaleV1?"-q8-token-head128-f32scale-v1":"")+(chunk==2048?"":"-chunk"+std::to_string(chunk))+(budget_gib?"-budget"+std::to_string(budget_gib)+"GiB":"")+(checkpoint?"-local-checkpoint-bf16-v1":"");
+}
 struct RuntimeStats {
   int capacity=8192,prefill_chunk=2048,device_budget_gib=0;
   std::uint64_t device_total_bytes=0,device_free_before_bytes=0,admission_available_bytes=0,required_bytes=0,post_graph_available_bytes=0;
