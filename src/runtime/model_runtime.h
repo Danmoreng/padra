@@ -17,7 +17,7 @@ struct RuntimeStats {
   KVCacheFormat kv_format=KVCacheFormat::BF16;
   std::uint64_t model_loads=0,weight_uploads=0,static_initializations=0,graph_captures=0,binding_epoch=1;
   std::uint64_t resident_bytes=0,requests=0;
-  std::string math_profile,kernel_profile;
+  std::string math_profile,kernel_profile,weights_sha256,manifest_sha256;
   bool controlled_chunks=false;std::uint64_t prefill_chunks=0,eager_tail_chunks=0;
   bool checkpoint_enabled=false,checkpoint_available=false;
   std::uint64_t checkpoint_bytes=0,checkpoint_captures=0,checkpoint_restores=0;

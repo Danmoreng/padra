@@ -81,7 +81,7 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path& directory) 
     Require(Text(Field(v,"weights_file"))=="weights.bin","unsafe weights path");
     const auto bytes=Number(Field(v,"weights_bytes"));
     Require(bytes>0 && bytes<12ULL*1024*1024*1024,"invalid artifact byte budget");
-    CompiledModel result;result.exl3_experts=exl3;result.exl3_rate=exl3Rate;
+    CompiledModel result;result.manifest_sha256=compiler::Sha256Hex(file.data(),file.size());result.exl3_experts=exl3;result.exl3_rate=exl3Rate;
     result.weights=OpenRegular(directory/"weights.bin");
     Require(result.weights.size()==bytes,"truncated or oversized weight payload");
     result.weights_sha256=Text(Field(v,"weights_sha256"));

@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "mellum16/status.h"
@@ -19,7 +21,11 @@ class Value {
   using Object = std::map<std::string, Value, std::less<>>;
   using Storage = std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, Array, Object>;
 
-  explicit Value(Storage storage) : storage_(std::move(storage)) {}
+  // Initialize the selected alternative directly; no temporary variant move.
+  template<class T>
+    requires (!std::is_same_v<std::remove_cvref_t<T>, Value> && std::is_constructible_v<Storage, T>)
+  explicit Value(T&& value) : storage_(std::forward<T>(value)) {}
+
 
   [[nodiscard]] bool is_null() const { return std::holds_alternative<std::nullptr_t>(storage_); }
   [[nodiscard]] bool is_bool() const { return std::holds_alternative<bool>(storage_); }

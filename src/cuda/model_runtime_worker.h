@@ -119,7 +119,7 @@ class CudaModelWorker final:public RuntimeBackend {
   void RecordAdmission(std::size_t total,std::size_t free,std::size_t available,std::size_t required){std::lock_guard lock(mutex);stats.device_total_bytes=total;stats.device_free_before_bytes=free;stats.admission_available_bytes=available;stats.required_bytes=required;}
   void RecordGraphAdmission(std::size_t available){std::lock_guard lock(mutex);stats.post_graph_available_bytes=available;}
   void RecordLoad(std::uint64_t bytes){std::lock_guard lock(mutex);++stats.model_loads;++stats.weight_uploads;++stats.static_initializations;stats.resident_bytes=bytes;}
-  void RecordIdentity(const std::string& math,const std::string& kernel){std::lock_guard lock(mutex);stats.math_profile=math;stats.kernel_profile=kernel;}
+  void RecordIdentity(const std::string& math,const std::string& kernel,const std::string& weights,const std::string& manifest){std::lock_guard lock(mutex);stats.math_profile=math;stats.kernel_profile=kernel;stats.weights_sha256=weights;stats.manifest_sha256=manifest;}
   void RecordCapture(){std::lock_guard lock(mutex);++stats.graph_captures;}
   static Status Busy(){return {StatusCode::kResourceExhausted,"one runtime worker/session already in use"};}
   InferenceOptions options;std::atomic<bool> cancel{false};std::thread thread;

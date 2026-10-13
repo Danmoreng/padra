@@ -826,7 +826,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     if(o.controlled_chunk_graphs){result.kernel_profile+="+s2-controlled-chunk-graphs-eager-tail-v1";result.math_profile+=";prefill-execution=chunk_graph_with_eager_tail;device-base/prompt-offset/full-layer-commit/request-binding-epochs;startup-shapes"+std::to_string(o.prefill_chunk)+"/"+std::to_string(4000%o.prefill_chunk)+",other-shapes-identical-body-eager;no-per-request-capture";}
     if(o.server_kv_checkpoint){result.kernel_profile+="+s8-local-bf16-checkpoint-v1";result.math_profile+=";checkpoint=one42MiB-local-ring-bitcopy/unchanged-global-prefix;only-containing-chunk-identical-eager-body/no-chunk-split/no-arithmetic-change;restore-before-Prepared/validated-canonical-prefix-runtime-generation-capacity-BF16";}
     if(worker && o.sampling.selection_graph()){result.kernel_profile+="+sampling-cub-stable-sort-fp64-cdf-splitmix64-v1";result.math_profile+=";selection=graph-bound-penalties/temperature/top-k/top-p-cub-fp64-cdf-splitmix64-v2;unmodified-logits";}
-    if(worker)worker->RecordIdentity(result.math_profile,result.kernel_profile);
+    if(worker)worker->RecordIdentity(result.math_profile,result.kernel_profile,model.weights_sha256,model.manifest_sha256);
     const int steps=static_cast<int>(o.input_ids.size())+std::max(0,o.generate-1);
     const auto finishDeviceToken=[&](int position,bool initialize,bool sampled=false,SamplingOptions fixed={}){
       Norm<<<1,128,0,stream.s>>>(x,normalized,norm,2304,1);project(head,normalized,logits);

@@ -13,4 +13,4 @@ namespace mellum16::server {
 // lowercase hexadecimal. IDs are opaque protocol handles, not counters.
 [[nodiscard]] Result<std::string> MakeSecureId(std::string_view prefix);
 
-}  // namespace mellum16::server
+} // namespace mellum16::server

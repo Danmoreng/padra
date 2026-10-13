@@ -15,10 +15,10 @@ GPU-resident. Default context is 131,072 tokens with BF16 KV. 8/12 GiB memory ce
 are explicit profiles; alternative-bpw checkpoints and physical smaller GPUs remain
 future qualification targets.
 
-This repository contains serving source, build files and required licenses only.
-Historical tests, reviews, benchmarks, captures and conversion campaigns remain in
-the separate research project. A prepared native artifact is required; weights and
-conversion outputs are not distributed here. Internal namespaces/checkpoint IDs
+This repository contains serving source, build files, server regression tests and
+required licenses. Historical model-quality tests, reviews, benchmarks, captures
+and conversion campaigns remain in the separate research project. A prepared native
+artifact is required; weights and conversion outputs are not distributed here. Internal namespaces/checkpoint IDs
 retain their legacy names for compatibility.
 
 ## Build
@@ -42,12 +42,24 @@ text are on by default. `PADRA_ENABLE_CUDA=OFF` and
 `PADRA_ENABLE_NATIVE_TEXT=OFF` permit a host compile check; such a build cannot run
 native model inference.
 
+Server regressions are registered with CTest and run without weights or CUDA:
+`ctest --test-dir build --output-on-failure`. See [tests](tests/README.md) for
+host/sanitizer commands and coverage. All owned C++ targets use strict warnings;
+[host CI](.github/workflows/host.yml) covers Debug/Release and native text builds.
+
 For an offline build, set `-DPADRA_CUTLASS_ROOT=/path/to/cutlass` to the pinned
 source tree or an existing prepared header cache, and use
 `-DPADRA_CARGO_OFFLINE=ON` with an already populated Cargo cache. Local CUTLASS
 headers receive the same hash checks as downloaded headers. See
 [Dependencies](DEPENDENCIES.md) for versions, licenses, local HTTP adaptations
 and cache/toolchain options.
+
+The versioned `-DPADRA_KERNEL_PROFILE=exact-fusions-v1` selects the complete
+optional kernel set described below; `baseline-v1` is the default set. An empty
+profile honors the existing `PADRA_EXL3_PREFILL_ASYNC64` alias. Unsupported profiles
+and `baseline-v1` combined with the legacy alias `ON` fail configuration.
+`/v1/models` exposes the resolved build profile. These names version the existing
+sets; they do not promote model quality or change the default.
 
 Optional `-DPADRA_EXL3_PREFILL_ASYNC64=ON` enables experimental K64 weight/input
 transport for EXL3 K4 prefill batches of at least four tokens; smaller batches
@@ -127,3 +139,48 @@ Other GPU architectures and physical 8/12 GB cards have not been qualified.
 
 Padra is licensed under [Apache 2.0](LICENSE). See [NOTICE](NOTICE) and
 licenses/ for third-party attribution.
+
+## Request lifecycle and observability
+
+Queue admission starts an independent five-second waiting deadline. Expiry,
+disconnect and session deletion remove queued work and release its byte/token
+reservation and session lease without waiting for the active GPU job. Generation
+has its own deadline, starting when execution begins; the CLI default is 600
+seconds. There is no separately configured total-request deadline.
+
+Normal stop/EOS, length and tool completion are generation outcomes. Errors and
+cancellations have a separate state. Streaming keeps 64 ordinary frames and a
+separate three-frame completion lane for finish reason, optional usage and
+`[DONE]`. A full delta/tool buffer produces an explicit error instead of reporting
+success with a truncated protocol. Idle streams emit an SSE comment heartbeat
+every 15 seconds; deployment-specific proxy behavior still needs testing.
+
+Both APIs return `503/queue_deadline` or `503/server_shutdown` with `Retry-After: 1`,
+and `504/generation_deadline`. SSE/Responses failures use the same domain codes.
+Response reservation/eviction precedes new root creation; failed admission releases
+new roots and pending reservations. Cache eviction is final, including when a later
+step fails. Pinned responses and shared roots retain their existing lifetime rules.
+At most four generation requests prepare/tokenize concurrently, with an early
+queue/readiness check followed by final byte/token admission.
+
+HTTP shutdown removes readiness, rejects new work and fails queued requests.
+Active generation gets a five-second grace period before cancellation; backend
+cancellation takes effect at its next cooperative boundary. Direct coordinator
+shutdown cancels immediately. The GPU continues to execute one request at a time.
+
+`/v1/models` reports validated loaded weight/manifest hashes, tokenizer hash,
+build source fingerprint, and runtime math/kernel profiles. Missing artifact
+identities are `null`. The build fingerprint identifies configure-time source
+content; compiler/toolchain and build options are separate qualification inputs.
+`/metrics` adds fixed-bucket latency histograms, output-token totals, and prefill
+chunk/eager counts. Queue time excludes preparation; output availability measures
+internal text/tool readiness before transport. Job lifetime ends at coordinator
+completion, so these metrics are not client-observed TTFT/end-to-end latency.
+Transport disconnect/backpressure counters include failures after generation ends.
+
+The review's GPU shape-cache, sampling-algorithm and multi-sequence scheduling
+suggestions require representative workload measurements and numerical validation.
+Tool arguments currently stream as a validated completion burst. Incremental tool
+parsing, SDK/proxy/load qualification, and authenticated external deployment remain
+separate extensions. No throughput or model-quality improvement is implied by
+these lifecycle changes.

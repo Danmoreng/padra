@@ -29,6 +29,7 @@ struct CompiledModel {
   std::map<std::string,Matrix,std::less<>> tensors;
   std::string tokenizer_sha256;
   std::string weights_sha256;
+  std::string manifest_sha256;
 };
 Status ApplyDiagnosticAttention(CompiledModel& model,const std::filesystem::path& directory);
 Result<CompiledModel> LoadCompiledModel(const std::filesystem::path& directory);
