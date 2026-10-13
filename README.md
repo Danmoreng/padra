@@ -150,8 +150,14 @@ The research version passed bounded native Python/TypeScript server workflows;
 long/load/expiry/concurrency/deployment qualification remains unfinished. Source
 extraction/build checks are not new model-inference or performance qualification.
 SM61 builds and synthetic kernel tests run on a GTX 1070 Max-Q (8 GiB).
-Complete-model inference on Pascal and other architectures has not been qualified;
-the original checkpoint and tokenizer must be supplied for those tests.
+With the original EXL3 K4 checkpoint, bounded SM61 checks cover greedy and seeded
+sampling, streaming, cancellation/recovery, and local KV snapshot restore after
+the 1024-token ring wraps. Context allocation and short requests pass at 8192
+and 16384 tokens. These checks do not qualify long-context quality or other GPUs.
+Run `python3 tests/checkpoint_smoke.py --base-url http://127.0.0.1:8080 --long`
+against an already running server to repeat the bounded checks.
+See [Pascal validation and benchmarks](docs/pascal-sm61-validation.md) for the
+real-checkpoint results, 2000/1000 and 4000/1000 timings, and llama.cpp comparison.
 
 Padra is licensed under [Apache 2.0](LICENSE). See [NOTICE](NOTICE) and
 licenses/ for third-party attribution.
