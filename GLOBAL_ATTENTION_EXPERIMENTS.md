@@ -1,5 +1,9 @@
 # Native global attention experiments
 
+Follow-up: [Q/K and KV fusion; native global query reuse](PERFORMANCE_QK_KV.md)
+implements and evaluates the first two next steps below. The exact fusion is
+retained; query-register reuse does not establish an additional full-model gain.
+
 Date: 2026-10-13. RTX 5080 Laptop, SM120a, CUDA 13.4/GCC 15.
 Parent: the selected ASYNC64=ON exact per-head merge from
 [PERFORMANCE_ATTENTION.md](PERFORMANCE_ATTENTION.md).

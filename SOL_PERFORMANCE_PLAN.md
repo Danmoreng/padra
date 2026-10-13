@@ -747,3 +747,39 @@ arithmetic, then incremental global-kernel scheduling changes, then normalizatio
 data movement. The linked report records concrete scope and validation steps.
 Evidence: `/home/sebastian/Development/padra-performance/2026-10-13-global-attention`.
 No new production CUDA change, default, commit or push in this follow-up.
+
+## Follow-up result: Q/K, RoPE and KV-store fusion (2026-10-13)
+
+The preceding source and comparison reports were committed and pushed as
+`c1c337f` before this follow-up, as requested. **Retain the exact Q/K-normalization,
+RoPE and BF16 KV-store fusion** under the existing ASYNC64=ON option. Default
+OFF remains unchanged. The new implementation removes 28 kernel launches per
+decode token without new buffers or altered arithmetic. All 238 pre-existing
+kernel SASS bodies are unchanged; one fused kernel is added.
+
+Six paired blocks versus the committed parent give P4000/G1000 decode
+256.32 to 257.86 token/s, paired +0.562% (95% +0.454..+0.686%), and P2000/G500
+259.95 to 261.18, paired +0.475% (+0.323..+0.581%). Candidate prefill is
+10,403.48 and 10,864.71 token/s respectively. Paired prefill changes are -0.132%
+and +0.025%, with intervals including zero; short-prompt prefill is
+-0.457..+0.395%. Retention uses the existing 1% median other-phase tolerance,
+not a claim of strictly zero slowdown. All valid samples remain included.
+
+The second requested experiment caches native global Q operands in registers
+across KV tiles, preserving MMA/softmax/partition arithmetic. Operator time
+improves, and full-model outputs are exact. An independently qualified combined
+build is then compared against fusion alone: P4 decode 257.66 to 257.79 token/s,
+paired +0.055% (95% -0.075..+0.191%); P2 decode 261.33 to 261.12, paired -0.032%
+(-0.161..+0.032%). **Do not promote query reuse:** the extra complete-model gain
+is unproven. No arbitrary minimum speed threshold is applied.
+
+Each prototype and the combined build reproduce 4,128 complete heads, 42 boundary
+heads in each direct/graph mode and ten state cases. Fusion and combined OFF
+checks, independent operator checks and scoped sanitizers pass. Historical
+absolute-quality issues remain; no numerical holdout was consumed.
+
+See [PERFORMANCE_QK_KV.md](PERFORMANCE_QK_KV.md) for scope, all absolute rates,
+uncertainty and reproduction. Selected source/binary pins:
+`/home/sebastian/Development/padra-performance/2026-10-13-qk-kv-global-reuse/SELECTED_PARENT.json`.
+Both requested experiments are completed; further tile/partition and normalization
+work remains unqualified. The 12K prefill / 280 decode targets are still unmet.

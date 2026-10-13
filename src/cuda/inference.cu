@@ -329,6 +329,7 @@ struct Buffer {
 struct Stream{cudaStream_t s=nullptr;Stream(){Check(cudaStreamCreate(&s));}~Stream(){if(s)cudaStreamDestroy(s);}};
 struct Pinned{Control* p=nullptr;Pinned(){Check(cudaMallocHost(&p,sizeof(Control)));}~Pinned(){if(p)cudaFreeHost(p);}};
 #include "decode_control.cuh"
+#include "qk_rope_store_exact.cuh"
 #include "attention_decode_fast.cuh"
 #include "attention_gqa8.cuh"
 #include "attention_merge_quantize.cuh"
@@ -708,6 +709,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     constexpr bool perHeadMerge=false;
 #endif
     if(perHeadMerge){result.kernel_profile+="+perhead-exact-merge-v1";result.math_profile+=";attention-merge=per-head-BF16-storage/exact-parent-FP8-row-encoding";}
+    const bool fusedQKStore=perHeadMerge && o.device_decode;
+    if(fusedQKStore){cudaFuncAttributes attributes;Check(cudaFuncGetAttributes(&attributes,QKNormRopeStoreControlled));result.kernel_profile+="+exact-qk-rope-kv-store-v1";}
     const auto baseKernelProfile=result.kernel_profile,baseMathProfile=result.math_profile;
     const auto loadSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::size_t preparedLength=0;
@@ -869,13 +872,14 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
           else ProjectQKVGrouped<false><<<1280,128,0,stream.s>>>(a.q,a.k,a.v,fp8Input,fp8Scales,q,k,v,1,bad.As<int>());
         }else {project(a.q,normalized,q);project(a.k,normalized,k,o.native_decode);project(a.v,normalized,v,o.native_decode);}
         capture("q_proj",q,selected);capture("k_proj",k,selected);capture("v_proj",v,selected);
-        if(o.device_decode)QKNormRopeControlled<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,(l%4==3?ropeG:ropeL).As<float>(),deviceState.As<DecodeState>(),bad.As<int>(),nullptr,nullptr,contextMaximum);
+        if(fusedQKStore)QKNormRopeStoreControlled<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,(l%4==3?ropeG:ropeL).As<float>(),deviceState.As<DecodeState>(),bad.As<int>(),v,a.kc,a.vc,a.cap,contextMaximum);
+        else if(o.device_decode)QKNormRopeControlled<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,(l%4==3?ropeG:ropeL).As<float>(),deviceState.As<DecodeState>(),bad.As<int>(),nullptr,nullptr,contextMaximum);
         else QKNormRope<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,(l%4==3?ropeG:ropeL).As<float>(),position,bad.As<int>(),selected?bindings.find("q_norm")->second.pointer:nullptr,selected?bindings.find("k_norm")->second.pointer:nullptr);
         capture("q_rope",q,selected);capture("k_rope",k,selected);
         if(q8Cache)kv_q8::Encode<true><<<1,128,0,stream.s>>>(k,v,static_cast<signed char*>(a.q8.k),static_cast<signed char*>(a.q8.v),static_cast<kv_q8::Scales*>(a.q8.scales),1,bad.As<int>(),deviceState.As<DecodeState>(),a.cap,contextMaximum);
         else if(o.fp8_kv_cache)kv_fp8::Encode<true><<<1,128,0,stream.s>>>(k,v,a.ek,a.ev,a.sf,1,a.cap,deviceState.As<DecodeState>(),bad.As<int>());
-        else if(o.device_decode)StoreControlled<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,deviceState.As<DecodeState>(),a.cap,bad.As<int>(),contextMaximum);
-        else Store<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,position,a.cap);
+        else if(o.device_decode && !fusedQKStore)StoreControlled<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,deviceState.As<DecodeState>(),a.cap,bad.As<int>(),contextMaximum);
+        else if(!o.device_decode)Store<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,position,a.cap);
         if(selected){const auto& r=bindings.find("key_cache")->second;const int visible=l%4==3?position+1:std::min(position+1,1024);CaptureKV<<<(visible*512+127)/128,128,0,stream.s>>>(r.pointer,a.kc,a.vc,position,a.cap,l%4!=3);}
         if(q8Cache){gqa8_q8_attention::Launch(q,a.q8,attn,fp8Input,fp8Scales,deviceState.As<DecodeState>(),l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s,contextMaximum);}
         else if(perHeadMerge){attention_perhead_exact::Launch(q,a.kc,a.vc,reinterpret_cast<__nv_bfloat16*>(attn),deviceState.As<DecodeState>(),a.cap,l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s,contextMaximum);attention_perhead_exact::Quantize<<<1,512,0,stream.s>>>(reinterpret_cast<const __nv_bfloat16*>(attn),fp8Input,fp8Scales,bad.As<int>());}

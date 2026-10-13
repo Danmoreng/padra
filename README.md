@@ -73,6 +73,12 @@ slightly negative and unresolved; strict zero slowdown is not proven.
 See [the attention report](PERFORMANCE_ATTENTION.md) for intervals, the BF16 O
 prototype that did not pass numerical qualification, and FlashInfer operator results.
 
+The option also fuses Q/K normalization, RoPE and BF16 KV storage, removing
+28 kernel launches per decode token with unchanged checked outputs. Final paired
+decode gains are another 0.48%/0.56% at P2000/G500 and P4000/G1000. The native
+global query-reuse experiment did not establish an additional full-model gain.
+See [the Q/K and KV report](PERFORMANCE_QK_KV.md) for absolute rates and validation.
+
 The [native vLLM EXL3 comparison](VLLM_EXL3_COMPARISON.md) documents a working
 plugin setup using the same EXL3 expert and FP8 attention weights, alongside
 fresh Padra and native vLLM INT4 measurements.
