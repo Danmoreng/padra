@@ -14,9 +14,11 @@ int main(int argc,char** argv){try{
   auto ids=[](const mellum16::json::Value* value){std::vector<int> result;if(value)for(const auto& v:value->as_array())result.push_back(static_cast<int>(v.as_integer()));return result;};
   auto o=mellum16::SelectedServerOptions(argv[1],argv[2]);o.capacity=number("capacity",8192);o.prefill_chunk=number("chunk",256);o.server_device_budget_gib=8;o.controlled_chunk_graphs=true;
   o.input_ids={0};o.generate=0;o.capture_logits=true;o.simt_eager=flag("eager");o.simt_capture_tensors=!flag("events_only");o.simt_reference_attention=!flag("split_attention");o.simt_reference_codec=flag("reference_codec");o.simt_reference_prefill=flag("reference_prefill");
+  o.simt_reference_math=flag("reference_math");
   const std::filesystem::path output(argv[4]);std::filesystem::create_directories(output);
   if(flag("diagnostics"))o.simt_diagnostics=output/"tensors";
   o.simt_diagnostic_layer=number("layer",0);o.simt_diagnostic_positions=ids(root.find("positions"));o.simt_teacher_tokens=ids(root.find("teacher_tokens"));
+  if(const auto* sequences=root.find("teacher_sequences"))for(const auto& sequence:sequences->as_array())o.simt_teacher_sequences.push_back(ids(&sequence));
   auto loaded=mellum16::LoadCudaModelRuntime(o);if(!loaded.ok())throw std::runtime_error(loaded.status().message());
   mellum16::ModelRuntime runtime(std::move(loaded).value());std::ofstream report(output/"results.jsonl");int index=0;
   const auto* requests=root.find("requests");if(!requests)throw std::runtime_error("configuration requires requests array");

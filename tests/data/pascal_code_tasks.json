@@ -1,0 +1,233 @@
+[
+  {
+    "name": "python-stable_unique",
+    "language": "python",
+    "prompt": "Write python code implementing a function named stable_unique with parameters values. Return the unique values in their original order. Output only the function code. No example calls, no main program.",
+    "checks": "assert stable_unique([]) == []\nassert stable_unique([1, 2, 1, 3, 2]) == [1, 2, 3]\nassert stable_unique([0, 0]) == [0]"
+  },
+  {
+    "name": "python-flatten",
+    "language": "python",
+    "prompt": "Write python code implementing a function named flatten with parameters rows. Flatten a list of lists by one level. Output only the function code. No example calls, no main program.",
+    "checks": "assert flatten([]) == []\nassert flatten([[], [1, 2], [], [3]]) == [1, 2, 3]\nassert flatten([[0]]) == [0]"
+  },
+  {
+    "name": "python-prefix_sums",
+    "language": "python",
+    "prompt": "Write python code implementing a function named prefix_sums with parameters values. Return cumulative sums, including the current value at each position. Output only the function code. No example calls, no main program.",
+    "checks": "assert prefix_sums([]) == []\nassert prefix_sums([2, -1, 4]) == [2, 1, 5]\nassert prefix_sums([0, 0]) == [0, 0]"
+  },
+  {
+    "name": "python-count_words",
+    "language": "python",
+    "prompt": "Write python code implementing a function named count_words with parameters text. Split on whitespace, lowercase each word, and return a mapping from words to their occurrence counts. Output only the function code. No example calls, no main program.",
+    "checks": "assert count_words('') == {}\nassert count_words(' A b A ') == {'a': 2, 'b': 1}\nassert count_words('One\\nTWO\\tone') == {'one': 2, 'two': 1}"
+  },
+  {
+    "name": "python-is_palindrome",
+    "language": "python",
+    "prompt": "Write python code implementing a function named is_palindrome with parameters text. Return whether the string is a palindrome after retaining only ASCII letters and digits and lowercasing. Output only the function code. No example calls, no main program.",
+    "checks": "assert is_palindrome('') == True\nassert is_palindrome('A man, a plan, a canal: Panama!') == True\nassert is_palindrome('abc') == False"
+  },
+  {
+    "name": "python-gcd",
+    "language": "python",
+    "prompt": "Write python code implementing a function named gcd with parameters a, b. Return the nonnegative greatest common divisor of two integers. gcd(0,0) is 0. Output only the function code. No example calls, no main program.",
+    "checks": "assert gcd(0, 0) == 0\nassert gcd(-12, 18) == 6\nassert gcd(81, 27) == 27"
+  },
+  {
+    "name": "python-chunk",
+    "language": "python",
+    "prompt": "Write python code implementing a function named chunk with parameters values, size. Split the list into successive lists of size elements; keep a short final list. size is always positive. Output only the function code. No example calls, no main program.",
+    "checks": "assert chunk([], 3) == []\nassert chunk([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]\nassert chunk([1, 2], 3) == [[1, 2]]"
+  },
+  {
+    "name": "python-lower_bound",
+    "language": "python",
+    "prompt": "Write python code implementing a function named lower_bound with parameters values, target. For a sorted numeric list, return the first index whose value is at least target, or the list length. Output only the function code. No example calls, no main program.",
+    "checks": "assert lower_bound([], 5) == 0\nassert lower_bound([1, 3, 3, 7], 3) == 1\nassert lower_bound([1, 3, 3, 7], 8) == 4\nassert lower_bound([1, 3, 3, 7], 0) == 0"
+  },
+  {
+    "name": "typescript-stable_unique",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named stable_unique with parameters values. Return the unique values in their original order. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(stable_unique([])) !== JSON.stringify([])) throw new Error(\"wrong result\");\nif (JSON.stringify(stable_unique([1, 2, 1, 3, 2])) !== JSON.stringify([1, 2, 3])) throw new Error(\"wrong result\");\nif (JSON.stringify(stable_unique([0, 0])) !== JSON.stringify([0])) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-flatten",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named flatten with parameters rows. Flatten a list of lists by one level. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(flatten([])) !== JSON.stringify([])) throw new Error(\"wrong result\");\nif (JSON.stringify(flatten([[], [1, 2], [], [3]])) !== JSON.stringify([1, 2, 3])) throw new Error(\"wrong result\");\nif (JSON.stringify(flatten([[0]])) !== JSON.stringify([0])) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-prefix_sums",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named prefix_sums with parameters values. Return cumulative sums, including the current value at each position. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(prefix_sums([])) !== JSON.stringify([])) throw new Error(\"wrong result\");\nif (JSON.stringify(prefix_sums([2, -1, 4])) !== JSON.stringify([2, 1, 5])) throw new Error(\"wrong result\");\nif (JSON.stringify(prefix_sums([0, 0])) !== JSON.stringify([0, 0])) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-count_words",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named count_words with parameters text. Split on whitespace, lowercase each word, and return a mapping from words to their occurrence counts. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(Object.fromEntries(Object.entries(count_words(\"\")).sort())) !== JSON.stringify(Object.fromEntries(Object.entries({}).sort()))) throw new Error(\"wrong result\");\nif (JSON.stringify(Object.fromEntries(Object.entries(count_words(\" A b A \")).sort())) !== JSON.stringify(Object.fromEntries(Object.entries({\"a\": 2, \"b\": 1}).sort()))) throw new Error(\"wrong result\");\nif (JSON.stringify(Object.fromEntries(Object.entries(count_words(\"One\\nTWO\\tone\")).sort())) !== JSON.stringify(Object.fromEntries(Object.entries({\"one\": 2, \"two\": 1}).sort()))) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-is_palindrome",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named is_palindrome with parameters text. Return whether the string is a palindrome after retaining only ASCII letters and digits and lowercasing. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(is_palindrome(\"\")) !== JSON.stringify(true)) throw new Error(\"wrong result\");\nif (JSON.stringify(is_palindrome(\"A man, a plan, a canal: Panama!\")) !== JSON.stringify(true)) throw new Error(\"wrong result\");\nif (JSON.stringify(is_palindrome(\"abc\")) !== JSON.stringify(false)) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-gcd",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named gcd with parameters a, b. Return the nonnegative greatest common divisor of two integers. gcd(0,0) is 0. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(gcd(0,0)) !== JSON.stringify(0)) throw new Error(\"wrong result\");\nif (JSON.stringify(gcd(-12,18)) !== JSON.stringify(6)) throw new Error(\"wrong result\");\nif (JSON.stringify(gcd(81,27)) !== JSON.stringify(27)) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-chunk",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named chunk with parameters values, size. Split the list into successive lists of size elements; keep a short final list. size is always positive. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(chunk([],3)) !== JSON.stringify([])) throw new Error(\"wrong result\");\nif (JSON.stringify(chunk([1, 2, 3, 4, 5],2)) !== JSON.stringify([[1, 2], [3, 4], [5]])) throw new Error(\"wrong result\");\nif (JSON.stringify(chunk([1, 2],3)) !== JSON.stringify([[1, 2]])) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "typescript-lower_bound",
+    "language": "typescript",
+    "prompt": "Write typescript code implementing a function named lower_bound with parameters values, target. For a sorted numeric list, return the first index whose value is at least target, or the list length. Output only the function code. No example calls, no main program.",
+    "checks": "if (JSON.stringify(lower_bound([],5)) !== JSON.stringify(0)) throw new Error(\"wrong result\");\nif (JSON.stringify(lower_bound([1, 3, 3, 7],3)) !== JSON.stringify(1)) throw new Error(\"wrong result\");\nif (JSON.stringify(lower_bound([1, 3, 3, 7],8)) !== JSON.stringify(4)) throw new Error(\"wrong result\");\nif (JSON.stringify(lower_bound([1, 3, 3, 7],0)) !== JSON.stringify(0)) throw new Error(\"wrong result\");"
+  },
+  {
+    "name": "sql-complete",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return id,total for completed orders sorted by id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        1,
+        100
+      ],
+      [
+        3,
+        100
+      ],
+      [
+        4,
+        40
+      ]
+    ]
+  },
+  {
+    "name": "sql-totals",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return customer id and completed-order total for every customer, including zero totals. Sort by customer id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        1,
+        100
+      ],
+      [
+        2,
+        140
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        4,
+        0
+      ]
+    ]
+  },
+  {
+    "name": "sql-none",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return customer id and name for customers with no orders at all, sorted by id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        4,
+        "Dan"
+      ]
+    ]
+  },
+  {
+    "name": "sql-count",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return customer_id and number of orders for each customer with orders, sorted by customer_id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "sql-average",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return the average total of completed orders as a single row. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        80.0
+      ]
+    ]
+  },
+  {
+    "name": "sql-max",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return customer_id and maximum order total for each customer with orders, sorted by customer_id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        1,
+        100
+      ],
+      [
+        2,
+        100
+      ],
+      [
+        3,
+        5
+      ]
+    ]
+  },
+  {
+    "name": "sql-top",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return customer id and name for the customer with the largest completed-order total. Break ties by smaller customer id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        2,
+        "Bob"
+      ]
+    ]
+  },
+  {
+    "name": "sql-missing_complete",
+    "language": "sql",
+    "prompt": "Write a single SQLite SELECT query. Tables: customers(id INTEGER PRIMARY KEY, name TEXT), orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT). Return customer id and name for customers with no completed orders, sorted by customer id. Output only SQL.",
+    "setup": "CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT); CREATE TABLE orders(id INTEGER PRIMARY KEY, customer_id INTEGER, total INTEGER, status TEXT); INSERT INTO customers VALUES(1,'Ada'),(2,'Bob'),(3,'Cara'),(4,'Dan'); INSERT INTO orders VALUES(1,1,100,'completed'),(2,1,50,'pending'),(3,2,100,'completed'),(4,2,40,'completed'),(5,3,5,'pending');",
+    "expected": [
+      [
+        3,
+        "Cara"
+      ],
+      [
+        4,
+        "Dan"
+      ]
+    ]
+  }
+]

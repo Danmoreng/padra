@@ -23,7 +23,11 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
   const auto base = std::string("exl3-k") + std::to_string(expert_rate) +
                     (chunks ? "-chunk-graph-eager-tail-" : "-all-rows-wide-vector-");
 #endif
-  return base +
+  std::string math;
+#if PADRA_BUILD_SIMT
+  if (std::string(kBuildArchitecture) == "61") math = "-pascal-fp32-v2-attention-tiered-";
+#endif
+  return base + math +
          std::to_string(capacity) + "-v1" +
          (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1 ? "-q8-token-head128-f32scale-v1"
           : kv_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2

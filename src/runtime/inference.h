@@ -46,10 +46,12 @@ struct InferenceOptions {
   bool server_kv_checkpoint = false; // One local-ring snapshot in the selected KV format.
   // Offline SIMT qualification controls, never set by HTTP requests.
   bool simt_reference_codec=false,simt_reference_prefill=false,simt_eager=false,simt_reference_attention=true;
+  bool simt_reference_math=false;
   bool simt_capture_tensors=true;
   std::filesystem::path simt_diagnostics;
   int simt_diagnostic_layer=0;
   std::vector<int> simt_diagnostic_positions,simt_teacher_tokens;
+  std::vector<std::vector<int>> simt_teacher_sequences;
   bool native_prefill = false;
   bool accurate_native_prefill = false;
   bool fp8_expert_activations = false;
