@@ -13,7 +13,7 @@ GPU sampling with frequency/presence/repetition penalties, Chat Completions,
 Responses, streaming, function calls and bounded session/KV reuse. Weights remain
 GPU-resident. SM120 defaults to 131,072 tokens with BF16 KV; the SIMT backend
 defaults to 8,192 tokens. 8/12 GiB memory ceilings are explicit profiles.
-Alternative-bpw checkpoints and complete-model Pascal qualification remain pending.
+Alternative-bpw checkpoints and broad model-quality qualification remain pending.
 
 This repository contains serving source, build files and required licenses only.
 Historical tests, reviews, benchmarks, captures and conversion campaigns remain in
@@ -69,15 +69,23 @@ the SIMT backend; additional architecture-specific Tensor Core backends are futu
 work. A single GPU target is built per binary.
 
 The SIMT backend keeps the original K4 payload, FP8 attention weights/activations
-and BF16 KV storage. It uses selected EXL3 FP32 FMA kernels, compensated scalar
-attention and reusable single-token CUDA graphs for both prefill and decode.
+and BF16 KV storage. Prefill runs by layer in physical batches of 256, reusing
+FP8 weights across eight rows and grouping EXL3 rows by expert. Current-chunk KV
+is staged separately until causal attention has finished reading the old local
+ring. Decode uses a reusable single-token graph. SM61 replaces the slow half-FMA
+codec with an exact FP32/DP4A implementation and lookup tables; the half rounding
+and projection summation order are retained.
 It does not download CUTLASS or compile SM120/FP4/MMA/`cp.async` kernels.
-Prefill chunk size controls progress/cancellation commit boundaries; its workspace
-is independent of that size. Session append and local KV snapshot/restore use
-the existing worker protocol. Reduction order differs from the Tensor Core path;
-complete-model logits, quality and speed need the original checkpoint for validation.
-Q8 KV and the SM120 research capture/teacher-forcing options are currently unsupported
-in SIMT and fail explicitly.
+Public prefill chunk sizes remain an upper bound; SIMT commits physical batches
+of up to 256 rows. Matrix tiles and owned workspace stay bounded. Session append
+and local KV snapshot/restore use the existing worker protocol, splitting batches at snapshot
+anchors. Three graphs are captured once in the default SIMT server profile.
+Q8 KV and SM120-specific research captures remain unsupported in SIMT. Explicit
+offline SIMT tensor captures, operator events and teacher replay are available
+with `PADRA_BUILD_DIAGNOSTICS=ON`; they are never enabled by HTTP requests.
+Reduction order differs from the Tensor Core backend. Real-checkpoint numerical
+checks preserve the original SIMT results; broad source/NLL/task quality gates
+remain open.
 
 Checkpoint-free checks (the GPU test requires a device compatible with the target):
 
@@ -158,6 +166,9 @@ Run `python3 tests/checkpoint_smoke.py --base-url http://127.0.0.1:8080 --long`
 against an already running server to repeat the bounded checks.
 See [Pascal validation and benchmarks](docs/pascal-sm61-validation.md) for the
 real-checkpoint results, 2000/1000 and 4000/1000 timings, and llama.cpp comparison.
+The [Pascal performance results](docs/pascal-sm61-performance-results.md) record
+the exact codec, batched prefill, selected kernel variants and repeated comparison
+against llama.cpp; the plan's speed targets have not been met.
 
 Padra is licensed under [Apache 2.0](LICENSE). See [NOTICE](NOTICE) and
 licenses/ for third-party attribution.
