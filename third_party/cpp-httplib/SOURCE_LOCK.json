@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/yhirose/cpp-httplib",
+  "version": "0.40.0",
+  "source_donor": {
+    "repository": "https://github.com/Danmoreng/gem16",
+    "revision": "c0a807afcbcd2528f304bada513afd11d1e9c979"
+  },
+  "adaptations": [
+    "Bodyless request framing and pipelined request preservation",
+    "Persistent keep-alive read-ahead buffer",
+    "Connection: close handling and rejection of unsupported Transfer-Encoding"
+  ],
+  "sha256": {
+    "LICENSE": "f8c53951438545b8ed61176d9071bd1039e81502f9ec9590b85ccd5c71a08473",
+    "httplib.h": "58abb7e3c8526f9b5b2165c4fa630736e4d08e21279d5595a4ae00f3ddb5272c",
+    "httplib.cpp": "472ea7ca3c3de4db420ec80416c58a11170e6614e404187b41f192281db8fd28"
+  }
+}

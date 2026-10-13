@@ -1,0 +1,41 @@
+include_guard(GLOBAL)
+
+function(padra_add_native_text)
+  find_program(PADRA_CARGO_EXECUTABLE cargo REQUIRED)
+  set(PADRA_CARGO_HOME "" CACHE PATH "Optional private Cargo cache")
+  set(PADRA_RUSTUP_HOME "" CACHE PATH "Optional private Rustup toolchains")
+  set(PADRA_CARGO_JOBS "2" CACHE STRING "Maximum parallel jobs for native text dependencies")
+  option(PADRA_CARGO_OFFLINE "Build native text using only already cached Rust dependencies" OFF)
+  set(text_build_environment)
+  if(PADRA_CARGO_HOME)
+    list(APPEND text_build_environment "CARGO_HOME=${PADRA_CARGO_HOME}")
+  endif()
+  if(PADRA_RUSTUP_HOME)
+    list(APPEND text_build_environment "RUSTUP_HOME=${PADRA_RUSTUP_HOME}")
+  endif()
+  set(cargo_options --locked)
+  if(PADRA_CARGO_OFFLINE)
+    list(APPEND cargo_options --offline)
+  endif()
+  set(text_source "${PROJECT_SOURCE_DIR}/src/text/native")
+  if(MSVC)
+    set(text_archive "${PROJECT_BINARY_DIR}/native-text/release/mellum16_native_text.lib")
+  else()
+    set(text_archive "${PROJECT_BINARY_DIR}/native-text/release/libmellum16_native_text.a")
+  endif()
+  add_custom_command(OUTPUT "${text_archive}"
+    COMMAND ${CMAKE_COMMAND} -E env ${text_build_environment} ${PADRA_CARGO_EXECUTABLE}
+      build ${cargo_options} --release --manifest-path "${text_source}/Cargo.toml"
+      --target-dir "${PROJECT_BINARY_DIR}/native-text" --jobs "${PADRA_CARGO_JOBS}"
+    DEPENDS "${text_source}/Cargo.toml" "${text_source}/Cargo.lock"
+      "${text_source}/src/lib.rs" "${text_source}/src/renderer.rs"
+    VERBATIM)
+  add_custom_target(padra-native-text-build DEPENDS "${text_archive}")
+  add_library(padra_native_text STATIC IMPORTED GLOBAL)
+  set_target_properties(padra_native_text PROPERTIES IMPORTED_LOCATION "${text_archive}")
+  add_dependencies(padra_native_text padra-native-text-build)
+  target_link_libraries(padra_core PRIVATE padra_native_text ${CMAKE_DL_LIBS})
+  if(UNIX)
+    target_link_libraries(padra_core PRIVATE m)
+  endif()
+endfunction()

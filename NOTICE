@@ -12,7 +12,7 @@ chat template are retained; Gemma model arithmetic/templates were not copied.
 
 CUTLASS ABI, conversions and FP8 support use NVIDIA/CUTLASS (BSD-3-Clause),
 revision db1c288993354c88e551c40c19a8fb93a774a241. External headers are pinned
-and verified by CMake; their license is retained in licenses/.
+and fetched/verified by CMake; their license is retained in licenses/.
 
 EXL3/H128 quantization mechanisms derive from turboderp/exllamav3 (MIT).
 The native tokenizer uses Hugging Face Tokenizers0.22.1 (Apache-2.0), with
@@ -21,3 +21,5 @@ locked Rust dependencies. Individual dependency licensing remains applicable.
 HTTP transport is cpp-httplib0.40.0 (MIT); upstream license is in third_party/.
 The local transport adaptation preserves bodyless framing/read-ahead and close
 semantics. Source-file copyright notices and license headers are retained.
+Exact vendored file hashes and donor provenance are recorded in
+third_party/cpp-httplib/SOURCE_LOCK.json. See DEPENDENCIES.md for build integration.
