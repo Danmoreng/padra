@@ -26,6 +26,7 @@
 namespace mellum16 {
 namespace {
 #include "simt_kernels.cuh"
+#include "simt_diagnostics.h"
 
 struct Layer {
   DeviceMatrix norm,post,qn,kn,q,k,v,out,router;
@@ -45,6 +46,11 @@ Status ValidateSimtOptions(const InferenceOptions& o,bool persistent){
     return {StatusCode::kUnsupported,"SM120 research captures are not implemented in the SIMT backend"};
   if(o.diagnostic_decode_token>=0)
     return {StatusCode::kUnsupported,"teacher-forced decode is not implemented in the SIMT backend"};
+  if(o.simt_diagnostic_layer<0 || o.simt_diagnostic_layer>=28)
+    return {StatusCode::kInvalidArgument,"invalid SIMT diagnostic layer"};
+  for(int id:o.simt_teacher_tokens)if(id<0 || id>=98304)return {StatusCode::kInvalidArgument,"invalid SIMT teacher token"};
+  if(!o.simt_teacher_tokens.empty() && (o.simt_diagnostics.empty() || o.simt_teacher_tokens.size()<static_cast<std::size_t>(std::max(0,o.generate-1))))
+    return {StatusCode::kInvalidArgument,"SIMT teacher replay requires offline diagnostics and enough teacher tokens"};
   if(!persistent && o.server_kv_checkpoint)
     return {StatusCode::kUnsupported,"KV checkpoint capture requires a persistent runtime"};
   if(auto sampling=ValidateSampling(o.sampling);!sampling.ok())return sampling;
@@ -125,28 +131,43 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     auto* sample_ids=reinterpret_cast<int*>(sorted+98304);auto* sorted_ids=sample_ids+98304;auto* counts=sorted_ids+98304;
     auto* cumulative=reinterpret_cast<double*>(counts+98304);auto* rng=reinterpret_cast<gpu_sampling::State*>(cumulative+98304);
     auto* candidates=buffer("selection").As<SelectionCandidate>();
+    SimtDiagnostics diagnostics(o);
     DecodeGraph forward_graph,head_graph;
-    forward_graph.Capture(stream.s,[&]{
+    const auto forward=[&]{
       EmbedSimt<<<1,128,0,stream.s>>>(embed,command,x,bad,o.capacity);
       for(int l=0;l<28;++l){const auto& a=layers[l];
-        NormFP8WideExact<<<1,256,0,stream.s>>>(x,normalized,a.norm,encoded,scale,bad);
-        fast_projection::QKVVector<<<1280,128,0,stream.s>>>(a.q,a.k,a.v,encoded,scale,q,k,v,bad);
-        QKNormRope<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,l%4==3?rope_global:rope_local,0,bad,nullptr,nullptr,nullptr,o.capacity,buffer("command").As<int>()+1);
-        StoreSimt<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,command,a.capacity);
-        if(l%4==3)AttendSimt<false><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);
-        else AttendSimt<true><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);
-        QuantizeSimt<<<1,128,0,stream.s>>>(attention,encoded,scale,4096,bad);
-        fast_projection::Vector<<<576,128,0,stream.s>>>(a.out,encoded,scale,residual,bad);
-        ResidualPostNormBF16<<<1,128,0,stream.s>>>(x,residual,normalized,a.post,bad);
+        const auto dump=[&](const char* name,const void* pointer,std::size_t bytes){if(l==o.simt_diagnostic_layer)diagnostics.Dump(name,pointer,bytes,stream.s);};
+        dump("input",x,2304*4);
+        diagnostics.Measure("norm",l,stream.s,[&]{NormFP8WideExact<<<1,256,0,stream.s>>>(x,normalized,a.norm,encoded,scale,bad);});
+        dump("input_norm",normalized,2304*4);
+        diagnostics.Measure("qkv",l,stream.s,[&]{fast_projection::QKVVector<<<1280,128,0,stream.s>>>(a.q,a.k,a.v,encoded,scale,q,k,v,bad);});
+        dump("q_proj",q,4096*4);dump("k_proj",k,512*4);dump("v_proj",v,512*4);
+        diagnostics.Measure("qknorm_rope_store",l,stream.s,[&]{QKNormRope<<<36,128,0,stream.s>>>(q,k,a.qn,a.kn,l%4==3?rope_global:rope_local,0,bad,nullptr,nullptr,nullptr,o.capacity,buffer("command").As<int>()+1);
+        StoreSimt<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,command,a.capacity);});
+        dump("q_rope",q,4096*4);dump("k_rope",k,512*4);
+        diagnostics.Measure("attention",l,stream.s,[&]{if(l%4==3)AttendSimt<false><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);
+        else AttendSimt<true><<<32,256,0,stream.s>>>(q,a.kc,a.vc,attention,command,a.capacity,scores,bad);});
+        dump("attention",attention,4096*4);
+        diagnostics.Measure("o",l,stream.s,[&]{QuantizeSimt<<<1,128,0,stream.s>>>(attention,encoded,scale,4096,bad);
+        fast_projection::Vector<<<576,128,0,stream.s>>>(a.out,encoded,scale,residual,bad);});
+        dump("o_proj",residual,2304*4);
+        diagnostics.Measure("postnorm_router",l,stream.s,[&]{ResidualPostNormBF16<<<1,128,0,stream.s>>>(x,residual,normalized,a.post,bad);
         RouterBF16Warp32Exact<<<64,32,0,stream.s>>>(a.router,normalized,router,bad);
-        RouteRankExact<<<1,64,0,stream.s>>>(router,ids,routing,bad);
-        exl3_selected::Launch(descriptors,l,0,ids,normalized,gate,transformed,8,bad,stream.s);
-        exl3_selected::Launch(descriptors,l,1,ids,normalized,up,transformed,8,bad,stream.s);
-        exl3_silu_lut::Activate<<<56,128,0,stream.s>>>(gate,up,silu,8*896,bad);
-        exl3_selected::Launch(descriptors,l,2,ids,gate,down,transformed,8,bad,stream.s);
-        Combine<<<18,128,0,stream.s>>>(x,down,routing,bad);
+        RouteRankExact<<<1,64,0,stream.s>>>(router,ids,routing,bad);});
+        dump("post_norm",normalized,2304*4);dump("router_ids_i32",ids,8*4);dump("routing_weights",routing,8*4);
+        diagnostics.Measure("gate",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,0,ids,normalized,gate,transformed,8,bad,stream.s);});
+        dump("expert_gate",gate,8*896*4);
+        diagnostics.Measure("up",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,1,ids,normalized,up,transformed,8,bad,stream.s);});
+        dump("expert_up",up,8*896*4);
+        diagnostics.Measure("silu",l,stream.s,[&]{exl3_silu_lut::Activate<<<56,128,0,stream.s>>>(gate,up,silu,8*896,bad);});
+        dump("expert_activation",gate,8*896*4);
+        diagnostics.Measure("down",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,2,ids,gate,down,transformed,8,bad,stream.s);});
+        dump("expert_down",down,8*2304*4);
+        diagnostics.Measure("combine",l,stream.s,[&]{Combine<<<18,128,0,stream.s>>>(x,down,routing,bad);});
+        dump("output",x,2304*4);
       }
-    });
+    };
+    forward_graph.Capture(stream.s,forward);
     head_graph.Capture(stream.s,[&]{Norm<<<1,128,0,stream.s>>>(x,normalized,norm,2304,1);head_bf16_prefetch::Projection<<<24576,128,0,stream.s>>>(head,normalized,logits,bad);});
     Check(cudaMemGetInfo(&free,&total));const auto after_graph=ServerAvailableBytes(free,total,o.server_device_budget_gib);
     if(after_graph<plan.reserve)return Status(StatusCode::kResourceExhausted,"SIMT post-graph admission violates 700MiB reserve");
@@ -164,7 +185,10 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       Check(cudaMemcpyAsync(restore?static_cast<void*>(layers[l].kc):saved,restore?saved:static_cast<void*>(layers[l].kc),1024*1024,cudaMemcpyDeviceToDevice,stream.s));
       Check(cudaMemcpyAsync(restore?static_cast<void*>(layers[l].vc):saved+1024*1024,restore?saved+1024*1024:static_cast<void*>(layers[l].vc),1024*1024,cudaMemcpyDeviceToDevice,stream.s));offset+=1024*2048;
     }Check(cudaStreamSynchronize(stream.s));};
+    int diagnostic_request=0;
     do {
+      ++diagnostic_request;
+      if(!o.simt_diagnostics.empty()){diagnostics.directory=o.simt_diagnostics/("request-"+std::to_string(diagnostic_request));std::filesystem::create_directories(diagnostics.directory);}
       if(worker && !worker->AwaitPrepare())break;
       if(worker && worker->checkpoint_restore_pending){checkpoint_copy(true);worker->RecordCheckpointRestore();}
       Check(cudaMemsetAsync(bad,0,sizeof(int),stream.s));
@@ -180,12 +204,19 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       InferenceResult result=identity;result.initialization_seconds=load_seconds;
       const auto started=std::chrono::steady_clock::now();auto prefill_finished=started;
       int executed=worker?worker->append_base:0,token=0;
+      const auto run_forward=[&](int next_token,int pos){
+        diagnostics.position=pos;
+        diagnostics.active=!o.simt_diagnostics.empty() && (o.simt_diagnostic_positions.empty()?pos>=static_cast<int>(o.input_ids.size())-1:std::find(o.simt_diagnostic_positions.begin(),o.simt_diagnostic_positions.end(),pos)!=o.simt_diagnostic_positions.end());
+        SetSimtCommand<<<1,1,0,stream.s>>>(command,next_token,pos);
+        if(diagnostics.active || o.simt_eager)forward();else forward_graph.Launch(stream.s);
+        diagnostics.Flush(stream.s);
+      };
       const auto cancelled=[&]{return (o.cancellation_requested && o.cancellation_requested->load()) || (o.diagnostic_cancel_after>=0 && static_cast<int>(result.generated_ids.size())>=o.diagnostic_cancel_after);};
       for(int base=executed;base<static_cast<int>(o.input_ids.size()) && !result.cancelled;base+=o.prefill_chunk){
         if(cancelled()){result.cancelled=true;break;}
         const int end=std::min(base+o.prefill_chunk,static_cast<int>(o.input_ids.size()));
         for(int pos=base;pos<end;++pos){
-          SetSimtCommand<<<1,1,0,stream.s>>>(command,o.input_ids[pos],pos);forward_graph.Launch(stream.s);
+          run_forward(o.input_ids[pos],pos);
           if(worker && worker->checkpoint_anchor==pos+1){worker->BeginCheckpointCapture();check_numerics();checkpoint_copy(false);worker->CompleteCheckpointCapture();}
         }
         check_numerics();executed=end;
@@ -198,7 +229,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         head_graph.Launch(stream.s);check_numerics();
         for(int step=0;step<o.generate && !result.cancelled;++step){
           if(cancelled()){result.cancelled=true;break;}
-          if(step){SetSimtCommand<<<1,1,0,stream.s>>>(command,token,static_cast<int>(o.input_ids.size())+step-1);forward_graph.Launch(stream.s);head_graph.Launch(stream.s);++result.decode_steps;}
+          if(step){run_forward(o.simt_teacher_tokens.empty()?token:o.simt_teacher_tokens[step-1],static_cast<int>(o.input_ids.size())+step-1);head_graph.Launch(stream.s);++result.decode_steps;}
           if(o.sampling.stochastic())gpu_sampling::Launch(logits,adjusted,sorted,sample_ids,sorted_ids,cumulative,rng,control,bad,buffer("sampling_workspace").p,sampler_bytes,stream.s,o.sampling,counts);
           else {
             const float* selection_logits=logits;
@@ -208,10 +239,14 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
           if(o.sampling.penalties())gpu_sampling::RecordChoice<<<1,1,0,stream.s>>>(control,counts,98304,bad);
           Control chosen{};Check(cudaMemcpyAsync(&chosen,control,sizeof(chosen),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));
           if(chosen.bad)throw std::runtime_error("invalid SIMT sampling/forward; session poisoned");
+          if(!o.simt_diagnostics.empty()){
+            diagnostics.position=static_cast<int>(o.input_ids.size())+step-1;diagnostics.active=true;
+            diagnostics.Dump("logits",logits,98304*4,stream.s);diagnostics.active=false;
+          }
           token=chosen.token;result.generated_ids.push_back(token);
           if(step==0)prefill_finished=std::chrono::steady_clock::now();
           if(worker && !worker->Emit(token,step==0))result.cancelled=true;
-          if(token==28)break;
+          if(token==28 && o.simt_teacher_tokens.empty())break;
         }
         if(o.generate==0)prefill_finished=std::chrono::steady_clock::now();
         if(o.capture_logits){result.logits.resize(98304);Check(cudaMemcpyAsync(result.logits.data(),logits,98304*4,cudaMemcpyDeviceToHost,stream.s));}
