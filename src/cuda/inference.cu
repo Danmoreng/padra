@@ -127,6 +127,9 @@ __global__ void Rope(float* q,float* k,const float* table,int position){
 #include "expert_exl3_prefill_dot.cuh"
 #include "expert_exl3_prefill_warp.cuh"
 #include "expert_exl3_prefill_packed_activations.cuh"
+#if PADRA_EXL3_PREFILL_ASYNC64
+#include "expert_exl3_prefill_transport_async64.cuh"
+#endif
 #include "expert_exl3_selected.cuh"
 #include "expert_exl3_decode_n32.cuh"
 #include "expert_exl3_decode_mma.cuh"
@@ -455,6 +458,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     if(o.exl3_wide_input)Check(cudaFuncGetAttributes(&attributes,exl3_input_wide_vector::Input));
     if(o.exl3_packed_activations)for(const auto kernel:{reinterpret_cast<const void*>(exl3_packed_activations::Projection),reinterpret_cast<const void*>(exl3_packed_activations::InputActivated),reinterpret_cast<const void*>(exl3_packed_activations::Combine)})Check(cudaFuncGetAttributes(&attributes,kernel));
     if(o.exl3_silu_table)Check(cudaFuncGetAttributes(&attributes,exl3_silu_lut::Activate));
+#if PADRA_EXL3_PREFILL_ASYNC64
+    if(o.exl3_packed_activations)Check(cudaFuncGetAttributes(&attributes,exl3_transport_async64::Projection));
+#endif
     if(o.exl3_bf16_postnorm)Check(cudaFuncGetAttributes(&attributes,ResidualPostNormBF16));
     if(o.exl3_prefill_dot)Check(cudaFuncGetAttributes(&attributes,exl3_register_dot::Projection));
     if(o.exl3_decode_mma)Check(cudaFuncGetAttributes(&attributes,exl3_mma_decode::Projection));
@@ -687,6 +693,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
       Check(cudaMemsetAsync(logits,0,98304*4,stream.s));gpu_sampling::Launch(logits,sampleAdjusted,sampleSorted,sampleIds,sampleSortedIds,sampleCumulative,sampleState,control.As<Control>(),bad.As<int>(),samplerTemp.p,samplerTempBytes,stream.s,SamplingOptions{1,1,0,0},sampleCounts);Check(cudaStreamSynchronize(stream.s));
     }
     if(worker && o.diagnostic_decode_token>=0)result.math_profile+=";fixed-teacher-decode-token="+std::to_string(o.diagnostic_decode_token)+";diagnostic-only/no-append/no-sampling";
+#if PADRA_EXL3_PREFILL_ASYNC64
+    if(o.exl3_packed_activations)result.kernel_profile+="+research-asyncAB-M32N128K64-shared-overlay-Tge128-v1;short-exactM32K32";
+#endif
     const auto baseKernelProfile=result.kernel_profile,baseMathProfile=result.math_profile;
     const auto loadSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::size_t preparedLength=0;
@@ -1024,7 +1033,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
           if(o.exl3_prefill_masked)exl3_masked::Schedule<<<1,1,0,stream.s>>>(counts,maskedTiles,exl3TileCount,ffnTokens,bad.As<int>());else if(o.exl3_prefill_fp16)exl3_fp16::Schedule<<<1,1,0,stream.s>>>(counts,exl3Tiles,exl3TileCount,ffnTokens,bad.As<int>());
           if(o.exl3_packed_activations && ffnTokens>=4){
             for(int part=0;part<3;++part){auto* target=reinterpret_cast<unsigned short*>(part==0?bg:part==1?bu:bd);
-              exl3_packed_activations::Launch(descriptors.As<DeviceMatrix>(),l,part,ids.As<int>(),groups,counts,maskedTiles,exl3TileCount,bn,target,reinterpret_cast<const unsigned short*>(bg),reinterpret_cast<const unsigned short*>(bu),exl3SiLU.As<unsigned short>(),exl3Workspace.As<__half>(),ffnTokens,bad.As<int>(),stream.s,nullptr,o.exl3_wide_input);}
+#if PADRA_EXL3_PREFILL_ASYNC64
+              exl3_transport_async64::Launch(
+#else
+              exl3_packed_activations::Launch(
+#endif
+                descriptors.As<DeviceMatrix>(),l,part,ids.As<int>(),groups,counts,maskedTiles,exl3TileCount,bn,target,reinterpret_cast<const unsigned short*>(bg),reinterpret_cast<const unsigned short*>(bu),exl3SiLU.As<unsigned short>(),exl3Workspace.As<__half>(),ffnTokens,bad.As<int>(),stream.s,nullptr,o.exl3_wide_input);}
             exl3_packed_activations::Combine<<<dim3(18,ffnTokens),128,0,stream.s>>>(ffnX,reinterpret_cast<const unsigned short*>(bd),routing.As<float>(),ffnTokens,bad.As<int>(),true);
           }else{
           batchExpert(l,0,bn,bg,selected,ffnTokens);

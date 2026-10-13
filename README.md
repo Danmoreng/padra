@@ -49,6 +49,13 @@ headers receive the same hash checks as downloaded headers. See
 [Dependencies](DEPENDENCIES.md) for versions, licenses, local HTTP adaptations
 and cache/toolchain options.
 
+Optional `-DPADRA_EXL3_PREFILL_ASYNC64=ON` enables experimental K64 weight/input
+transport for EXL3 K4 prefill requests of at least 128 tokens. Shorter requests
+retain the existing kernel. Paired 2K/4K measurements with BF16 KV and chunk 2048
+showed about 3.5%/5.2% faster prefill with unchanged checked outputs. Decode is
+unchanged. The option is off by default; these measurements do not qualify
+full-context performance or resolve the open quality gates below.
+
 ## Run
 
 ```sh
