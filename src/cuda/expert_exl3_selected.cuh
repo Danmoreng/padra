@@ -2,6 +2,7 @@
 // in PROVENANCE.md. Standard K4 exact FP16 codec, no FP8 weight/activation math.
 #pragma once
 #include "expert_exl3_codec.cuh"
+#include "expert_exl3_pascal_codec.cuh"
 namespace exl3_selected {
 __device__ __forceinline__ unsigned State(unsigned word,unsigned input,unsigned output){
   const int end=int(exl3_fp16::Permutation(input,output))*4+4+1024;
@@ -18,7 +19,7 @@ __device__ __forceinline__ __half2 DecodePair(unsigned word,unsigned input,unsig
   return __hfma2(__halves2half2(__ushort_as_half(0x6400+a),__ushort_as_half(0x6400+b)),
     __half2half2(__ushort_as_half(0x1eee)),__half2half2(__ushort_as_half(0xc931)));
 }
-__global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* ids,
+template<bool Reference=false> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* ids,
     const float* input,float* output,int pairs,int* bad){
   const int pair=blockIdx.y,lane=threadIdx.x&31,warp=threadIdx.x/32;
   const auto m=exl3_expert::Matrix(matrices,layer,part,ids,pair,bad);
@@ -35,8 +36,14 @@ __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const
     #pragma unroll
     for(int half=0;half<2;++half){
       const int index=ki+half*8;const float x=transformed[k+index],y=transformed[k+index+1];
-      const float2 a=__half22float2(DecodePair(word,index,col));
-      const float2 b=__half22float2(DecodePair(word,index,col+8));
+      float2 a,b;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
+      if constexpr(!Reference){
+        a=make_float2(exl3_pascal::Decode(State(word,index,col)),exl3_pascal::Decode(State(word,index+1,col)));
+        b=make_float2(exl3_pascal::Decode(State(word,index,col+8)),exl3_pascal::Decode(State(word,index+1,col+8)));
+      }else
+#endif
+      {a=__half22float2(DecodePair(word,index,col));b=__half22float2(DecodePair(word,index,col+8));}
       low=__fmaf_rn(x,a.x,low);low=__fmaf_rn(y,a.y,low);
       high=__fmaf_rn(x,b.x,high);high=__fmaf_rn(y,b.y,high);
     }
@@ -50,9 +57,10 @@ __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const
     for(int j=0;j<4;++j){const int i=base+index+j;const float value=B(__fmul_rn(v[j],__half2float(__ushort_as_half(m.svh[i]))));if(!isfinite(value))atomicExch(bad,1);output[pair*m.rows+i]=value;}}
 }
 inline void Launch(const DeviceMatrix* matrices,int layer,int part,const int* ids,
-    const float* input,float* output,float* scratch,int pairs,int* bad,cudaStream_t stream){
+    const float* input,float* output,float* scratch,int pairs,int* bad,cudaStream_t stream,bool reference=false){
   const int rows=part==2?2304:896,cols=part==2?896:2304;
   exl3_expert::InputHad<<<dim3(cols/128,pairs),128,0,stream>>>(matrices,layer,part,ids,input,scratch,pairs,bad);
-  Projection<<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
+  if(reference)Projection<true><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
+  else Projection<false><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
 }
 }

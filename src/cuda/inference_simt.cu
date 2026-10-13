@@ -155,13 +155,13 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         RouterBF16Warp32Exact<<<64,32,0,stream.s>>>(a.router,normalized,router,bad);
         RouteRankExact<<<1,64,0,stream.s>>>(router,ids,routing,bad);});
         dump("post_norm",normalized,2304*4);dump("router_ids_i32",ids,8*4);dump("routing_weights",routing,8*4);
-        diagnostics.Measure("gate",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,0,ids,normalized,gate,transformed,8,bad,stream.s);});
+        diagnostics.Measure("gate",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,0,ids,normalized,gate,transformed,8,bad,stream.s,o.simt_reference_codec);});
         dump("expert_gate",gate,8*896*4);
-        diagnostics.Measure("up",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,1,ids,normalized,up,transformed,8,bad,stream.s);});
+        diagnostics.Measure("up",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,1,ids,normalized,up,transformed,8,bad,stream.s,o.simt_reference_codec);});
         dump("expert_up",up,8*896*4);
         diagnostics.Measure("silu",l,stream.s,[&]{exl3_silu_lut::Activate<<<56,128,0,stream.s>>>(gate,up,silu,8*896,bad);});
         dump("expert_activation",gate,8*896*4);
-        diagnostics.Measure("down",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,2,ids,gate,down,transformed,8,bad,stream.s);});
+        diagnostics.Measure("down",l,stream.s,[&]{exl3_selected::Launch(descriptors,l,2,ids,gate,down,transformed,8,bad,stream.s,o.simt_reference_codec);});
         dump("expert_down",down,8*2304*4);
         diagnostics.Measure("combine",l,stream.s,[&]{Combine<<<18,128,0,stream.s>>>(x,down,routing,bad);});
         dump("output",x,2304*4);
@@ -173,7 +173,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     if(after_graph<plan.reserve)return Status(StatusCode::kResourceExhausted,"SIMT post-graph admission violates 700MiB reserve");
     InferenceResult identity;identity.weights_sha256=model.weights_sha256;identity.weights_bytes=weights_bytes;identity.kv_bytes=buffer("kv").bytes;
     identity.resident_buffer_bytes=plan.resident;identity.device_free_before=free_before;identity.device_free_after_initialization=free;
-    identity.kernel_profile="exl3-k4-simt-sm" MELLUM16_ARCHITECTURE "-token-graph-v1";
+    identity.kernel_profile="exl3-k4-simt-sm" MELLUM16_ARCHITECTURE "-token-graph-pascal-codec-v2";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     identity.execution_profile="simt-token-graph-chunk-commits";identity.prefill_execution="token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";
