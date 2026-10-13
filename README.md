@@ -60,11 +60,26 @@ Extending K64 to short batches repairs the earlier natural-prompt prefill loss:
 against P2, final paired measurements show 10.6–11.5% faster short prefill and
 0.56%/0.62% faster decode at P4000/G1000 and P2000/G500. Long prefill has no
 resolved change. The checked full-vocabulary outputs and session states match;
-no extra buffers or launches are added. The option remains off by default.
+that D2 change adds no extra buffers or launches. The option remains off by default.
 These RTX 5080 Laptop results do not qualify full-context performance or resolve
 the open quality gates below. See [the D2 report](PERFORMANCE_D2.md) for evidence,
 uncertainty and validation scope, and [the performance plan](SOL_PERFORMANCE_PLAN.md)
 for the retained experiment history.
+
+The same option also includes an exact per-head attention merge: paired decode
+improves another 1.24%/1.37% at P2000/G500 and P4000/G1000 against P2+D2.
+It reuses the attention arena and adds one kernel per layer. Prefill medians are
+slightly negative and unresolved; strict zero slowdown is not proven.
+See [the attention report](PERFORMANCE_ATTENTION.md) for intervals, the BF16 O
+prototype that did not pass numerical qualification, and FlashInfer operator results.
+
+The [native vLLM EXL3 comparison](VLLM_EXL3_COMPARISON.md) documents a working
+plugin setup using the same EXL3 expert and FP8 attention weights, alongside
+fresh Padra and native vLLM INT4 measurements.
+
+The [SGLang decode investigation](SGLANG_DECODE_FINDINGS.md) reproduces its
+289 token/s result, profiles the remaining Padra costs, and shows native vLLM
+reaching 285 token/s with FlashInfer on the same INT4 checkpoint.
 
 ## Run
 

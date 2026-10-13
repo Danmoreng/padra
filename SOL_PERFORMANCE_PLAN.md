@@ -686,3 +686,64 @@ are retained in the repo; no extra buffers, launches, commit or push are added.
 All fresh holdouts are now consumed. See [PERFORMANCE_D2.md](PERFORMANCE_D2.md)
 for measurements, uncertainty, validation limits and exact reproduction paths.
 Targets of 12,000 prefill / 280 decode token/s remain unmet.
+
+## Follow-up evidence: SGLang decode comparison (2026-10-13)
+
+The [decode investigation](SGLANG_DECODE_FINDINGS.md) now includes working
+SGLang/native-vLLM profiles at actual positions 4000 and 4990. SGLang's current
+stable release reproduces 288.72 decode token/s. Changing only vLLM's attention
+backend from FlashAttention to FlashInfer raises its native INT4 result from
+250.62 to 284.65 token/s. Padra's selected EXL3 control remains 252.84 token/s.
+
+The report prioritizes a decode-only BF16-valued input to the O projection with
+unchanged FP8 weight bytes, an inclusive FlashInfer attention operator comparison,
+and narrowly scoped normalization experiments. These are new hypotheses, not
+accepted implementations. Existing rejected experiments and quality gates remain
+in force; the older failed SGLang profile no longer limits operator investigation.
+
+## Follow-up result: attention merge (2026-10-13)
+
+The [attention experiments](PERFORMANCE_ATTENTION.md) retain a per-head BF16 merge
+followed by the original exact FP8 row encoding and O projection, under the
+existing ASYNC64=ON option. Full-vocabulary regression, graph/direct, state,
+OFF-build and targeted operator/sanitizer checks pass. Six paired final blocks
+show +1.370% P4 decode (95% +0.950..+1.519%) and +1.236% P2 decode. Prefill medians
+are -0.136%/-0.273%; short prompts show -0.122..-0.688% prefill. These fit the
+existing 1% median tolerance, but strictly zero slowdown is not proven. The
+identical-control diagnostic and unchanged existing kernel SASS do not erase
+negative candidate samples. Default OFF remains unchanged; no commit/push here.
+
+The direct BF16-input O prototype improves exploratory P4 decode by 3.09% but
+fails development numerical non-inferiority; it is not promoted. The inclusive
+FlashInfer test shows substantial global-attention headroom (about 15 versus
+24–26 microseconds including Q conversion and the same O projection), but no
+native backend integration or full-model quality claim. Normalization is deferred.
+
+Current selected source/build and reproducible receipts:
+`/home/sebastian/Development/padra-performance/2026-10-13-attention-bf16/SELECTED_PARENT.json`.
+The old campaign remains an immutable parent. Future numerical changes require
+fresh holdout/source-quality qualification; this exact decomposition preserves
+checked parent outputs and does not resolve historical absolute quality failures.
+
+## Follow-up result: native global attention (2026-10-13)
+
+Two [native FlashInfer global-attention prototypes](GLOBAL_ATTENTION_EXPERIMENTS.md)
+are implemented and screened in the sibling evidence workspace. G1 uses BF16
+partials; G2 keeps internal partial accumulators in FP32, with BF16 Q/K/V/output.
+Both retain the parent's FP8 O path and replace only the seven global decode
+layers. Full-model P4 decode is 258.32 versus 256.25 token/s for G1, and 258.24
+versus 256.37 for G2. Corresponding prefill is 10,443.31 versus 10,482.26 and
+10,426.91 versus 10,453.74 token/s. These are exploratory paired screens.
+
+Both fail development NLL non-inferiority (95% upper +0.003778/+0.003526 versus
+the +0.001 gate, plus language-slice failures). Do not promote them. Small speed
+gains remain acceptable; the blocker here is quality qualification. The newly
+frozen holdout is unscored, source-KL/tasks are unrun, and the retained parent
+remains the exact merge: 10,346.96 prefill / 256.05 decode at P4000/G1000 and
+10,820.03 / 259.61 at P2000/G500 in its final six-block series.
+
+Next prioritize Q/K-normalization + RoPE + BF16 KV-store fusion with preserved
+arithmetic, then incremental global-kernel scheduling changes, then normalization
+data movement. The linked report records concrete scope and validation steps.
+Evidence: `/home/sebastian/Development/padra-performance/2026-10-13-global-attention`.
+No new production CUDA change, default, commit or push in this follow-up.

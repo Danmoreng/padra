@@ -335,6 +335,7 @@ struct Pinned{Control* p=nullptr;Pinned(){Check(cudaMallocHost(&p,sizeof(Control
 #include "attention_gqa8_fragment_validation.cuh"
 #include "attention_merge_quantize_exact.cuh"
 #include "attention_merge_quantize_wide_exact.cuh"
+#include "attention_perhead_exact.cuh"
 #include "kv_fp8.cuh"
 #include "kv_q8.cuh"
 #include "attention_gqa8_q8.cuh"
@@ -447,6 +448,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
     if(o.exl3_decode_dual)Check(cudaFuncGetAttributes(&attributes,exl3_mma_dual::Projection));
     if(o.wide_rms_dataflow)for(const auto kernel:{reinterpret_cast<const void*>(NormFP8WideExact),reinterpret_cast<const void*>(ResidualPostNormWideExact)})Check(cudaFuncGetAttributes(&attributes,kernel));
     if(o.wide_attention_merge)for(const auto kernel:{reinterpret_cast<const void*>(attention_o_wide_exact::MergeQuantize<true>),reinterpret_cast<const void*>(attention_o_wide_exact::MergeQuantize<false>)})Check(cudaFuncGetAttributes(&attributes,kernel));
+#if PADRA_EXL3_PREFILL_ASYNC64
+    if(o.wide_attention_merge && o.exl3_experts)for(const auto kernel:{reinterpret_cast<const void*>(attention_perhead_exact::Merge<true>),reinterpret_cast<const void*>(attention_perhead_exact::Merge<false>),reinterpret_cast<const void*>(attention_perhead_exact::Quantize)})Check(cudaFuncGetAttributes(&attributes,kernel));
+#endif
     if(o.paired_attention_o)Check(cudaFuncGetAttributes(&attributes,fp8_pair_exact::Vector));
     if(o.exact_router_rank)Check(cudaFuncGetAttributes(&attributes,RouteRankExact));
     if(o.attention_fragment_validation)for(const auto kernel:{reinterpret_cast<const void*>(gqa8_fragment_validation::SplitBF16<true>),reinterpret_cast<const void*>(gqa8_fragment_validation::SplitBF16<false>)})Check(cudaFuncGetAttributes(&attributes,kernel));
@@ -696,6 +700,14 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
 #if PADRA_EXL3_PREFILL_ASYNC64
     if(o.exl3_packed_activations)result.kernel_profile+="+research-asyncAB-M32N128K64-weightsA-shared-overlay-Tge4-v2;Tlt4-originalSIMT";
 #endif
+    // Reuse the attention arena as packed BF16 only when O consumes the encoded
+    // FP8 row. Diagnostic float captures retain the original merge path.
+#if PADRA_EXL3_PREFILL_ASYNC64
+    const bool perHeadMerge=o.native_decode && o.paired_attention_o && o.wide_attention_merge && o.fused_attention_o && o.attention_fragment_validation && o.exl3_experts && !q8Cache && !o.fp8_kv_cache && o.diagnostic_attention.empty() && !o.capture_quantization_rows && o.snapshot_layer<0;
+#else
+    constexpr bool perHeadMerge=false;
+#endif
+    if(perHeadMerge){result.kernel_profile+="+perhead-exact-merge-v1";result.math_profile+=";attention-merge=per-head-BF16-storage/exact-parent-FP8-row-encoding";}
     const auto baseKernelProfile=result.kernel_profile,baseMathProfile=result.math_profile;
     const auto loadSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::size_t preparedLength=0;
@@ -866,6 +878,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions& o,Cu
         else Store<<<4,128,0,stream.s>>>(k,v,a.kc,a.vc,position,a.cap);
         if(selected){const auto& r=bindings.find("key_cache")->second;const int visible=l%4==3?position+1:std::min(position+1,1024);CaptureKV<<<(visible*512+127)/128,128,0,stream.s>>>(r.pointer,a.kc,a.vc,position,a.cap,l%4!=3);}
         if(q8Cache){gqa8_q8_attention::Launch(q,a.q8,attn,fp8Input,fp8Scales,deviceState.As<DecodeState>(),l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s,contextMaximum);}
+        else if(perHeadMerge){attention_perhead_exact::Launch(q,a.kc,a.vc,reinterpret_cast<__nv_bfloat16*>(attn),deviceState.As<DecodeState>(),a.cap,l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s,contextMaximum);attention_perhead_exact::Quantize<<<1,512,0,stream.s>>>(reinterpret_cast<const __nv_bfloat16*>(attn),fp8Input,fp8Scales,bad.As<int>());}
         else if(o.wide_attention_merge){attention_o_wide_exact::Launch(q,a.kc,a.vc,attn,fp8Input,fp8Scales,deviceState.As<DecodeState>(),a.cap,l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s,true,contextMaximum);}
         else if(o.exact_fp8_encoding){attention_o_exact::Launch(q,a.kc,a.vc,attn,fp8Input,fp8Scales,deviceState.As<DecodeState>(),a.cap,l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s,o.attention_fragment_validation);}
         else if(o.reciprocal_fused_quantization){attention_o_fusion::Launch<true>(q,a.kc,a.vc,attn,fp8Input,fp8Scales,deviceState.As<DecodeState>(),a.cap,l%4!=3,fastAttentionScratch.As<float>(),bad.As<int>(),stream.s);}
