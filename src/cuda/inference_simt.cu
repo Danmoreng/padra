@@ -27,6 +27,8 @@ namespace mellum16 {
 namespace {
 #include "simt_kernels.cuh"
 #include "simt_diagnostics.h"
+#include "simt_prefill.cuh"
+#include "simt_prefill_attention.cuh"
 
 struct Layer {
   DeviceMatrix norm,post,qn,kn,q,k,v,out,router;
@@ -82,7 +84,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       return Status(StatusCode::kDataLoss,"persistent runtime requires pinned K4 checkpoint");
     const auto weights_bytes=model.weights.size();
     const auto sampler_bytes=gpu_sampling::WorkspaceBytes();
-    const auto plan=PlanSimtMemory(weights_bytes,o.capacity,sampler_bytes,o.server_kv_checkpoint);
+    const auto plan=PlanSimtMemory(weights_bytes,o.capacity,sampler_bytes,o.server_kv_checkpoint,!o.simt_reference_prefill);
     std::size_t free=0,total=0;Check(cudaMemGetInfo(&free,&total));
     const auto free_before=free;
     const auto available=ServerAvailableBytes(free,total,o.server_device_budget_gib);
@@ -169,16 +171,68 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     };
     forward_graph.Capture(stream.s,forward);
     head_graph.Capture(stream.s,[&]{Norm<<<1,128,0,stream.s>>>(x,normalized,norm,2304,1);head_bf16_prefetch::Projection<<<24576,128,0,stream.s>>>(head,normalized,logits,bad);});
+    DecodeGraph prefill_graph;
+    SimtBatch* batch=nullptr;float *bx=nullptr,*bn=nullptr,*br=nullptr,*bq=nullptr,*ba=nullptr,*bk=nullptr,*bv=nullptr,*brouter=nullptr,*bg=nullptr,*bu=nullptr,*bd=nullptr,*bt=nullptr;
+    unsigned char* be=nullptr;float* bs=nullptr;float* bscore=nullptr;__nv_bfloat16* bkv=nullptr;
+    if(!o.simt_reference_prefill){
+      batch=buffer("batch_state").As<SimtBatch>();bx=buffer("batch_activations").As<float>();bn=bx+256*2304;br=bn+256*2304;
+      bq=br+256*2304;ba=bq+256*4096;bk=ba+256*4096;bv=bk+256*512;brouter=bv+256*512;
+      bg=buffer("batch_experts").As<float>();bu=bg+256*8*896;bd=bu+256*8*896;bt=buffer("batch_transform").As<float>();
+      be=buffer("batch_encoded").As<unsigned char>();bs=buffer("batch_scales").As<float>();bscore=buffer("batch_scores").As<float>();bkv=buffer("batch_kv").As<__nv_bfloat16>();
+    }
+    int diagnostic_batch_base=0,diagnostic_batch_rows=0;
+    const auto prefill=[&]{
+      simt_batch::EmbedBatch<<<256,128,0,stream.s>>>(embed,buffer("prompt").As<int>(),bx,bad,batch);
+      for(int l=0;l<28;++l){const auto& a=layers[l];
+        const auto dump=[&](const char* name,const void* pointer,int stride){
+          if(!diagnostics.active || l!=o.simt_diagnostic_layer)return;
+          const int last=diagnostics.position,base=diagnostic_batch_base,rows=diagnostic_batch_rows;
+          for(int pos:o.simt_diagnostic_positions)if(pos>=base && pos<base+rows){diagnostics.position=pos;diagnostics.Dump(name,static_cast<const unsigned char*>(pointer)+(pos-base)*stride*4,stride*4,stream.s);}diagnostics.position=last;
+        };
+        dump("input",bx,2304);
+        simt_batch::InputNorm<<<256,256,0,stream.s>>>(bx,bn,a.norm,be,bs,bad,batch);dump("input_norm",bn,2304);
+        simt_batch::FP8Rows<<<dim3(1024,256),128,0,stream.s>>>(a.q,be,bs,bq,bad,batch);
+        simt_batch::FP8Rows<<<dim3(128,256),128,0,stream.s>>>(a.k,be,bs,bk,bad,batch);
+        simt_batch::FP8Rows<<<dim3(128,256),128,0,stream.s>>>(a.v,be,bs,bv,bad,batch);
+        dump("q_proj",bq,4096);dump("k_proj",bk,512);dump("v_proj",bv,512);
+        simt_batch::QKRope<<<dim3(36,256),128,0,stream.s>>>(bq,bk,a.qn,a.kn,l%4==3?rope_global:rope_local,bad,batch);
+        dump("q_rope",bq,4096);dump("k_rope",bk,512);
+        simt_batch::Stage<<<dim3(4,256),128,0,stream.s>>>(bk,bv,bkv,batch);
+        for(int first=0;first<256;first+=8){
+          if(l%4==3)AttendSimtBatch<false><<<dim3(32,8),256,0,stream.s>>>(bq,a.kc,a.vc,ba,batch,a.capacity,bscore,bad,bkv,first);
+          else AttendSimtBatch<true><<<dim3(32,8),256,0,stream.s>>>(bq,a.kc,a.vc,ba,batch,a.capacity,bscore,bad,bkv,first);
+        }
+        // Current chunk cannot overwrite old local-ring rows before attention.
+        simt_batch::Commit<<<dim3(4,256),128,0,stream.s>>>(bkv,a.kc,a.vc,a.capacity,batch);dump("attention",ba,4096);
+        simt_batch::Quantize<<<256,128,0,stream.s>>>(ba,be,bs,bad,batch);
+        simt_batch::FP8Rows<<<dim3(576,256),128,0,stream.s>>>(a.out,be,bs,br,bad,batch);dump("o_proj",br,2304);
+        simt_batch::PostNorm<<<dim3(1,256),128,0,stream.s>>>(bx,br,bn,a.post,bad,batch);
+        simt_batch::Router<<<dim3(64,256),32,0,stream.s>>>(a.router,bn,brouter,bad,batch);
+        simt_batch::Rank<<<256,64,0,stream.s>>>(brouter,buffer("batch_ids").As<int>(),buffer("batch_routing").As<float>(),bad,batch);
+        auto* bids=buffer("batch_ids").As<int>();auto* weights=buffer("batch_routing").As<float>();
+        dump("post_norm",bn,2304);dump("router_ids_i32",bids,8);dump("routing_weights",weights,8);
+        const auto experts=[&](int part,const float* in,float* out){const int cols=part==2?896:2304,rows=part==2?2304:896;
+          simt_batch::InputHadRows<<<dim3(cols/128,256*8),128,0,stream.s>>>(descriptors,l,part,bids,in,bt,bad,batch);
+          exl3_selected::Projection<false><<<dim3(rows/128,256*8),256,0,stream.s>>>(descriptors,l,part,bids,bt,out,256*8,bad,&batch->rows);
+        };
+        experts(0,bn,bg);dump("expert_gate",bg,8*896);experts(1,bn,bu);dump("expert_up",bu,8*896);
+        simt_batch::Silu<<<256*56,128,0,stream.s>>>(bg,bu,silu,bad,batch);dump("expert_activation",bg,8*896);
+        experts(2,bg,bd);dump("expert_down",bd,8*2304);
+        simt_batch::CombineBatch<<<dim3(18,256),128,0,stream.s>>>(bx,bd,weights,bad,batch);dump("output",bx,2304);
+      }
+    };
+    if(batch)prefill_graph.Capture(stream.s,prefill);
     Check(cudaMemGetInfo(&free,&total));const auto after_graph=ServerAvailableBytes(free,total,o.server_device_budget_gib);
     if(after_graph<plan.reserve)return Status(StatusCode::kResourceExhausted,"SIMT post-graph admission violates 700MiB reserve");
     InferenceResult identity;identity.weights_sha256=model.weights_sha256;identity.weights_bytes=weights_bytes;identity.kv_bytes=buffer("kv").bytes;
     identity.resident_buffer_bytes=plan.resident;identity.device_free_before=free_before;identity.device_free_after_initialization=free;
     identity.kernel_profile="exl3-k4-simt-sm" MELLUM16_ARCHITECTURE "-token-graph-pascal-codec-v2";
+    if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-v1";
     identity.math_profile="mellum16-simt-exl3-k4-v1;FP8-E4M3-activations/FP32-FMA-projections/BF16-output;compensated-BF16-QK/softmax/PV;EXL3-K4-H128-BF16-input/FP16-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
-    identity.execution_profile="simt-token-graph-chunk-commits";identity.prefill_execution="token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
+    identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";
     const double load_seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-load_begin).count();
-    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
+    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
     const auto check_numerics=[&]{int value=0;Check(cudaMemcpyAsync(&value,bad,sizeof(value),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));if(value)throw std::runtime_error("nonfinite/invalid SIMT forward; session poisoned");};
     const auto checkpoint_copy=[&](bool restore){std::size_t offset=0;for(int l=0;l<28;++l)if(l%4!=3){
       auto* saved=buffer("local_checkpoint").As<unsigned char>()+offset;
@@ -194,8 +248,8 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       Check(cudaMemsetAsync(bad,0,sizeof(int),stream.s));
       Check(cudaMemsetAsync(counts,0,98304*sizeof(int),stream.s));
       gpu_sampling::State initial{o.sampling.seed,0};Check(cudaMemcpyAsync(rng,&initial,sizeof(initial),cudaMemcpyHostToDevice,stream.s));
+      if(batch || o.sampling.penalties())Check(cudaMemcpyAsync(buffer("prompt").p,o.input_ids.data(),o.input_ids.size()*4,cudaMemcpyHostToDevice,stream.s));
       if(o.sampling.penalties()){
-        Check(cudaMemcpyAsync(buffer("prompt").p,o.input_ids.data(),o.input_ids.size()*4,cudaMemcpyHostToDevice,stream.s));
         gpu_sampling::CountPrompt<<<(o.input_ids.size()+255)/256,256,0,stream.s>>>(buffer("prompt").As<int>(),static_cast<int>(o.input_ids.size()),counts,98304,bad);
       }
       Check(cudaStreamSynchronize(stream.s));
@@ -212,7 +266,23 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.Flush(stream.s);
       };
       const auto cancelled=[&]{return (o.cancellation_requested && o.cancellation_requested->load()) || (o.diagnostic_cancel_after>=0 && static_cast<int>(result.generated_ids.size())>=o.diagnostic_cancel_after);};
-      for(int base=executed;base<static_cast<int>(o.input_ids.size()) && !result.cancelled;base+=o.prefill_chunk){
+      if(batch){
+        while(executed<static_cast<int>(o.input_ids.size()) && !result.cancelled){
+          if(cancelled()){result.cancelled=true;break;}
+          int rows=std::min({256,o.prefill_chunk,static_cast<int>(o.input_ids.size())-executed});
+          if(worker && worker->checkpoint_anchor>executed && worker->checkpoint_anchor<executed+rows)rows=worker->checkpoint_anchor-executed;
+          diagnostic_batch_base=executed;diagnostic_batch_rows=rows;diagnostics.position=executed+rows-1;
+          diagnostics.active=!o.simt_diagnostics.empty() && std::any_of(o.simt_diagnostic_positions.begin(),o.simt_diagnostic_positions.end(),[&](int pos){return pos>=executed && pos<executed+rows;});
+          SetSimtBatch<<<1,1,0,stream.s>>>(batch,executed,rows,o.capacity,bad);
+          if(diagnostics.active || o.simt_eager)prefill();else prefill_graph.Launch(stream.s);
+          diagnostics.Flush(stream.s);check_numerics();
+          Check(cudaMemcpyAsync(x,bx+(rows-1)*2304,2304*4,cudaMemcpyDeviceToDevice,stream.s));
+          executed+=rows;
+          if(worker && worker->checkpoint_anchor==executed){worker->BeginCheckpointCapture();checkpoint_copy(false);worker->CompleteCheckpointCapture();}
+          if(worker)worker->CommitChunk(executed,rows!=256);
+          if(cancelled())result.cancelled=true;
+        }
+      }else for(int base=executed;base<static_cast<int>(o.input_ids.size()) && !result.cancelled;base+=o.prefill_chunk){
         if(cancelled()){result.cancelled=true;break;}
         const int end=std::min(base+o.prefill_chunk,static_cast<int>(o.input_ids.size()));
         for(int pos=base;pos<end;++pos){

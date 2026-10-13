@@ -18,7 +18,7 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
 #if PADRA_BUILD_SIMT
   (void)chunks;
   const auto base = std::string("exl3-k") + std::to_string(expert_rate) +
-                    "-simt-sm" + kBuildArchitecture + "-token-graph-";
+                    "-simt-sm" + kBuildArchitecture + "-layer-batch256-staged-kv-";
 #else
   const auto base = std::string("exl3-k") + std::to_string(expert_rate) +
                     (chunks ? "-chunk-graph-eager-tail-" : "-all-rows-wide-vector-");

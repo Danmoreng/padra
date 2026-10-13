@@ -3,7 +3,7 @@
 namespace mellum16 {
 // Single-token graph workspace, independent of prefill commit chunk size.
 // All entries correspond to owned allocations in inference_simt.cu.
-inline ServerMemoryPlan PlanSimtMemory(std::size_t weights,int capacity,std::size_t sampling_workspace,bool checkpoint){
+inline ServerMemoryPlan PlanSimtMemory(std::size_t weights,int capacity,std::size_t sampling_workspace,bool checkpoint,bool batch=true){
   if(capacity<1024 || capacity>131072)throw std::invalid_argument("invalid SIMT context capacity");
   ServerMemoryPlan plan;
   const auto add=[&](const char* name,std::size_t bytes){plan.buffers.emplace(name,bytes);plan.resident=admission::Sum({plan.resident,bytes});};
@@ -19,6 +19,18 @@ inline ServerMemoryPlan PlanSimtMemory(std::size_t weights,int capacity,std::siz
   add("prompt",admission::Bytes(capacity,4));
   add("sampling",98304*28+16);add("sampling_workspace",sampling_workspace);
   if(checkpoint)add("local_checkpoint",KVCheckpointLedger::kLocalSnapshotBytes);
+  if(batch){
+    add("batch_state",12);
+    add("batch_activations",256ULL*(2304*3+4096*2+512*2+64)*4);
+    add("batch_experts",256ULL*8*(896*2+2304)*4);
+    add("batch_transform",256ULL*8*2304*4);
+    add("batch_encoded",256ULL*4096);add("batch_scales",256*4);
+    add("batch_kv",256ULL*512*2*2);
+    add("batch_scores",admission::Bytes(capacity,8*32*4));
+    add("batch_ids",256*8*4);add("batch_routing",256*8*4);
+    add("batch_groups",64*256*4);add("batch_counts",64*4);
+    add("batch_tiles",319*8);add("batch_tile_count",4);
+  }
   return plan;
 }
 }

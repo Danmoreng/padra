@@ -20,8 +20,9 @@ __device__ __forceinline__ __half2 DecodePair(unsigned word,unsigned input,unsig
     __half2half2(__ushort_as_half(0x1eee)),__half2half2(__ushort_as_half(0xc931)));
 }
 template<bool Reference=false> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* ids,
-    const float* input,float* output,int pairs,int* bad){
+    const float* input,float* output,int pairs,int* bad,const int* active_pairs=nullptr){
   const int pair=blockIdx.y,lane=threadIdx.x&31,warp=threadIdx.x/32;
+  if(active_pairs && pair>=*active_pairs*8)return;
   const auto m=exl3_expert::Matrix(matrices,layer,part,ids,pair,bad);
   const int base=blockIdx.x*128,col=lane/4,ki=(lane%4)*2;
   if(pair>=pairs||m.format!=3||base+128>m.rows||m.cols%16){if(!threadIdx.x)atomicExch(bad,1);return;}
