@@ -148,6 +148,9 @@ Experimental. Full model/task quality, full-context performance, sustained load
 and deployment behavior are not qualified. Host tests cover bounded server/API
 behavior; native CUDA/Rust HTTP smoke tests cover serving with the real artifact.
 Other GPU architectures and physical 8/12 GB cards are not qualified.
+SM61 has bounded checks for greedy/seeded generation, streaming, cancellation,
+and KV checkpoint restore. Long-context quality remains unqualified. See
+[Pascal validation](docs/pascal-sm61-validation.md) for qualification evidence.
 
 Padra is licensed under [Apache 2.0](LICENSE). See [NOTICE](NOTICE) and
 licenses/ for third-party attribution.
