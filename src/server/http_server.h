@@ -1,6 +1,7 @@
 #pragma once
 #include "server/coordinator.h"
 #include "server/response_store.h"
+#include "server/response_retention.h"
 #include <httplib.h>
 namespace mellum16::server {
 class HttpServer {
@@ -11,6 +12,12 @@ public:
   void Stop();
 
 private:
+  void TrackTransport(httplib::Response &, const std::shared_ptr<Job> &);
+  bool AwaitJob(const httplib::Request &, httplib::Response &, const std::shared_ptr<Job> &);
+  void SendChatStream(const httplib::Request &, httplib::Response &, const std::shared_ptr<Job> &);
+  void SendResponseStream(const httplib::Request &, httplib::Response &,
+                          const std::shared_ptr<Job> &, std::shared_ptr<const ResponseRequest>,
+                          ResponseRetention);
   void RejectAdmission(httplib::Response &, AdmissionCause, ApiRoute, bool count = true,
                        std::string_view message = {});
   void Chat(const httplib::Request &, httplib::Response &);

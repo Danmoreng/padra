@@ -55,6 +55,31 @@ void Case(text::Tokenizer &tokenizer, int boundary) {
   Require(coordinator.Sessions().Stats() == std::pair<std::size_t, std::size_t>{4, 8},
           "logical reservation probe leaked retained history");
 }
+void RetentionFailure() {
+  auto sessions = std::make_shared<SessionStore>();
+  auto store = std::make_shared<ResponseStore>();
+  auto parsed = ParseResponseRequest(ResponseBody);
+  Require(parsed.ok(), "retention failure fixture invalid");
+  auto spec = std::make_shared<ResponseRequest>(std::move(parsed).value());
+  {
+    auto reserved = store->Reserve(spec->id, "owner", 128, sessions, true);
+    Require(reserved.ok(), "retention failure reservation rejected");
+    auto ticket = std::move(reserved).value();
+    ResponseRetention retain(store, ticket, spec, ticket->root);
+    GenerationResult result;
+    result.finish_reason = "stop";
+    result.content = "generated before failed retention";
+    result.output_order[0] = {OutputKind::Message, 0};
+    result.output_count = 1;
+    Require(!retain.Commit(result).ok(), "undersized retention budget unexpectedly committed");
+    Require(store->Stats().first == 1 && sessions->Stats().first == 1,
+            "pending failure ticket lost ownership before rollback");
+  }
+  Require(store->Stats() == std::pair<std::size_t, std::size_t>{0, 0} &&
+              sessions->Stats() == std::pair<std::size_t, std::size_t>{0, 0},
+          "failed retention leaked response reservation or root");
+}
+
 } // namespace
 int main() {
   try {
@@ -62,6 +87,7 @@ int main() {
     Require(tokenizer.ok(), "test tokenizer unavailable");
     for (int boundary = 0; boundary < 6; ++boundary)
       Case(*tokenizer.value(), boundary);
+    RetentionFailure();
     std::cout << "PASS reset/preparation/generation/tool/history failure release boundaries\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

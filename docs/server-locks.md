@@ -79,3 +79,22 @@ Callbacks may cancel through atomics without taking the job mutex.
 two history-normalization failures. Each verifies inactive leases, unchanged
 history, empty queue budgets, exactly one generation outcome, a separate pending
 transport, and the ability to reserve the entire 32 MiB session budget afterward.
+
+## HTTP boundaries
+
+`http_server.cpp` registers routes and owns socket lifecycle and administrative
+metadata. `http_generation.cpp` normalizes requests, performs early/final admission
+and wires ownership to a response. `http_request.*` owns namespace validation and
+the RAII preparation slot. `http_state.cpp` handles explicit sessions and retained
+GET/delete. `response_retention.*` commits the final envelope and the permitted
+history policy, while owning the ticket/root through provider completion.
+`http_transport.cpp` owns error mapping, finite JSON providers and the shared SSE
+pump, including disconnect polling, heartbeat writes and release callbacks.
+
+Nonstream waiting acquires the job mutex only to observe completion. Streaming
+checks that both lanes have drained under that mutex and releases it before
+retention, final encoding or socket writes. There is no store or socket callback
+under a job lock. The immutable published result keeps this safe. A retention
+failure leaves the reservation owned until request/provider destruction; the
+boundary test rejects an undersized commit and verifies that both pending record
+and physical root are then released.

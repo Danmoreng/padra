@@ -133,7 +133,9 @@ set(padra_server_sources
   src/server/chat_request.cpp src/server/chat_stream.cpp src/server/coordinator.cpp
   src/server/job.cpp src/server/output_processing.cpp src/server/coordinator_execution.cpp src/server/secure_id.cpp
   src/server/session_store.cpp src/server/tool_protocol.cpp src/server/responses.cpp
-  src/server/response_store.cpp src/server/response_stream.cpp src/server/http_server.cpp)
+  src/server/response_store.cpp src/server/response_stream.cpp src/server/http_server.cpp
+  src/server/http_request.cpp src/server/http_generation.cpp src/server/http_state.cpp
+  src/server/http_transport.cpp src/server/response_retention.cpp)
 add_library(padra_server ${padra_server_sources})
 target_include_directories(padra_server PRIVATE "${PROJECT_BINARY_DIR}/generated")
 padra_warnings(padra_server)
