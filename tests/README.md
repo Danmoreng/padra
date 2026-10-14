@@ -46,6 +46,10 @@ Covered regressions include:
   and abandoned transports (separate from generation completion).
 - Forty independent stored Responses over HTTP, shared/pinned roots, lineage,
   deletion, expiry, concurrent reservations and rollback on failed generation.
+- `server-admission`: mixed manual/retained occupancy, shared roots, protected
+  manual sessions/pins/leases/pending roots, joint byte limits, TTL, rollback after
+  reservation/root creation/Submit failure, reentrant discard callbacks and
+  concurrent manual/response creation. No production limits are raised.
 - Consistent Chat/Responses HTTP queue errors, Retry-After, both SSE protocols,
   real client disconnects, artifact identity and bounded latency histograms.
 - Incremental tool bytes, split markers/fields, Unicode, reordered fields, duplicate

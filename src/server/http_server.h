@@ -21,7 +21,6 @@ private:
   void Error(httplib::Response &, int, std::string_view,
              std::string_view = "invalid_request_error");
   std::atomic<unsigned> preparations_{0};
-  std::mutex response_admission_mutex_;
   // Serialize shutdown through the library's socket close, including repeat calls.
   std::mutex stop_mutex_;
   bool stopped_ = false;

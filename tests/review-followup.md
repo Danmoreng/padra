@@ -115,3 +115,30 @@ Executed Debug/SDK CTest (8 cases; the added SDK check passed after correcting a
 test-file indentation error), GCC 15 Release 7/7 and ASan/UBSan 7/7, using the build
 commands above. No sanitizer diagnostic. CUDA/Rust/native smoke and full model
 quality were not rerun for this host/API change.
+
+## 5. Joint response/root admission (PR04)
+
+The new HTTP test first reproduced rejection with one manual session plus 31
+independent stored responses. `Reserve` now plans record slots, response bytes,
+new root slots and initial session bytes under the two store locks. It counts a
+physical root only when all its eligible references are retired; manual sessions,
+leases, pending records and pins are protected. New map nodes are preallocated;
+the eviction commit and new root/reservation publish together. RAII releases both
+new resources after a later failure. Expired/deleted cleanup and committed cache
+evictions remain final. Root callbacks/destructors are deferred until store locks
+are released, and core deletion precedes optional notifications. The lock contract
+is in `docs/server-locks.md`. Physical-root and record eviction counters differ.
+
+Tests cover the mixed HTTP case, the existing 40-response case, shared roots,
+all-pinned/all-manual/active/pending protection, session byte pressure, TTL,
+abandonment after reserve/root creation and Submit failure, reentrant/throwing
+discard notifications, and concurrent manual/response admission/deletion.
+The two-resource transaction removes the former externally visible gap between
+record reservation and new-root creation; rollback is tested at its returned
+boundary, not via an arbitrary callback inside the locks.
+
+Executed Debug/SDK 9/9, GCC 15 Release 8/8, ASan/UBSan 8/8 with the commands above.
+The admission suite additionally passed 100 consecutive ASan/UBSan runs before
+the final notification-throw guard; the final suite includes that new case too.
+CUDA/Rust build and native HTTP smoke passed. No numerical arithmetic/defaults
+changed; full model quality and sustained multi-client load were not qualified.

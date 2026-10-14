@@ -190,6 +190,9 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << "\nmellum_response_body_bytes_total " << m.response_body_bytes << '\n';
     m.first_visible_write_latency.Write(out, "mellum_first_visible_write_seconds");
     m.response_write_latency.Write(out, "mellum_response_write_seconds");
+    const auto [records, roots] = responses_->Evictions();
+    out << "mellum_response_evicted_records_total " << records
+        << "\nmellum_response_evicted_roots_total " << roots << '\n';
     response.set_content(out.str(), "text/plain; version=0.0.4");
   });
   http_.Post("/v1/chat/completions",
@@ -360,10 +363,8 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
   spec->top_p = chat.value().sampling.top_p;
   std::shared_ptr<ResponseReservation> reservation;
   {
-    // Serialize the bounded store/root admission. Eviction can release an old
-    // physical root before Create checks the session count. RAII rolls back the
-    // pending reservation and any newly created root on subsequent failure.
-    std::lock_guard admission_lock(response_admission_mutex_);
+    // Records, bytes and any new physical root are reserved atomically by the
+    // two stores. Manual session operations participate through the session lock.
     if (spec->store) {
       const auto budget = admission::Sum(
           {admission::Bytes(admission::Sum({spec->chat_body.size(), 128}), 2),
@@ -371,25 +372,18 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
                chat.value().outputs,
                admission::Bytes(admission::Sum({tokenizer_.MaxRawTokenBytes(), 3}), 18)),
            131072});
-      auto reserved = responses_->Reserve(spec->id, owner.value(), budget);
+      auto reserved = responses_->Reserve(
+          spec->id, owner.value(), budget, coordinator_.Sessions().shared_from_this(), !root,
+          [coordinator = &coordinator_](const std::string &id, const std::string &who) {
+            (void)coordinator->DiscardSession(id, who);
+          });
       if (!reserved.ok()) {
         Error(response, 429, reserved.status().message(), "response_store_full");
         return;
       }
       reservation = std::move(reserved).value();
-    }
-    if (!root && spec->store) {
-      auto session = coordinator_.Sessions().Create(owner.value());
-      if (!session.ok()) {
-        Error(response, 429, session.status().message(), "session_unavailable");
-        return;
-      }
-      root = std::make_shared<ResponseRoot>();
-      root->session_id = session.value().id;
-      root->owner = owner.value();
-      root->discard = [coordinator = &coordinator_, id = root->session_id, who = root->owner] {
-        (void)coordinator->DiscardSession(id, who);
-      };
+      if (!root)
+        root = reservation->root;
     }
   }
   if (root) {

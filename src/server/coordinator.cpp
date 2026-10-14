@@ -405,8 +405,6 @@ bool Coordinator::SessionCacheAvailable(const std::string &id, const std::string
 }
 Status Coordinator::DiscardSession(const std::string &id, const std::string &owner) {
   auto status = sessions_->Delete(id, owner);
-  if (!status.ok())
-    return status;
   std::lock_guard lock(mutex_);
   if (gpu_session_ == id && gpu_owner_ == owner) {
     gpu_session_.clear();
@@ -415,7 +413,7 @@ Status Coordinator::DiscardSession(const std::string &id, const std::string &own
   }
   if (active_ && active_->request.session_id == id && active_->request.session_owner == owner)
     active_->Cancel(CancelCause::SessionDiscard);
-  return {};
+  return status;
 }
 void Coordinator::Work() {
   for (;;) {

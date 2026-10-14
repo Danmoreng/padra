@@ -157,9 +157,13 @@ every 15 seconds; deployment-specific proxy behavior still needs testing.
 
 Both APIs return `503/queue_deadline` or `503/server_shutdown` with `Retry-After: 1`,
 and `504/generation_deadline`. SSE/Responses failures use the same domain codes.
-Response reservation/eviction precedes new root creation; failed admission releases
-new roots and pending reservations. Cache eviction is final, including when a later
-step fails. Pinned responses and shared roots retain their existing lifetime rules.
+Response records, bytes and new physical roots are admitted together. Eviction
+must actually free all references to a root before that root counts as an available
+session slot. Manual sessions, active leases, pending and pinned records are
+protected. Failed admission releases new roots and pending reservations. Cache
+eviction is final, including when a later step fails. Record and physical-root
+evictions have separate counters; TTL/deletion-only cleanup is excluded. See
+[the lock contract](docs/server-locks.md).
 At most four generation requests prepare/tokenize concurrently, with an early
 queue/readiness check followed by final byte/token admission.
 

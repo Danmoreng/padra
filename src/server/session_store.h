@@ -50,6 +50,8 @@ public:
   }
 
 private:
+  // Joint response/root admission takes both store locks; no callbacks run there.
+  friend class ResponseStore;
   void Prune();
   std::shared_ptr<SessionRecord> Find(const std::string &, const std::string &);
   static Status Missing();
