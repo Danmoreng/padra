@@ -1,5 +1,6 @@
 #include "server/responses.h"
-#include "server/coordinator.h"
+#include "server/chat_request.h"
+#include "server/generation_result.h"
 #include "server/job_error.h"
 #include "server/secure_id.h"
 #include <algorithm>
@@ -434,7 +435,7 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
                           .count();
   return result;
 }
-std::string ResponseOutputItems(const ResponseRequest &r, const Job &j) {
+std::string ResponseOutputItems(const ResponseRequest &r, const GenerationResult &j) {
   const std::string status =
       j.finish_reason == "length" || !j.failure.ok() ? "incomplete" : "completed";
   std::string out = "[";
@@ -467,7 +468,8 @@ std::string ResponseOutputItems(const ResponseRequest &r, const Job &j) {
   }
   return out + "]";
 }
-std::string ResponseEnvelope(const ResponseRequest &r, const Job *j, std::string_view requested) {
+std::string ResponseEnvelope(const ResponseRequest &r, const GenerationResult *j,
+                             std::string_view requested) {
   std::string status(requested);
   if (j && requested == "in_progress")
     status =
@@ -475,9 +477,9 @@ std::string ResponseEnvelope(const ResponseRequest &r, const Job *j, std::string
   std::string usage = "null";
   if (j)
     usage =
-        "{\"input_tokens\":" + std::to_string(j->request.input_ids.size()) +
+        "{\"input_tokens\":" + std::to_string(j->prompt_tokens) +
         ",\"output_tokens\":" + std::to_string(j->completion_tokens) +
-        ",\"total_tokens\":" + std::to_string(j->request.input_ids.size() + j->completion_tokens) +
+        ",\"total_tokens\":" + std::to_string(j->prompt_tokens + j->completion_tokens) +
         ",\"input_tokens_details\":{\"cached_tokens\":" + std::to_string(j->cached_tokens) +
         "},\"output_tokens_details\":{\"reasoning_tokens\":" + std::to_string(j->reasoning_tokens) +
         "}}";
@@ -485,7 +487,7 @@ std::string ResponseEnvelope(const ResponseRequest &r, const Job *j, std::string
          ",\"object\":\"response\",\"created_at\":" + std::to_string(r.created_at) +
          ",\"status\":" + json::Quote(status) + ",\"error\":" +
          (j && !j->failure.ok()
-              ? "{\"code\":" + json::Quote(ClassifyJobError(j->cancellation.load()).code) +
+              ? "{\"code\":" + json::Quote(ClassifyJobError(j->failure_cause).code) +
                     ",\"message\":" + json::Quote(j->failure.message()) + "}"
               : "null") +
          ",\"incomplete_details\":" +
@@ -498,15 +500,15 @@ std::string ResponseEnvelope(const ResponseRequest &r, const Job *j, std::string
          (r.previous_id.empty() ? "null" : json::Quote(r.previous_id)) +
          ",\"store\":" + (r.store ? "true" : "false") + ",\"tools\":" + r.tools +
          ",\"tool_choice\":" + r.tool_choice + ",\"temperature\":" +
-         (j ? std::to_string(j->request.sampling.temperature) : std::to_string(r.temperature)) +
-         ",\"top_p\":" + (j ? std::to_string(j->request.sampling.top_p) : std::to_string(r.top_p)) +
+         (j ? std::to_string(j->temperature) : std::to_string(r.temperature)) +
+         ",\"top_p\":" + (j ? std::to_string(j->top_p) : std::to_string(r.top_p)) +
          ",\"max_output_tokens\":" +
-         (j ? std::to_string(j->request.outputs) : std::to_string(r.outputs)) +
+         (j ? std::to_string(j->output_budget) : std::to_string(r.outputs)) +
          ",\"reasoning\":{\"effort\":null,\"summary\":null},\"text\":{\"format\":{\"type\":"
          "\"text\"}},\"truncation\":\"disabled\",\"background\":false,\"usage\":" +
          usage + "}";
 }
-std::string ResponseCompletedHistory(const ResponseRequest &r, const Job &j) {
+std::string ResponseCompletedHistory(const ResponseRequest &r, const GenerationResult &j) {
   if (j.partial_tool_call)
     throw std::logic_error("incomplete tool output cannot become continuation history");
   auto old = json::Parse(r.history);

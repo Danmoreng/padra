@@ -32,3 +32,10 @@ Eviction metrics count actual cache record removals and physical roots freed by
 those evictions, separately. TTL/deletion-only cleanup is not an eviction. The
 existing entry/byte limits are unchanged; manual protected capacity can reject new
 responses even when the response record cache itself has space.
+
+Generation event slots own their fragment bytes. Worker result fields are published
+by `Job::complete` while holding the job mutex; HTTP reads final result fields only
+after observing completion through that mutex. Ordinary encoders read stable
+request metadata plus their copied event, not mutable worker result fields.
+Terminal failure classification is captured before publication. See
+[generation events](server-events.md) for the bounded channel and adapter contract.

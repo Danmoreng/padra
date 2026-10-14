@@ -3,7 +3,7 @@
 #include <array>
 #include <string>
 namespace mellum16::server {
-struct Job;
+struct GenerationResult;
 struct ResponseRequest {
   std::string id, previous_id, chat_body, history, instructions = "null", metadata = "{}",
                                                    tools = "[]", tool_choice = "\"none\"";
@@ -18,8 +18,8 @@ struct ResponseRequest {
 // Original nested tool/schema order is retained in chat_body.
 Result<ResponseRequest> ParseResponseRequest(std::string_view body,
                                              std::string_view previous_history = "[]");
-std::string ResponseOutputItems(const ResponseRequest &, const Job &);
-std::string ResponseEnvelope(const ResponseRequest &, const Job *job = nullptr,
+std::string ResponseOutputItems(const ResponseRequest &, const GenerationResult &);
+std::string ResponseEnvelope(const ResponseRequest &, const GenerationResult *job = nullptr,
                              std::string_view status = "in_progress");
-std::string ResponseCompletedHistory(const ResponseRequest &, const Job &);
+std::string ResponseCompletedHistory(const ResponseRequest &, const GenerationResult &);
 } // namespace mellum16::server

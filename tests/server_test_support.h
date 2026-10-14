@@ -1,5 +1,6 @@
 #pragma once
 #include "server/coordinator.h"
+#include "server/chat_stream.h"
 #include "server/http_server.h"
 #include "server/job_error.h"
 #include "server/response_store.h"
@@ -105,10 +106,13 @@ inline void Wait(const std::shared_ptr<Job> &job) {
           "test completion timeout");
 }
 inline std::string Drain(const std::shared_ptr<Job> &job) {
-  EventFrame frame;
+  GenerationEvent frame;
   std::string output;
-  while (job->Pop(frame, 0ms))
-    output.append(frame.data.data(), frame.size);
+  ChatStream encoder(*job);
+  while (job->Pop(frame, 0ms)) {
+    auto wire = encoder.Encode(frame);
+    output.append(wire.data(), wire.size());
+  }
   return output;
 }
 inline std::unique_ptr<ModelRuntime> Runtime(std::shared_ptr<MockState> state) {

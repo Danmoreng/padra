@@ -1,5 +1,7 @@
 #pragma once
-#include "server/coordinator.h"
+#include "server/admission.h"
+#include "server/generation_result.h"
+#include "util/json.h"
 namespace mellum16::server {
 struct JobError {
   int status = 500;

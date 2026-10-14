@@ -1,5 +1,5 @@
 #include "server/response_stream.h"
-#include "server/coordinator.h"
+#include "server/generation_result.h"
 namespace mellum16::server {
 ResponseStream::ResponseStream(const ResponseRequest &request, Send send, Written written)
     : request_(request), send_(std::move(send)), written_(std::move(written)) {
@@ -61,75 +61,44 @@ bool ResponseStream::Delta(std::string_view type, std::string_view id, std::stri
                    (reasoning ? "" : ",\"logprobs\":[]"),
                !reasoning);
 }
-bool ResponseStream::ChatFrame(std::string_view frame) {
-  if (!frame.starts_with("data: "))
+bool ResponseStream::OnEvent(const GenerationEvent &event) {
+  if (!event.Valid())
     return false;
-  frame.remove_prefix(6);
-  while (!frame.empty() && (frame.back() == '\n' || frame.back() == '\r'))
-    frame.remove_suffix(1);
-  if (frame == "[DONE]")
-    return true;
-  auto parsed = json::Parse(frame);
-  if (!parsed.ok())
-    return false;
-  const auto &root = parsed.value();
-  if (root.find("error"))
-    return true;
-  auto *choices = root.find("choices");
-  if (!choices || !choices->is_array())
-    return false;
-  for (const auto &choice : choices->as_array()) {
-    auto *d = choice.find("delta");
-    if (!d || !d->is_object())
-      continue;
-    if (auto *reason = d->find("reasoning_content");
-        reason && reason->is_string() && !reason->as_string().empty())
-      if (!Delta("reasoning", request_.reasoning_id, reason->as_string()))
-        return false;
-    if (auto *text = d->find("content"); text && text->is_string() && !text->as_string().empty())
-      if (!Delta("message", request_.message_id, text->as_string()))
-        return false;
-    if (auto *calls = d->find("tool_calls"); calls && calls->is_array())
-      for (const auto &c : calls->as_array()) {
-        auto *idx = c.find("index");
-        auto *fn = c.find("function");
-        if (!idx || !idx->is_integer() || idx->as_integer() < 0 || idx->as_integer() > 7 || !fn ||
-            !fn->is_object())
-          return false;
-        const auto i = static_cast<std::size_t>(idx->as_integer());
-        const auto &id = request_.function_ids[i];
-        std::optional<std::size_t> output;
-        for (const auto &found : items_)
-          if (found.id == id)
-            output = found.index;
-        if (auto *call = c.find("id"); call && call->is_string()) {
-          auto *name = fn->find("name");
-          if (!name || !name->is_string())
-            return false;
-          auto added =
-              Ensure("function_call", id,
-                     "{\"id\":" + json::Quote(id) +
-                         ",\"type\":\"function_call\",\"status\":\"in_progress\",\"call_id\":" +
-                         json::Quote(call->as_string()) +
-                         ",\"name\":" + json::Quote(name->as_string()) + ",\"arguments\":\"\"}");
-          if (!added.ok())
-            return false;
-          output = added.value();
-        }
-        if (!output)
-          return false;
-        if (auto *args = fn->find("arguments");
-            args && args->is_string() && !args->as_string().empty())
-          if (!Event("response.function_call_arguments.delta",
-                     "\"output_index\":" + std::to_string(*output) + ",\"item_id\":" +
-                         json::Quote(id) + ",\"delta\":" + json::Quote(args->as_string()),
-                     true))
-            return false;
-      }
+  switch (event.kind) {
+  case EventKind::Reasoning:
+    return Delta("reasoning", request_.reasoning_id, event.Text());
+  case EventKind::Text:
+    return Delta("message", request_.message_id, event.Text());
+  case EventKind::ToolStart: {
+    const auto &id = request_.function_ids[event.index];
+    return Ensure("function_call", id,
+                  "{\"id\":" + json::Quote(id) +
+                      ",\"type\":\"function_call\",\"status\":\"in_progress\",\"call_id\":" +
+                      json::Quote(event.Id()) + ",\"name\":" + json::Quote(event.Name()) +
+                      ",\"arguments\":\"\"}")
+        .ok();
   }
-  return true;
+  case EventKind::ToolArguments: {
+    const auto &id = request_.function_ids[event.index];
+    for (const auto &item : items_)
+      if (item.id == id)
+        return Event("response.function_call_arguments.delta",
+                     "\"output_index\":" + std::to_string(item.index) + ",\"item_id\":" +
+                         json::Quote(id) + ",\"delta\":" + json::Quote(event.Text()),
+                     true);
+    return false;
+  }
+  // Terminal output comes from the common result, once all deltas are drained.
+  case EventKind::Begin:
+  case EventKind::Finish:
+  case EventKind::Usage:
+  case EventKind::Done:
+  case EventKind::Error:
+    return true;
+  }
+  return false;
 }
-bool ResponseStream::Finish(const Job &job) {
+bool ResponseStream::Finish(const GenerationResult &job) {
   auto parsed = json::Parse(ResponseOutputItems(request_, job));
   if (!parsed.ok())
     return false;

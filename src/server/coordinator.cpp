@@ -15,108 +15,32 @@ std::uint64_t Created() {
                                         std::chrono::system_clock::now().time_since_epoch())
                                         .count());
 }
-std::string Usage(const Job &job) {
-  return "{\"prompt_tokens\":" + std::to_string(job.request.input_ids.size()) +
-         ",\"completion_tokens\":" + std::to_string(job.completion_tokens) + ",\"total_tokens\":" +
-         std::to_string(job.request.input_ids.size() + job.completion_tokens) +
-         ",\"prompt_tokens_details\":{\"cached_tokens\":" + std::to_string(job.cached_tokens) +
-         "}}";
-}
 class Events {
 public:
-  explicit Events(Job &job) : job_(job), builder_(8190), created_(Created()) {}
+  explicit Events(Job &job) : job_(job) {}
   void Begin() {
-    Envelope();
-    Need(builder_.Append("[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},"
-                         "\"finish_reason\":null,\"logprobs\":null}]"));
-    End();
+    Send(GenerationEvent::Make(EventKind::Begin));
   }
   void Delta(std::string_view content, std::string_view reasoning) {
     if (!reasoning.empty())
       job_.ObserveOutput(OutputKind::Reasoning);
     if (!content.empty())
       job_.ObserveOutput(OutputKind::Message);
-    if (!job_.request.stream)
-      return;
-    const auto emit = [&](std::string_view text, bool is_reasoning) {
-      while (!text.empty() && job_.cancellation.load() == CancelCause::None) {
-        auto size = std::min<std::size_t>(1024, text.size());
-        while (size < text.size() && (static_cast<unsigned char>(text[size]) & 0xc0) == 0x80)
-          --size;
-        DeltaPart(is_reasoning ? std::string_view{} : text.substr(0, size),
-                  is_reasoning ? text.substr(0, size) : std::string_view{});
-        text.remove_prefix(size);
-      }
-    };
-    emit(reasoning, true);
-    emit(content, false);
-  }
-  void DeltaPart(std::string_view content, std::string_view reasoning) {
-    Envelope();
-    Need(builder_.Append("[{\"index\":0,\"delta\":{"));
-    bool comma = false;
-    if (!content.empty()) {
-      Need(builder_.Append("\"content\":"));
-      Need(builder_.AppendJsonString(content));
-      comma = true;
-    }
-    if (!reasoning.empty()) {
-      if (comma)
-        Need(builder_.Append(','));
-      Need(builder_.Append("\"reasoning_content\":"));
-      Need(builder_.AppendJsonString(reasoning));
-    }
-    Need(builder_.Append("},\"finish_reason\":null,\"logprobs\":null}]"));
-    End(true, false, !content.empty());
+    Parts(EventKind::Reasoning, reasoning);
+    Parts(EventKind::Text, content);
   }
   void Terminal() {
-    Envelope();
-    Need(builder_.Append("[{\"index\":0,\"delta\":{},\"finish_reason\":"));
-    Need(builder_.AppendJsonString(job_.finish_reason));
-    Need(builder_.Append(",\"logprobs\":null}]"));
-    End(true, true);
-    if (job_.request.include_usage) {
-      Envelope();
-      Need(builder_.Append("[],\"usage\":"));
-      Need(builder_.Append(Usage(job_)));
-      End(false, true);
-    }
-    builder_.Reset();
-    Need(builder_.Append("[DONE]"));
-    auto final = builder_.FinishRecord();
-    Need(job_.PushEnding(final));
+    job_.PushEnding(GenerationEvent::Make(EventKind::Finish));
+    if (job_.request.include_usage)
+      job_.PushEnding(GenerationEvent::Make(EventKind::Usage));
+    job_.PushEnding(GenerationEvent::Make(EventKind::Done));
   }
   void ToolBegin(std::size_t index, std::string_view id, std::string_view name) {
     job_.ObserveOutput(OutputKind::Tool, index);
-    if (!job_.request.stream)
-      return;
-    Envelope();
-    Need(builder_.Append("[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":"));
-    Need(builder_.AppendUnsigned(index));
-    Need(builder_.Append(",\"id\":"));
-    Need(builder_.AppendJsonString(id));
-    Need(builder_.Append(",\"type\":\"function\",\"function\":{\"name\":"));
-    Need(builder_.AppendJsonString(name));
-    Need(builder_.Append(",\"arguments\":\"\"}}]},\"finish_reason\":null,\"logprobs\":null}]"));
-    End(true, false, true);
+    Send(GenerationEvent::Make(EventKind::ToolStart, {}, index, id, name));
   }
-  void ToolArguments(std::size_t index, std::string_view arguments) {
-    if (!job_.request.stream)
-      return;
-    for (std::size_t begin = 0;
-         begin < arguments.size() && job_.cancellation.load() == CancelCause::None;) {
-      auto end = std::min(begin + 1024, arguments.size());
-      while (end < arguments.size() && (static_cast<unsigned char>(arguments[end]) & 0xc0) == 0x80)
-        --end;
-      Envelope();
-      Need(builder_.Append("[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":"));
-      Need(builder_.AppendUnsigned(index));
-      Need(builder_.Append(",\"function\":{\"arguments\":"));
-      Need(builder_.AppendJsonString(std::string_view(arguments).substr(begin, end - begin)));
-      Need(builder_.Append("}}]},\"finish_reason\":null,\"logprobs\":null}]"));
-      End(true, false, true);
-      begin = end;
-    }
+  void ToolArguments(std::size_t index, std::string_view args) {
+    Parts(EventKind::ToolArguments, args, index);
   }
   void Tool(std::size_t index, const ToolCall &call) {
     ToolBegin(index, call.id, call.name);
@@ -124,47 +48,48 @@ public:
   }
 
 private:
-  void Need(bool ok) {
-    if (!ok)
-      throw std::runtime_error("bounded SSE frame encoding exceeded");
-  }
-  void Envelope() {
-    builder_.Reset();
-    Need(builder_.Append("{\"id\":"));
-    Need(builder_.AppendJsonString(job_.request.id));
-    Need(builder_.Append(",\"object\":\"chat.completion.chunk\",\"created\":"));
-    Need(builder_.AppendUnsigned(created_));
-    Need(builder_.Append(",\"model\":"));
-    Need(builder_.AppendJsonString(kModelId));
-    Need(builder_.Append(",\"choices\":"));
-  }
-  void End(bool null_usage = true, bool ending = false, bool visible = false) {
-    if (null_usage && job_.request.include_usage)
-      Need(builder_.Append(",\"usage\":null"));
-    Need(builder_.Append('}'));
-    auto frame = builder_.FinishRecord();
-    if (!(ending ? job_.PushEnding(frame) : job_.Push(frame, visible)))
+  void Send(const GenerationEvent &event) {
+    if (job_.request.stream && !job_.Push(event))
       job_.Cancel(CancelCause::Backpressure);
   }
+  void Parts(EventKind kind, std::string_view text, std::size_t index = 0) {
+    if (!job_.request.stream)
+      return;
+    while (!text.empty() && job_.cancellation.load() == CancelCause::None) {
+      auto size = std::min<std::size_t>(1024, text.size());
+      while (size < text.size() && (static_cast<unsigned char>(text[size]) & 0xc0) == 0x80)
+        --size;
+      Send(GenerationEvent::Make(kind, text.substr(0, size), index));
+      text.remove_prefix(size);
+    }
+  }
   Job &job_;
-  SseChunkBuilder builder_;
-  std::uint64_t created_;
 };
 void SetTerminalError(Job &job, std::string_view message) {
-  const auto error = ClassifyJobError(job.cancellation.load());
-  auto body = "data: " + ErrorJson(message, error.code, error.type) + "\n\n";
-  if (body.size() > EventFrame{}.data.size())
-    body = "data: {\"error\":{\"message\":\"generation "
-           "failed\",\"type\":\"server_error\",\"code\":\"generation_error\"}}\n\n";
+  if (message.size() > 1024)
+    message = "generation failed";
+  auto event = GenerationEvent::Make(EventKind::Error, message);
   std::lock_guard lock(job.mutex);
+  job.failure_cause = job.cancellation.load();
   job.ending_head = 0;
   job.ending_count = 1;
-  std::memcpy(job.endings[0].data.data(), body.data(), body.size());
-  job.endings[0].size = body.size();
+  job.endings[0] = event;
 }
 
 } // namespace
-Job::Job(ChatRequest input, std::size_t maximum) : request(std::move(input)) {
+std::string ChatUsage(const GenerationResult &job) {
+  return "{\"prompt_tokens\":" + std::to_string(job.prompt_tokens) +
+         ",\"completion_tokens\":" + std::to_string(job.completion_tokens) +
+         ",\"total_tokens\":" + std::to_string(job.prompt_tokens + job.completion_tokens) +
+         ",\"prompt_tokens_details\":{\"cached_tokens\":" + std::to_string(job.cached_tokens) +
+         "}}";
+}
+Job::Job(ChatRequest input, std::size_t maximum)
+    : request(std::move(input)), created_at(Created()) {
+  prompt_tokens = request.input_ids.size();
+  output_budget = request.outputs;
+  temperature = request.sampling.temperature;
+  top_p = request.sampling.top_p;
   if (request.outputs < 1 || request.outputs > 131072 || maximum > 8192)
     throw std::invalid_argument("invalid request output allocation contract");
   const auto output_budget = admission::Sum(
@@ -224,38 +149,34 @@ void Job::FinishTransport(bool success) {
   transport->response_write_latency.Observe(seconds);
   transport->changed.notify_all();
 }
-bool Job::Push(std::span<const char> frame, bool visible) {
+bool Job::Push(const GenerationEvent &frame) {
   if (!request.stream)
     return true;
   std::lock_guard lock(mutex);
-  if (frame.empty() || frame.size() > events[0].data.size() || count == events.size()) {
+  if (!frame.Valid() || frame.Terminal() || count == events.size()) {
     Cancel(CancelCause::Backpressure);
     return false;
   }
   auto &slot = events[tail];
-  std::memcpy(slot.data.data(), frame.data(), frame.size());
-  slot.size = frame.size();
-  slot.visible = visible;
+  slot = frame;
   tail = (tail + 1) % events.size();
   ++count;
   changed.notify_all();
   return true;
 }
-bool Job::PushEnding(std::span<const char> frame) {
+bool Job::PushEnding(const GenerationEvent &frame) {
   if (!request.stream)
     return true;
   std::lock_guard lock(mutex);
-  if (frame.empty() || frame.size() > endings[0].data.size() || ending_count == endings.size()) {
+  if (!frame.Valid() || !frame.Terminal() || ending_count == endings.size()) {
     Cancel(CancelCause::Backpressure);
     return false;
   }
   auto &slot = endings[ending_count++];
-  std::memcpy(slot.data.data(), frame.data(), frame.size());
-  slot.size = frame.size();
-  slot.visible = false;
+  slot = frame;
   return true;
 }
-bool Job::Pop(EventFrame &frame, std::chrono::milliseconds wait) {
+bool Job::Pop(GenerationEvent &frame, std::chrono::milliseconds wait) {
   std::unique_lock lock(mutex);
   changed.wait_for(lock, wait, [&] {
     return count || complete || cancellation.load() == CancelCause::Disconnect;
@@ -810,6 +731,6 @@ std::string CompletionJson(const Job &job) {
          ",\"reasoning_content\":" + json::Quote(job.reasoning) +
          (job.tool_calls.empty() ? "" : ",\"tool_calls\":" + ToolCallsJson(job.tool_calls)) +
          "},\"finish_reason\":" + json::Quote(job.finish_reason) +
-         ",\"logprobs\":null}],\"usage\":" + Usage(job) + "}";
+         ",\"logprobs\":null}],\"usage\":" + ChatUsage(job) + "}";
 }
 } // namespace mellum16::server

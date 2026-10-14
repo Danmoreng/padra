@@ -64,3 +64,7 @@ Local commands use `cmake --build build/<configuration> -j4` followed by
 `review-tsan`, `review-sanitizers` and `review-fuzz`. TSan uses
 `TSAN_OPTIONS=halt_on_error=1`; ASan/UBSan use
 `ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 UBSAN_OPTIONS=halt_on_error=1`.
+
+PR10a GitHub Actions run [38569963687](https://github.com/Danmoreng/padra/actions/runs/38569963687)
+completed successfully for all 16 jobs, including every GCC/Clang/native-text
+variant, TSan, ASan/UBSan, format, fuzz and pinned SDK.

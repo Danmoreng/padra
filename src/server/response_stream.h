@@ -1,5 +1,6 @@
 #pragma once
 #include "server/responses.h"
+#include "server/generation_event.h"
 #include <functional>
 #include <vector>
 namespace mellum16::server {
@@ -10,8 +11,8 @@ public:
   using Written = std::function<void(std::size_t, bool)>;
   ResponseStream(const ResponseRequest &, Send, Written = {});
   bool Begin();
-  bool ChatFrame(std::string_view);
-  bool Finish(const Job &);
+  bool OnEvent(const GenerationEvent &);
+  bool Finish(const GenerationResult &);
   bool Fail(std::string_view message);
 
 private:

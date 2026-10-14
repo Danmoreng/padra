@@ -3,6 +3,7 @@
 #include "runtime/build_identity.h"
 #include "runtime/size_checked.h"
 #include "server/http_policy.h"
+#include "server/chat_stream.h"
 #include "server/job_error.h"
 #include "server/response_stream.h"
 #include "server/responses.h"
@@ -502,7 +503,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
             job->Cancel(CancelCause::Disconnect);
             return false;
           }
-          EventFrame frame;
+          GenerationEvent frame;
           auto last_write = std::chrono::steady_clock::now();
           for (;;) {
             if (closed()) {
@@ -510,7 +511,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
               return false;
             }
             if (job->Pop(frame, std::chrono::milliseconds(20))) {
-              if (!events.ChatFrame(std::string_view(frame.data.data(), frame.size))) {
+              if (!events.OnEvent(frame)) {
                 job->Cancel(CancelCause::Disconnect);
                 return false;
               }
@@ -691,7 +692,8 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
       "text/event-stream",
       [job, closed = request.is_connection_closed](std::size_t, httplib::DataSink &sink) {
         try {
-          EventFrame frame;
+          GenerationEvent frame;
+          ChatStream encoder(*job);
           auto last_write = std::chrono::steady_clock::now();
           for (;;) {
             if (closed()) {
@@ -699,11 +701,12 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
               return false;
             }
             if (job->Pop(frame, std::chrono::milliseconds(20))) {
-              if (!sink.write(frame.data.data(), frame.size)) {
+              auto wire = encoder.Encode(frame);
+              if (!sink.write(wire.data(), wire.size())) {
                 job->Cancel(CancelCause::Disconnect);
                 return false;
               }
-              job->RecordWrite(frame.size, frame.visible);
+              job->RecordWrite(wire.size(), frame.Visible());
               last_write = std::chrono::steady_clock::now();
               continue;
             }

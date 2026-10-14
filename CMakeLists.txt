@@ -130,7 +130,7 @@ endif()
 include(cmake/PadraHttp.cmake)
 padra_add_http()
 set(padra_server_sources
-  src/server/chat_request.cpp src/server/coordinator.cpp src/server/secure_id.cpp
+  src/server/chat_request.cpp src/server/chat_stream.cpp src/server/coordinator.cpp src/server/secure_id.cpp
   src/server/session_store.cpp src/server/tool_protocol.cpp src/server/responses.cpp
   src/server/response_store.cpp src/server/response_stream.cpp src/server/http_server.cpp)
 add_library(padra_server ${padra_server_sources})
@@ -179,6 +179,11 @@ if(BUILD_TESTING)
   padra_warnings(padra-server-tests)
   add_test(NAME server-regressions COMMAND padra-server-tests)
   set_tests_properties(server-regressions PROPERTIES TIMEOUT 30)
+  add_executable(padra-generation-event-tests tests/generation_event_tests.cpp)
+  target_link_libraries(padra-generation-event-tests PRIVATE padra_test_support)
+  padra_warnings(padra-generation-event-tests)
+  add_test(NAME generation-events COMMAND padra-generation-event-tests)
+  set_tests_properties(generation-events PROPERTIES TIMEOUT 15)
   add_executable(padra-output-order-tests tests/output_order_tests.cpp)
   target_link_libraries(padra-output-order-tests PRIVATE padra_test_support)
   padra_warnings(padra-output-order-tests)
@@ -218,5 +223,8 @@ if(BUILD_TESTING)
     add_test(NAME python-sdk-compatibility COMMAND ${Python3_EXECUTABLE}
       "${PROJECT_SOURCE_DIR}/tests/sdk_tests.py" --fixture $<TARGET_FILE:padra-sdk-fixture>)
     set_tests_properties(python-sdk-compatibility PROPERTIES TIMEOUT 60)
+    add_test(NAME api-wire-golden COMMAND ${Python3_EXECUTABLE}
+      "${PROJECT_SOURCE_DIR}/tests/wire_golden.py" --fixture $<TARGET_FILE:padra-sdk-fixture>)
+    set_tests_properties(api-wire-golden PROPERTIES TIMEOUT 60)
   endif()
 endif()

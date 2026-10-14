@@ -67,10 +67,9 @@ void TestEndingPublishedAfterPollTimeout() {
   auto request = Request("completion-after-poll");
   request.stream = true;
   Job job(std::move(request), 4);
-  EventFrame frame;
+  GenerationEvent frame;
   Require(!job.Pop(frame, 0ms), "unexpected frame before publication");
-  constexpr std::string_view ending = "data: [DONE]\n\n";
-  Require(job.PushEnding(std::span(ending.data(), ending.size())), "ending publication failed");
+  Require(job.PushEnding(GenerationEvent::Make(EventKind::Done)), "ending publication failed");
   {
     std::lock_guard lock(job.mutex);
     job.complete = true;

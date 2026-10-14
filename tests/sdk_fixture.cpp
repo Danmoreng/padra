@@ -41,6 +41,10 @@ public:
       output = std::string(12, 'x');
       delay_ = std::chrono::milliseconds(50);
     }
+    if (text.value().find("reasoning-text") != std::string::npos)
+      output = "<think>why €</think>\nanswer";
+    if (text.value().find("utf8-stop") != std::string::npos)
+      output = "€ hello STOP tail";
     auto encoded = tokenizer_.Encode(output);
     if (!encoded.ok())
       return encoded.status();
