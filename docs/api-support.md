@@ -30,9 +30,7 @@ listing endpoints are not implemented.
 | Prompt | `messages` | `input`, optional text `instructions` |
 | Output budget | `max_completion_tokens` or `max_tokens`, mutually exclusive | `max_output_tokens` |
 | Streaming | `stream`; optional `stream_options.include_usage` | `stream`; usage in terminal response |
-| Sampling | `temperature`, `top_p`, `seed` | Same |
-| Padra sampling extensions | `top_k`, `repetition_penalty` | Same |
-| Penalties | `frequency_penalty`, `presence_penalty` | Same |
+| Sampling and repetition control | `temperature`, `top_p`, `top_k`, `seed`, `repetition_penalty`, `frequency_penalty`, `presence_penalty` | Same |
 | Stop strings | `stop`: one string or up to four strings | Same |
 | Thinking control | Padra `enable_thinking` | Padra `enable_thinking`; no effort/summary control |
 | Function definitions | Nested `tools[].function` | Flat `tools[]` with `type: "function"` |
@@ -42,6 +40,20 @@ listing endpoints are not implemented.
 | Manual item replay | Chat message/tool history | Supported message, function and plaintext-reasoning items |
 | Metadata | Not accepted | Up to 16 string pairs; key ≤64 bytes, value ≤512 bytes |
 | Multiple choices | Only `n: 1` | One response |
+
+All fields in the sampling row are supported by Padra on both endpoints. They
+control decoding: temperature scales logits, top-k/top-p restrict candidate tokens,
+seed selects the random sequence, and penalties adjust repeated tokens. They are
+grouped together regardless of whether OpenAI exposes the same field.
+
+For OpenAI request compatibility, `temperature` and `top_p` are standard fields on
+both endpoints. `frequency_penalty`, `presence_penalty` and `seed` are listed for
+[Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create),
+but are Padra extensions on
+[Responses](https://developers.openai.com/api/reference/python/resources/responses/methods/create).
+`top_k` and `repetition_penalty` are Padra extensions on both. SDKs can send
+extension fields using `extra_body`; see the [API guide](api.md). OpenAI model
+support for standard fields can also vary by model.
 
 Output budgets are integers 1–131072, further constrained by the admitted context:
 prompt plus output budget must fit. Each stop string is 1–256 UTF-8 bytes. The
