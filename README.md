@@ -201,3 +201,9 @@ remains partial and does not commit session history. Python SDK compatibility ha
 an optional pinned loopback suite; proxy/load qualification and authenticated
 external deployment remain separate extensions. No throughput or model-quality improvement is implied by
 these lifecycle changes.
+
+Responses output items keep their first-observed order across streaming deltas,
+done events, terminal output and stored GET. There is at most one reasoning item,
+one message item and eight tool items. Text/reasoning emitted again extends its
+existing item, including text on both sides of a tool call. Nonstreaming requests
+use the same logical ordering; items are not regrouped by type at completion.

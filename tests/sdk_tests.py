@@ -136,6 +136,26 @@ def test_responses(client):
         and final.output[0].name == "lookup"
         and json.loads(final.output[0].arguments) == ARGS
     )
+    identities = {}
+    with client.responses.stream(
+        model=MODEL,
+        input="tool-mixed",
+        tools=[RESPONSE_TOOL],
+        max_output_tokens=256,
+    ) as stream:
+        for event in stream:
+            if event.type == "response.output_item.added":
+                identities[event.item.id] = event.output_index
+            elif hasattr(event, "item_id") and hasattr(event, "output_index"):
+                assert identities[event.item_id] == event.output_index
+        mixed = stream.get_final_response()
+    assert [item.type for item in mixed.output] == ["function_call", "message"]
+    assert all(identities[item.id] == i for i, item in enumerate(mixed.output))
+    assert mixed.output_text == "after" and json.loads(mixed.output[0].arguments) == ARGS
+    # The SDK accumulator adds null `parsed`/`parsed_arguments` helper fields.
+    # Exact wire-envelope equality is independently required by the C++ test.
+    stored = client.responses.retrieve(mixed.id).model_dump(exclude_none=True)
+    assert stored == mixed.model_dump(exclude_none=True)
 
 
 def test_retention(client):

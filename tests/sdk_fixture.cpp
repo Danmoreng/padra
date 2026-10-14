@@ -21,11 +21,14 @@ public:
     delay_ = std::chrono::milliseconds(0);
     std::string output = "hello";
     if (text.value().find("tool-valid") != std::string::npos ||
-        text.value().find("tool-slow") != std::string::npos) {
+        text.value().find("tool-slow") != std::string::npos ||
+        text.value().find("tool-mixed") != std::string::npos) {
       output =
           R"(<tool_call>{"name":"lookup","arguments":{"text":"hello €","nested":[1,{"ok":true}]}}</tool_call>)";
       delay_ = std::chrono::milliseconds(2);
     }
+    if (text.value().find("tool-mixed") != std::string::npos)
+      output += "after";
     if (text.value().find("tool-reverse") != std::string::npos)
       output = R"(<tool_call>{"arguments":{"text":"reverse"},"name":"lookup"}</tool_call>)";
     if (text.value().find("tool-malformed") != std::string::npos)

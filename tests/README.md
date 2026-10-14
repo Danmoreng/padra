@@ -51,6 +51,10 @@ Covered regressions include:
 - Incremental tool bytes, split markers/fields, Unicode, reordered fields, duplicate
   and unoffered names, early delivery while the backend is paused, and both HTTP
   protocols before generation completes.
+- `server-output-order`: mixed Tool/Text/Reasoning order, repeated text, multiple
+  tools, empty output and length/EOS; live/done indices, reconstructed argument/text
+  bytes, exact terminal/GET equality and equivalent nonstream output. The SDK
+  accumulator also checks Tool→Text ordering and retained output.
 - Duplicate JSON keys, Unicode surrogates, split UTF-8/stop/thinking and owner/lease
   isolation.
 - Named kernel profiles, legacy alias compatibility, unsupported profiles and

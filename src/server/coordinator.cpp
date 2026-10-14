@@ -32,6 +32,10 @@ public:
     End();
   }
   void Delta(std::string_view content, std::string_view reasoning) {
+    if (!reasoning.empty())
+      job_.ObserveOutput(OutputKind::Reasoning);
+    if (!content.empty())
+      job_.ObserveOutput(OutputKind::Message);
     if (!job_.request.stream)
       return;
     const auto emit = [&](std::string_view text, bool is_reasoning) {
@@ -44,8 +48,8 @@ public:
         text.remove_prefix(size);
       }
     };
-    emit(content, false);
     emit(reasoning, true);
+    emit(content, false);
   }
   void DeltaPart(std::string_view content, std::string_view reasoning) {
     Envelope();
@@ -83,6 +87,7 @@ public:
     Need(job_.PushEnding(final));
   }
   void ToolBegin(std::size_t index, std::string_view id, std::string_view name) {
+    job_.ObserveOutput(OutputKind::Tool, index);
     if (!job_.request.stream)
       return;
     Envelope();
@@ -182,6 +187,14 @@ void Job::Cancel(CancelCause cause) {
   auto expected = CancelCause::None;
   cancellation.compare_exchange_strong(expected, cause);
   changed.notify_all();
+}
+void Job::ObserveOutput(OutputKind kind, std::size_t tool) {
+  for (std::size_t i = 0; i < output_count; ++i)
+    if (output_order[i].kind == kind && output_order[i].tool == tool)
+      return;
+  if (output_count == output_order.size() || (kind == OutputKind::Tool && tool >= 8))
+    throw std::logic_error("bounded logical output count exceeded");
+  output_order[output_count++] = {kind, tool};
 }
 void Job::StartTransport() {
   if (!transport || transport_started.exchange(true))
@@ -594,20 +607,19 @@ void Coordinator::Execute(const std::shared_ptr<Job> &job) {
         id = std::move(generated).value();
       }
     Events events(*job);
-    if (job->request.stream) {
+    if (job->request.stream)
       events.Begin();
-      if (job->request.tools.parse)
-        tools.StreamDeltas(job->request.tools, [&](std::size_t index, std::string_view name,
-                                                   std::string_view arguments) {
-          if (job->visible_seconds == 0)
-            job->visible_seconds = std::chrono::duration<double>(Clock::now() - started).count();
-          if (!name.empty())
-            events.ToolBegin(index, call_ids[index], name);
-          if (!arguments.empty())
-            events.ToolArguments(index, arguments);
-          return job->cancellation.load() == CancelCause::None;
-        });
-    }
+    if (job->request.tools.parse)
+      tools.StreamDeltas(job->request.tools, [&](std::size_t index, std::string_view name,
+                                                 std::string_view arguments) {
+        if (job->visible_seconds == 0)
+          job->visible_seconds = std::chrono::duration<double>(Clock::now() - started).count();
+        if (!name.empty())
+          events.ToolBegin(index, call_ids[index], name);
+        if (!arguments.empty())
+          events.ToolArguments(index, arguments);
+        return job->cancellation.load() == CancelCause::None;
+      });
     const auto accept_output = [&](text::ThinkingOutput output) {
       auto visible = tools.Push(output.content);
       if (!visible.empty() && job->visible_seconds == 0)
@@ -693,6 +705,8 @@ void Coordinator::Execute(const std::shared_ptr<Job> &job) {
     for (std::size_t i = 0; i < job->tool_calls.size(); ++i)
       if (!tools.identity_sent(i))
         events.Tool(i, job->tool_calls[i]);
+    if (!job->output_count && job->finish_reason != "length")
+      job->ObserveOutput(OutputKind::Message);
     if (job->cancellation.load() != CancelCause::None)
       throw std::runtime_error("generation cancelled during output finalization");
     if (lease && !job->partial_tool_call) {

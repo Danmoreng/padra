@@ -70,3 +70,26 @@ HTTP/session scenarios each). Logs: `BUILD/disconnect-repeat.log`. No sanitizer
 diagnostic or assertion failure. No production behavior changed in this step;
 CUDA/Rust/model quality and sustained GPU load were not rerun for this test-only
 change. The existing native smoke evidence belongs to step 1.
+
+## 3. Canonical output ordering (PR02)
+
+`server-output-order` first failed with `live/final output index mismatch` on
+Tool→Text. The worker now records a bounded logical order (one reasoning item,
+one message, up to eight calls) when output first appears. Both streaming and
+nonstreaming observe this order; serialization/retention use it instead of
+regrouping by type. Repeated text extends the same message item. HTTP item IDs
+remain adapter-owned. The stream still delivers tool bytes before generation
+finishes; no completion buffering or larger resource limit was introduced.
+
+The HTTP matrix covers Tool→Text, Text→Tool, Reasoning→Tool→Text, multiple calls,
+text on both sides of a call, empty/text-only output, each with EOS/length. It
+checks all live/done indices, reconstructed text/argument bytes, exact terminal
+envelope vs GET, and stream/nonstream semantic equality. The pinned SDK stream
+accumulator also checks mixed output and retrieval (excluding SDK-added null
+parsed helper fields; wire equality is checked without normalization).
+
+Executed the same build/CTest commands: Debug/SDK 7/7, GCC 15 Release 6/6,
+ASan/UBSan 6/6, CUDA/Rust build successful. No sanitizer diagnostic. The SDK
+comparison initially exposed its extra null parsed fields, which are accounted
+for explicitly. Native model smoke was not rerun in this step; full numerical,
+model-quality and sustained-load qualification remain outside these host changes.

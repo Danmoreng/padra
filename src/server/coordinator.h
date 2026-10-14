@@ -34,6 +34,11 @@ struct TransportCounters {
   std::uint64_t active = 0, responses_written = 0, write_failures = 0, body_bytes = 0;
   LatencyHistogram first_visible_write_latency, response_write_latency;
 };
+enum class OutputKind { Reasoning, Message, Tool };
+struct OutputKey {
+  OutputKind kind;
+  std::size_t tool = 0;
+};
 struct Job {
   explicit Job(ChatRequest request, std::size_t maximum_token_bytes);
   ~Job() {
@@ -45,6 +50,11 @@ struct Job {
   int cached_tokens = 0;
   std::vector<ToolCall> tool_calls;
   bool partial_tool_call = false;
+  // Worker-owned until completion; adapters read only after complete is published.
+  // Repeated text/reasoning extends the same item; each tool index is distinct.
+  std::array<OutputKey, 10> output_order{};
+  std::size_t output_count = 0;
+  void ObserveOutput(OutputKind, std::size_t tool = 0);
   ChatRequest request;
   std::atomic<CancelCause> cancellation{CancelCause::None};
   std::mutex mutex;

@@ -439,31 +439,30 @@ std::string ResponseOutputItems(const ResponseRequest &r, const Job &j) {
       j.finish_reason == "length" || !j.failure.ok() ? "incomplete" : "completed";
   std::string out = "[";
   bool comma = false;
-  if (!j.reasoning.empty()) {
-    out += "{\"id\":" + json::Quote(r.reasoning_id) +
-           ",\"type\":\"reasoning\",\"summary\":[],\"content\":[{\"type\":\"reasoning_text\","
-           "\"text\":" +
-           json::Quote(j.reasoning) + "}],\"status\":" + json::Quote(status) + "}";
-    comma = true;
-  }
-  if (!j.content.empty() ||
-      (j.tool_calls.empty() && j.reasoning.empty() && j.finish_reason != "length")) {
+  for (std::size_t n = 0; n < j.output_count; ++n) {
+    const auto key = j.output_order[n];
+    // Failed validation may leave an announced tool without a valid final call.
+    if (key.kind == OutputKind::Tool && key.tool >= j.tool_calls.size())
+      continue;
     if (comma)
       out += ',';
-    out += "{\"id\":" + json::Quote(r.message_id) +
-           ",\"type\":\"message\",\"role\":\"assistant\",\"status\":" + json::Quote(status) +
-           ",\"content\":[{\"type\":\"output_text\",\"text\":" + json::Quote(j.content) +
-           ",\"annotations\":[],\"logprobs\":[]}]}";
-    comma = true;
-  }
-  for (std::size_t i = 0; i < j.tool_calls.size(); ++i) {
-    const auto &c = j.tool_calls[i];
-    if (comma)
-      out += ',';
-    out += "{\"id\":" + json::Quote(r.function_ids[i]) +
-           ",\"type\":\"function_call\",\"call_id\":" + json::Quote(c.id) +
-           ",\"name\":" + json::Quote(c.name) + ",\"arguments\":" + json::Quote(c.arguments) +
-           ",\"status\":" + json::Quote(c.complete ? "completed" : "incomplete") + "}";
+    if (key.kind == OutputKind::Reasoning) {
+      out += "{\"id\":" + json::Quote(r.reasoning_id) +
+             ",\"type\":\"reasoning\",\"summary\":[],\"content\":[{\"type\":\"reasoning_text\","
+             "\"text\":" +
+             json::Quote(j.reasoning) + "}],\"status\":" + json::Quote(status) + "}";
+    } else if (key.kind == OutputKind::Message) {
+      out += "{\"id\":" + json::Quote(r.message_id) +
+             ",\"type\":\"message\",\"role\":\"assistant\",\"status\":" + json::Quote(status) +
+             ",\"content\":[{\"type\":\"output_text\",\"text\":" + json::Quote(j.content) +
+             ",\"annotations\":[],\"logprobs\":[]}]}";
+    } else {
+      const auto &c = j.tool_calls[key.tool];
+      out += "{\"id\":" + json::Quote(r.function_ids[key.tool]) +
+             ",\"type\":\"function_call\",\"call_id\":" + json::Quote(c.id) +
+             ",\"name\":" + json::Quote(c.name) + ",\"arguments\":" + json::Quote(c.arguments) +
+             ",\"status\":" + json::Quote(c.complete ? "completed" : "incomplete") + "}";
+    }
     comma = true;
   }
   return out + "]";
