@@ -20,6 +20,18 @@ The host CI matrix also builds the real native Rust tokenizer when enabled;
 server regression requests still use the explicitly synthetic fixture.
 The transport/drain subset is independently repeatable with
 `build/host/padra-server-tests --transport`.
+Disconnect cases are registered independently as `server-disconnect-queue` and
+`server-disconnect-active`. Repeat each without masking failures:
+
+```sh
+ctest --test-dir build/host -R 'server-disconnect-' --repeat until-fail:100 \
+  --output-on-failure
+```
+
+These use backend/queue barriers and a client socket close, then wait for terminal
+outcome counts, empty queue budgets, transport completion and released root/lease.
+The shared header-only `padra_test_support` target supplies the controlled backend,
+loopback fixture and SSE reader; no test includes another test's `.cpp`/`main`.
 
 Covered regressions include:
 

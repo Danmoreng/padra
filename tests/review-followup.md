@@ -44,3 +44,29 @@ A separate Release attempt with the machine's new GCC 16 default failed under
 `-Werror=maybe-uninitialized` in the existing JSON/`std::variant` literal path.
 No warning was disabled; the Release checks above use the available GCC 15
 toolchain. This change does not claim GCC 16 Release support.
+
+## 2. Deterministic disconnect regression (PR01)
+
+The old test treated `!active` as completion even if the request was still queued.
+Queue and active HTTP disconnects now have separate tests for both APIs, plus an
+explicit-session Chat case. The predecessor/backend is held at a real barrier;
+the client closes its socket only after queue admission or backend entry is
+observed. Queue cancellation completes before releasing the predecessor. Tests
+require terminal outcome counts, empty token/byte reservations, no active
+transport, one failed transport, temporary root cleanup and an acquirable explicit
+session lease. Backend/HTTP/SSE helpers live in `server_test_support.h` exposed by
+the header-only CMake `padra_test_support` target.
+
+Executed the same build/CTest commands above: Debug/SDK 6/6; GCC 15 Release 5/5;
+ASan/UBSan 5/5. In all three builds:
+
+```sh
+ctest --test-dir BUILD -R 'server-disconnect-' --repeat until-fail:100 \
+  --output-on-failure
+```
+
+Both named cases passed 100 consecutive runs per build (600 executions, three
+HTTP/session scenarios each). Logs: `BUILD/disconnect-repeat.log`. No sanitizer
+diagnostic or assertion failure. No production behavior changed in this step;
+CUDA/Rust/model quality and sustained GPU load were not rerun for this test-only
+change. The existing native smoke evidence belongs to step 1.

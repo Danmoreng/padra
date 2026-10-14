@@ -1,110 +1,5 @@
-#include "server/coordinator.h"
-#include "server/http_server.h"
-#include "server/job_error.h"
-#include "server/response_store.h"
-#include "server/response_stream.h"
-#include "server/responses.h"
-#include "text/stream.h"
-#include "util/json.h"
-#include <chrono>
-#include <future>
-#include <iostream>
-#include <stdexcept>
-#include <thread>
-using namespace mellum16;
-using namespace mellum16::server;
-using namespace std::chrono_literals;
-
-struct MockState {
-  std::promise<void> entered, release;
-  std::shared_future<void> released = release.get_future().share();
-  bool block = false;
-  int pause_after = 0;
-  std::atomic<int> calls{0};
-  std::vector<int> tokens{0};
-  std::chrono::milliseconds token_delay{0};
-};
-class MockBackend final : public RuntimeBackend {
-  std::shared_ptr<MockState> state_;
-
-public:
-  explicit MockBackend(std::shared_ptr<MockState> state) : state_(std::move(state)) {}
-  Status Prepare(std::span<const int>, int, bool, SamplingOptions) override {
-    return {};
-  }
-  Status Append(std::span<const int>, int, bool, SamplingOptions) override {
-    return {};
-  }
-  Status Reset() override {
-    return {};
-  }
-  void Cancel() override {}
-  RuntimeStats Stats() const override {
-    return {};
-  }
-  Result<InferenceResult> Generate(TokenCallback callback, PrefillCallback) override {
-    const bool first = state_->calls.fetch_add(1) == 0;
-    if (first && state_->block) {
-      state_->entered.set_value();
-      state_->released.wait();
-    }
-    InferenceResult result;
-    for (int token : state_->tokens) {
-      if (state_->token_delay.count())
-        std::this_thread::sleep_for(state_->token_delay);
-      result.generated_ids.push_back(token);
-      if (callback && !callback(token)) {
-        result.cancelled = true;
-        break;
-      }
-      if (first && state_->pause_after == static_cast<int>(result.generated_ids.size())) {
-        state_->entered.set_value();
-        state_->released.wait();
-      }
-    }
-    return result;
-  }
-};
-struct ReleaseGuard {
-  std::shared_ptr<MockState> state;
-  ~ReleaseGuard() {
-    try {
-      state->release.set_value();
-    } catch (const std::future_error &) {
-    }
-  }
-};
-void Require(bool condition, const char *message) {
-  if (!condition)
-    throw std::runtime_error(message);
-}
-ChatRequest Request(std::string id) {
-  ChatRequest request;
-  request.id = std::move(id);
-  request.input_ids = {0};
-  request.outputs = 1;
-  return request;
-}
-std::shared_ptr<Job> Submit(Coordinator &coordinator, ChatRequest request) {
-  auto result = coordinator.Submit(std::move(request));
-  Require(result.ok(), "unexpected admission failure");
-  return std::move(result).value();
-}
-void Wait(const std::shared_ptr<Job> &job) {
-  std::unique_lock lock(job->mutex);
-  Require(job->changed.wait_for(lock, 2s, [&] { return job->complete; }),
-          "test completion timeout");
-}
-std::string Drain(const std::shared_ptr<Job> &job) {
-  EventFrame frame;
-  std::string output;
-  while (job->Pop(frame, 0ms))
-    output.append(frame.data.data(), frame.size);
-  return output;
-}
-std::unique_ptr<ModelRuntime> Runtime(std::shared_ptr<MockState> state) {
-  return std::make_unique<ModelRuntime>(std::make_unique<MockBackend>(std::move(state)));
-}
+#include "compiler/sha256.h"
+#include "server_test_support.h"
 
 void TestQueueDeadline(text::Tokenizer &tokenizer) {
   auto state = std::make_shared<MockState>();
@@ -262,56 +157,6 @@ void TestControlCases(text::Tokenizer &tokenizer) {
           "overlapping lease accepted");
 }
 
-class HttpFixture {
-public:
-  std::shared_ptr<MockState> state;
-  Coordinator coordinator;
-  HttpServer http;
-  int port;
-  std::thread listener;
-  HttpFixture(text::Tokenizer &tokenizer, std::shared_ptr<MockState> input,
-              ServerLimits limits = {})
-      : state(input), coordinator(Runtime(input), tokenizer, limits),
-        http(coordinator, tokenizer, 0), port(http.Bind()) {
-    Require(port > 0, "HTTP bind failed");
-    listener = std::thread([this] { http.Listen(); });
-    bool ready = false;
-    for (int i = 0; i < 100; ++i) {
-      httplib::Client client("127.0.0.1", port);
-      client.set_read_timeout(1);
-      auto result = client.Get("/healthz");
-      if (result && result->status == 200) {
-        ready = true;
-        break;
-      }
-      std::this_thread::sleep_for(5ms);
-    }
-    if (!ready) {
-      http.Stop();
-      listener.join();
-      throw std::runtime_error("HTTP startup timeout");
-    }
-  }
-  ~HttpFixture() {
-    try {
-      state->release.set_value();
-    } catch (const std::future_error &) {
-    }
-    http.Stop();
-    if (listener.joinable())
-      listener.join();
-  }
-};
-constexpr auto ChatBody =
-    R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":2})";
-constexpr auto ResponseBody =
-    R"({"model":"mellum21-exl3-k4-research","input":"hello","max_output_tokens":2})";
-json::Value JsonResponse(const httplib::Result &response, int expected = 200) {
-  Require(response && response->status == expected, "unexpected HTTP status");
-  auto parsed = json::Parse(response->body);
-  Require(parsed.ok(), "invalid HTTP JSON");
-  return std::move(parsed).value();
-}
 void TestHttpRetention(text::Tokenizer &tokenizer) {
   HttpFixture fixture(tokenizer, std::make_shared<MockState>());
   httplib::Client client("127.0.0.1", fixture.port);
@@ -549,32 +394,78 @@ void TestMetricsAndIdentity(text::Tokenizer &tokenizer) {
           "latency histogram missing");
 }
 
-void TestHttpDisconnect(text::Tokenizer &tokenizer) {
-  for (bool responses : {false, true}) {
+void TestHttpDisconnect(text::Tokenizer &tokenizer, bool queued) {
+  // Responses owns a temporary root; Chat also exercises an explicit session.
+  for (int scenario : {0, 1, 2}) {
+    const bool responses = scenario == 0, explicit_session = scenario == 2;
     auto state = std::make_shared<MockState>();
-    state->tokens.assign(500, 0);
-    state->token_delay = 2ms;
+    state->block = true;
+    state->tokens = {0, 28};
     HttpFixture fixture(tokenizer, state);
+    ReleaseGuard release{state};
+    auto entered = state->entered.get_future();
+    std::shared_ptr<Job> predecessor;
+    if (queued) {
+      predecessor = Submit(fixture.coordinator, Request("blocked-predecessor"));
+      Require(entered.wait_for(2s) == std::future_status::ready, "queue predecessor not started");
+    }
+    auto body = std::string(responses ? ResponseBody : ChatBody);
+    body.insert(body.size() - 1, ",\"stream\":true");
+    std::string session;
+    const std::string credential = "anonymous-loopback";
+    const auto owner = compiler::Sha256Hex(credential.data(), credential.size());
+    if (explicit_session) {
+      auto created = fixture.coordinator.Sessions().Create(owner);
+      Require(created.ok(), "disconnect session setup failed");
+      session = created.value().id;
+      body.insert(body.size() - 1, ",\"session_id\":" + json::Quote(session));
+    }
     httplib::Client client("127.0.0.1", fixture.port);
-    client.set_read_timeout(2);
-    const auto body =
-        responses
-            ? std::string(
-                  R"({"model":"mellum21-exl3-k4-research","input":"hello","max_output_tokens":512,"stream":true})")
-            : std::string(
-                  R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":512,"stream":true})");
-    auto result =
-        client.Post(responses ? "/v1/responses" : "/v1/chat/completions", httplib::Headers{}, body,
-                    "application/json", [](const char *, std::size_t) { return false; });
-    Require(!result, "disconnect client unexpectedly consumed full stream");
-    const auto until = std::chrono::steady_clock::now() + 2s;
-    while (fixture.coordinator.Metrics().active && std::chrono::steady_clock::now() < until)
-      std::this_thread::sleep_for(2ms);
-    const auto metrics = fixture.coordinator.Metrics();
-    Require(!metrics.active && metrics.cancelled == 1 && metrics.disconnects == 1 &&
-                metrics.output_tokens < 500,
-            "HTTP disconnect did not promptly cancel generation");
-    Require(fixture.coordinator.Sessions().Stats().first == 0, "disconnected response leaked root");
+    client.set_read_timeout(3);
+    auto response = std::async(std::launch::async, [&] {
+      return client.Post(responses ? "/v1/responses" : "/v1/chat/completions", httplib::Headers{},
+                         body, "application/json", [](const char *, std::size_t) { return true; });
+    });
+    ReleaseGuard release_after_client{state};
+    if (queued) {
+      Eventually([&] { return fixture.coordinator.Metrics().queued == 1; },
+                 "disconnect request never entered queue");
+    } else {
+      Require(entered.wait_for(2s) == std::future_status::ready,
+              "active disconnect backend did not start");
+    }
+    client.stop();
+    Eventually([&] { return fixture.coordinator.Metrics().disconnects == 1; },
+               "server did not observe socket disconnect");
+    if (queued) {
+      Eventually(
+          [&] {
+            const auto m = fixture.coordinator.Metrics();
+            return m.cancelled == 1 && m.queued == 0 && m.queued_bytes == 0 && m.queued_tokens == 0;
+          },
+          "queued disconnect did not complete independently of predecessor");
+      Require(state->calls == 1, "cancelled queued job reached backend");
+    }
+    state->release.set_value();
+    Require(response.wait_for(2s) == std::future_status::ready, "disconnected HTTP client hung");
+    Require(!response.get(), "disconnected client unexpectedly completed response");
+    if (predecessor)
+      Wait(predecessor);
+    Eventually(
+        [&] {
+          const auto m = fixture.coordinator.Metrics();
+          return !m.active && m.queued == 0 && m.queued_bytes == 0 && m.queued_tokens == 0 &&
+                 m.cancelled == 1 && m.completed == (queued ? 1u : 0u) && m.failed == 0 &&
+                 m.active_transports == 0 && m.write_failures == 1;
+        },
+        "disconnect lifecycle or transport accounting incomplete");
+    if (explicit_session) {
+      auto lease = fixture.coordinator.Sessions().Acquire(session, owner, 128);
+      Require(lease.ok(), "disconnect leaked explicit session lease/reservation");
+    } else {
+      Eventually([&] { return fixture.coordinator.Sessions().Stats().first == 0; },
+                 "disconnect leaked temporary root");
+    }
   }
 }
 
@@ -994,6 +885,14 @@ int main(int argc, char **argv) {
       std::cout << "PASS HTTP transport accounting, graceful drain, deadline and repeated stop\n";
       return 0;
     }
+    if (argc == 2 && (std::string_view(argv[1]) == "--disconnect-queue" ||
+                      std::string_view(argv[1]) == "--disconnect-active")) {
+      TestHttpDisconnect(tokenizer, std::string_view(argv[1]) == "--disconnect-queue");
+      std::cout << "PASS " << argv[1] << '\n';
+      return 0;
+    }
+    if (argc != 1)
+      throw std::runtime_error("unknown test filter");
     TestQueueDeadline(tokenizer);
     std::cout << "PASS independent queue expiry and resource release\n";
     for (auto cause : {CancelCause::Disconnect, CancelCause::Shutdown, CancelCause::SessionDiscard})
@@ -1018,7 +917,8 @@ int main(int argc, char **argv) {
     TestPartialAndInvalidStreamedTools(tokenizer);
     TestToolFrames(tokenizer);
     TestMetricsAndIdentity(tokenizer);
-    TestHttpDisconnect(tokenizer);
+    TestHttpDisconnect(tokenizer, true);
+    TestHttpDisconnect(tokenizer, false);
     TestHttpGenerationDeadline(tokenizer);
     TestTransportMetricAccounting();
     TestHttpWrittenMetrics(tokenizer);
