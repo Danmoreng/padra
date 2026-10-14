@@ -15,3 +15,8 @@ other README files: describe their current component or workflow.
 
 When behavior changes, update the corresponding description of the current
 behavior directly. Avoid adding a historical “what changed” paragraph.
+
+Keep the main README concise. For API coverage, give a short OpenAI-compatible
+server description and link to `docs/api.md` and `docs/api-support.md`. Put request
+lifecycle, observability, error tables, detailed field support and internal
+operating contracts in dedicated documents, not large sections in the README.
