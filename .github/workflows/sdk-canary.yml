@@ -1,0 +1,38 @@
+name: SDK update canary
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  latest-sdk:
+    # Independent of the pinned host workflow; this is not a release gate.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve current SDK
+        run: |
+          mkdir -p artifacts
+          python3 -m venv sdk-venv
+          sdk-venv/bin/pip install --upgrade openai
+          sdk-venv/bin/pip freeze > artifacts/sdk-packages.txt
+      - name: Configure synthetic client fixture
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DPADRA_ENABLE_CUDA=OFF -DPADRA_ENABLE_NATIVE_TEXT=OFF
+          -DPADRA_ENABLE_SDK_TESTS=ON
+          -DPython3_EXECUTABLE=${{ github.workspace }}/sdk-venv/bin/python
+      - run: cmake --build build --target padra-sdk-fixture -j2
+      - name: Check SDK and exact wire contract
+        run: |
+          set -o pipefail
+          ctest --test-dir build -R 'python-sdk-compatibility|api-wire-golden' --output-on-failure | tee artifacts/sdk-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sdk-update-canary
+          path: |
+            artifacts/
+            build/sdk-compatibility.json
+            build/Testing/Temporary/LastTest.log

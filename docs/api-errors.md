@@ -10,7 +10,7 @@ prompts, tools, session IDs and bearer values are not included.
 | --- | --- | --- | --- |
 | Model/runtime not ready | 503 | `model_not_ready` | `1` |
 | Server draining | 503 | `server_shutdown` | `1` |
-| Four preparation slots occupied | 503 | `preparation_limited` | `1` |
+| Preparation slots occupied (default four) | 503 | `preparation_limited` | `1` |
 | Queue request limit | 503 | `queue_full` | `1` |
 | Queue byte budget | 503 | `queue_bytes_exhausted` | `1` |
 | Queue token budget | 503 | `queue_tokens_exhausted` | `1` |

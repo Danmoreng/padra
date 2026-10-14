@@ -25,6 +25,8 @@ struct MockState {
        prepare_block = false;
   int pause_after = 0;
   std::atomic<int> calls{0};
+  std::mutex sampling_mutex;
+  SamplingOptions sampling;
   std::vector<int> tokens{0};
   std::chrono::milliseconds token_delay{0};
 };
@@ -34,7 +36,11 @@ class MockBackend final : public RuntimeBackend {
 
 public:
   explicit MockBackend(std::shared_ptr<MockState> state) : state_(std::move(state)) {}
-  Status Prepare(std::span<const int>, int outputs, bool, SamplingOptions) override {
+  Status Prepare(std::span<const int>, int outputs, bool, SamplingOptions sampling) override {
+    {
+      std::lock_guard lock(state_->sampling_mutex);
+      state_->sampling = sampling;
+    }
     if (state_->prepare_block) {
       state_->entered.set_value();
       state_->released.wait();
@@ -44,7 +50,11 @@ public:
     outputs_ = outputs;
     return {};
   }
-  Status Append(std::span<const int>, int outputs, bool, SamplingOptions) override {
+  Status Append(std::span<const int>, int outputs, bool, SamplingOptions sampling) override {
+    {
+      std::lock_guard lock(state_->sampling_mutex);
+      state_->sampling = sampling;
+    }
     outputs_ = outputs;
     return {};
   }

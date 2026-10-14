@@ -1,0 +1,5558 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "route": "chat",
+      "name": "temperature/accepted/0",
+      "patch": {
+        "temperature": 0
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "temperature/accepted/1",
+      "patch": {
+        "temperature": 0.0001
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "temperature/accepted/2",
+      "patch": {
+        "temperature": 0.75
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "temperature/accepted/3",
+      "patch": {
+        "temperature": 2
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "temperature/accepted/4",
+      "patch": {
+        "temperature": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "temperature/rejected/0",
+      "patch": {
+        "temperature": -1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "temperature/rejected/1",
+      "patch": {
+        "temperature": 1e-05
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "temperature/rejected/2",
+      "patch": {
+        "temperature": 2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "temperature/rejected/3",
+      "patch": {
+        "temperature": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "top_p/accepted/0",
+      "patch": {
+        "top_p": 0.01
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_p/accepted/1",
+      "patch": {
+        "top_p": 0.9
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_p/accepted/2",
+      "patch": {
+        "top_p": 1
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_p/accepted/3",
+      "patch": {
+        "top_p": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_p/rejected/0",
+      "patch": {
+        "top_p": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "top_p/rejected/1",
+      "patch": {
+        "top_p": 1.1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "top_p/rejected/2",
+      "patch": {
+        "top_p": "one"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "top_k/accepted/0",
+      "patch": {
+        "top_k": 0
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_k/accepted/1",
+      "patch": {
+        "top_k": 42
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_k/accepted/2",
+      "patch": {
+        "top_k": 98304
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_k/accepted/3",
+      "patch": {
+        "top_k": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "top_k/rejected/0",
+      "patch": {
+        "top_k": -1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "top_k/rejected/1",
+      "patch": {
+        "top_k": 98305
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "top_k/rejected/2",
+      "patch": {
+        "top_k": 1.5
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "seed/accepted/0",
+      "patch": {
+        "seed": -9223372036854775808
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "seed/accepted/1",
+      "patch": {
+        "seed": 9223372036854775807
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "seed/accepted/2",
+      "patch": {
+        "seed": -1
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "seed/accepted/3",
+      "patch": {
+        "seed": 42
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "seed/accepted/4",
+      "patch": {
+        "seed": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "seed/rejected/0",
+      "patch": {
+        "seed": 1.5
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "seed/rejected/1",
+      "patch": {
+        "seed": "one"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/accepted/0",
+      "patch": {
+        "frequency_penalty": -2
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/accepted/1",
+      "patch": {
+        "frequency_penalty": 0.25
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/accepted/2",
+      "patch": {
+        "frequency_penalty": 2
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/accepted/3",
+      "patch": {
+        "frequency_penalty": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/rejected/0",
+      "patch": {
+        "frequency_penalty": -2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/rejected/1",
+      "patch": {
+        "frequency_penalty": 2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "frequency_penalty/rejected/2",
+      "patch": {
+        "frequency_penalty": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/accepted/0",
+      "patch": {
+        "presence_penalty": -2
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/accepted/1",
+      "patch": {
+        "presence_penalty": -0.5
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/accepted/2",
+      "patch": {
+        "presence_penalty": 2
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/accepted/3",
+      "patch": {
+        "presence_penalty": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/rejected/0",
+      "patch": {
+        "presence_penalty": -2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/rejected/1",
+      "patch": {
+        "presence_penalty": 2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "presence_penalty/rejected/2",
+      "patch": {
+        "presence_penalty": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/accepted/0",
+      "patch": {
+        "repetition_penalty": 0.01
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/accepted/1",
+      "patch": {
+        "repetition_penalty": 1.125
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/accepted/2",
+      "patch": {
+        "repetition_penalty": 100
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/accepted/3",
+      "patch": {
+        "repetition_penalty": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/rejected/0",
+      "patch": {
+        "repetition_penalty": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/rejected/1",
+      "patch": {
+        "repetition_penalty": 100.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "repetition_penalty/rejected/2",
+      "patch": {
+        "repetition_penalty": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "stop/accepted/0",
+      "patch": {
+        "stop": "STOP"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stop/accepted/1",
+      "patch": {
+        "stop": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stop/accepted/2",
+      "patch": {
+        "stop": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stop/accepted/3",
+      "patch": {
+        "stop": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stop/rejected/0",
+      "patch": {
+        "stop": ""
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "stop/rejected/1",
+      "patch": {
+        "stop": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "stop/rejected/2",
+      "patch": {
+        "stop": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "stop/rejected/3",
+      "patch": {
+        "stop": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "enable_thinking/accepted/0",
+      "patch": {
+        "enable_thinking": true
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "enable_thinking/accepted/1",
+      "patch": {
+        "enable_thinking": false
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "enable_thinking/rejected/0",
+      "patch": {
+        "enable_thinking": null
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "enable_thinking/rejected/1",
+      "patch": {
+        "enable_thinking": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "parallel_tool_calls/accepted/0",
+      "patch": {
+        "parallel_tool_calls": true
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "parallel_tool_calls/accepted/1",
+      "patch": {
+        "parallel_tool_calls": false
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "parallel_tool_calls/rejected/0",
+      "patch": {
+        "parallel_tool_calls": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "stream/accepted/0",
+      "patch": {
+        "stream": true
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stream/accepted/1",
+      "patch": {
+        "stream": false
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stream/rejected/0",
+      "patch": {
+        "stream": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "unsupported/logit_bias",
+      "patch": {
+        "logit_bias": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "unsupported/logprobs",
+      "patch": {
+        "logprobs": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "unsupported/response_format",
+      "patch": {
+        "response_format": {
+          "type": "json_object"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "unsupported/unknown_parameter",
+      "patch": {
+        "unknown_parameter": null
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "budget/zero",
+      "patch": {
+        "max_completion_tokens": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "budget/too-large",
+      "patch": {
+        "max_completion_tokens": 131073
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "budget/context-exhausted",
+      "patch": {
+        "max_completion_tokens": 8192
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "unknown-model",
+      "patch": {
+        "model": "missing"
+      },
+      "status": 404,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/strict/False",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              },
+              "strict": false
+            }
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "tool/strict/None",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              },
+              "strict": null
+            }
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "tool/strict/True",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              },
+              "strict": true
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/choice/none",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ],
+        "tool_choice": "none"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "tool/choice/auto",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "tool/choice/required",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ],
+        "tool_choice": "required"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/choice/{'type': 'function', 'name': 'lookup'}",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ],
+        "tool_choice": {
+          "type": "function",
+          "name": "lookup"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/auto-without-tools",
+      "patch": {
+        "tool_choice": "auto"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/16-declarations",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "f0",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f1",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f2",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f3",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f4",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f5",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f6",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f7",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f8",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f9",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f10",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f11",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f12",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f13",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f14",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f15",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "tool/17-declarations",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "f0",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f1",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f2",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f3",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f4",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f5",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f6",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f7",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f8",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f9",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f10",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f11",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f12",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f13",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f14",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f15",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "f16",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/nonfunction",
+      "patch": {
+        "tools": [
+          {
+            "type": "web_search"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/invalid-name",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "tool/array-schema",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup",
+              "parameters": {
+                "type": "array"
+              }
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "temperature/accepted/0",
+      "patch": {
+        "temperature": 0
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "temperature/accepted/1",
+      "patch": {
+        "temperature": 0.0001
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "temperature/accepted/2",
+      "patch": {
+        "temperature": 0.75
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "temperature/accepted/3",
+      "patch": {
+        "temperature": 2
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "temperature/accepted/4",
+      "patch": {
+        "temperature": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "temperature/rejected/0",
+      "patch": {
+        "temperature": -1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "temperature/rejected/1",
+      "patch": {
+        "temperature": 1e-05
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "temperature/rejected/2",
+      "patch": {
+        "temperature": 2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "temperature/rejected/3",
+      "patch": {
+        "temperature": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "top_p/accepted/0",
+      "patch": {
+        "top_p": 0.01
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_p/accepted/1",
+      "patch": {
+        "top_p": 0.9
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_p/accepted/2",
+      "patch": {
+        "top_p": 1
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_p/accepted/3",
+      "patch": {
+        "top_p": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_p/rejected/0",
+      "patch": {
+        "top_p": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "top_p/rejected/1",
+      "patch": {
+        "top_p": 1.1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "top_p/rejected/2",
+      "patch": {
+        "top_p": "one"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "top_k/accepted/0",
+      "patch": {
+        "top_k": 0
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_k/accepted/1",
+      "patch": {
+        "top_k": 42
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_k/accepted/2",
+      "patch": {
+        "top_k": 98304
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_k/accepted/3",
+      "patch": {
+        "top_k": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "top_k/rejected/0",
+      "patch": {
+        "top_k": -1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "top_k/rejected/1",
+      "patch": {
+        "top_k": 98305
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "top_k/rejected/2",
+      "patch": {
+        "top_k": 1.5
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "seed/accepted/0",
+      "patch": {
+        "seed": -9223372036854775808
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "seed/accepted/1",
+      "patch": {
+        "seed": 9223372036854775807
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "seed/accepted/2",
+      "patch": {
+        "seed": -1
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "seed/accepted/3",
+      "patch": {
+        "seed": 42
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "seed/accepted/4",
+      "patch": {
+        "seed": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "seed/rejected/0",
+      "patch": {
+        "seed": 1.5
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "seed/rejected/1",
+      "patch": {
+        "seed": "one"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/accepted/0",
+      "patch": {
+        "frequency_penalty": -2
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/accepted/1",
+      "patch": {
+        "frequency_penalty": 0.25
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/accepted/2",
+      "patch": {
+        "frequency_penalty": 2
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/accepted/3",
+      "patch": {
+        "frequency_penalty": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/rejected/0",
+      "patch": {
+        "frequency_penalty": -2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/rejected/1",
+      "patch": {
+        "frequency_penalty": 2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "frequency_penalty/rejected/2",
+      "patch": {
+        "frequency_penalty": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/accepted/0",
+      "patch": {
+        "presence_penalty": -2
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/accepted/1",
+      "patch": {
+        "presence_penalty": -0.5
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/accepted/2",
+      "patch": {
+        "presence_penalty": 2
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/accepted/3",
+      "patch": {
+        "presence_penalty": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/rejected/0",
+      "patch": {
+        "presence_penalty": -2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/rejected/1",
+      "patch": {
+        "presence_penalty": 2.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "presence_penalty/rejected/2",
+      "patch": {
+        "presence_penalty": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/accepted/0",
+      "patch": {
+        "repetition_penalty": 0.01
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/accepted/1",
+      "patch": {
+        "repetition_penalty": 1.125
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/accepted/2",
+      "patch": {
+        "repetition_penalty": 100
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/accepted/3",
+      "patch": {
+        "repetition_penalty": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/rejected/0",
+      "patch": {
+        "repetition_penalty": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/rejected/1",
+      "patch": {
+        "repetition_penalty": 100.01
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "repetition_penalty/rejected/2",
+      "patch": {
+        "repetition_penalty": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stop/accepted/0",
+      "patch": {
+        "stop": "STOP"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stop/accepted/1",
+      "patch": {
+        "stop": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stop/accepted/2",
+      "patch": {
+        "stop": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stop/accepted/3",
+      "patch": {
+        "stop": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stop/rejected/0",
+      "patch": {
+        "stop": ""
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stop/rejected/1",
+      "patch": {
+        "stop": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stop/rejected/2",
+      "patch": {
+        "stop": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stop/rejected/3",
+      "patch": {
+        "stop": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "enable_thinking/accepted/0",
+      "patch": {
+        "enable_thinking": true
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "enable_thinking/accepted/1",
+      "patch": {
+        "enable_thinking": false
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "enable_thinking/rejected/0",
+      "patch": {
+        "enable_thinking": null
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "enable_thinking/rejected/1",
+      "patch": {
+        "enable_thinking": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "parallel_tool_calls/accepted/0",
+      "patch": {
+        "parallel_tool_calls": true
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "parallel_tool_calls/accepted/1",
+      "patch": {
+        "parallel_tool_calls": false
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "parallel_tool_calls/rejected/0",
+      "patch": {
+        "parallel_tool_calls": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stream/accepted/0",
+      "patch": {
+        "stream": true
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stream/accepted/1",
+      "patch": {
+        "stream": false
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stream/rejected/0",
+      "patch": {
+        "stream": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "unsupported/logit_bias",
+      "patch": {
+        "logit_bias": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "unsupported/logprobs",
+      "patch": {
+        "logprobs": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "unsupported/response_format",
+      "patch": {
+        "response_format": {
+          "type": "json_object"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "unsupported/unknown_parameter",
+      "patch": {
+        "unknown_parameter": null
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "budget/zero",
+      "patch": {
+        "max_output_tokens": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "budget/too-large",
+      "patch": {
+        "max_output_tokens": 131073
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "budget/context-exhausted",
+      "patch": {
+        "max_output_tokens": 8192
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "unknown-model",
+      "patch": {
+        "model": "missing"
+      },
+      "status": 404,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/strict/False",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            },
+            "strict": false
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "tool/strict/None",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            },
+            "strict": null
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "tool/strict/True",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            },
+            "strict": true
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/choice/none",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ],
+        "tool_choice": "none"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "tool/choice/auto",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "tool/choice/required",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ],
+        "tool_choice": "required"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/choice/{'type': 'function', 'name': 'lookup'}",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ],
+        "tool_choice": {
+          "type": "function",
+          "name": "lookup"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/auto-without-tools",
+      "patch": {
+        "tool_choice": "auto"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/16-declarations",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "f0",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f1",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f2",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f3",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f4",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f5",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f6",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f7",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f8",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f9",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f10",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f11",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f12",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f13",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f14",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f15",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "tool/17-declarations",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "f0",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f1",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f2",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f3",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f4",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f5",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f6",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f7",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f8",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f9",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f10",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f11",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f12",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f13",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f14",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f15",
+            "parameters": {
+              "type": "object"
+            }
+          },
+          {
+            "type": "function",
+            "name": "f16",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/nonfunction",
+      "patch": {
+        "tools": [
+          {
+            "type": "web_search"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/invalid-name",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "tool/array-schema",
+      "patch": {
+        "tools": [
+          {
+            "type": "function",
+            "name": "lookup",
+            "parameters": {
+              "type": "array"
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "legacy-budget",
+      "patch": {
+        "max_tokens": 3
+      },
+      "status": 200,
+      "remove": [
+        "max_completion_tokens"
+      ]
+    },
+    {
+      "route": "chat",
+      "name": "conflicting-budgets",
+      "patch": {
+        "max_tokens": 3
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "n/one",
+      "patch": {
+        "n": 1
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "n/multiple",
+      "patch": {
+        "n": 2
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "usage",
+      "patch": {
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "stream-options/nonstream",
+      "patch": {
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "stream-options/responses-field",
+      "patch": {
+        "stream": true,
+        "stream_options": {
+          "include_obfuscation": false
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "session/missing",
+      "patch": {
+        "session_id": "sess-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "status": 404,
+      "code": "session_not_found"
+    },
+    {
+      "route": "chat",
+      "name": "session/invalid",
+      "patch": {
+        "session_id": "not-a-session"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/257",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/developer",
+      "patch": {
+        "messages": [
+          {
+            "role": "developer",
+            "content": "x"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/nontext",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "store/accepted/0",
+      "patch": {
+        "store": true
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "store/accepted/1",
+      "patch": {
+        "store": false
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "store/accepted/2",
+      "patch": {
+        "store": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "store/rejected/0",
+      "patch": {
+        "store": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "instructions/accepted/0",
+      "patch": {
+        "instructions": "text"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "instructions/accepted/1",
+      "patch": {
+        "instructions": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "instructions/rejected/0",
+      "patch": {
+        "instructions": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "truncation/accepted/0",
+      "patch": {
+        "truncation": "disabled"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "truncation/accepted/1",
+      "patch": {
+        "truncation": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "truncation/rejected/0",
+      "patch": {
+        "truncation": "auto"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "background/accepted/0",
+      "patch": {
+        "background": false
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "background/accepted/1",
+      "patch": {
+        "background": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "background/rejected/0",
+      "patch": {
+        "background": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/accepted/0",
+      "patch": {
+        "include": []
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "include/rejected/0",
+      "patch": {
+        "include": [
+          "reasoning.encrypted_content"
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/rejected/1",
+      "patch": {
+        "include": null
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "metadata/accepted/0",
+      "patch": {
+        "metadata": {}
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "metadata/accepted/1",
+      "patch": {
+        "metadata": {
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "metadata/accepted/2",
+      "patch": {
+        "metadata": {
+          "0": "v",
+          "1": "v",
+          "2": "v",
+          "3": "v",
+          "4": "v",
+          "5": "v",
+          "6": "v",
+          "7": "v",
+          "8": "v",
+          "9": "v",
+          "10": "v",
+          "11": "v",
+          "12": "v",
+          "13": "v",
+          "14": "v",
+          "15": "v"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "metadata/rejected/0",
+      "patch": {
+        "metadata": {
+          "0": "v",
+          "1": "v",
+          "2": "v",
+          "3": "v",
+          "4": "v",
+          "5": "v",
+          "6": "v",
+          "7": "v",
+          "8": "v",
+          "9": "v",
+          "10": "v",
+          "11": "v",
+          "12": "v",
+          "13": "v",
+          "14": "v",
+          "15": "v",
+          "16": "v"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "metadata/rejected/1",
+      "patch": {
+        "metadata": {
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk": "v"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "metadata/rejected/2",
+      "patch": {
+        "metadata": {
+          "k": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "metadata/rejected/3",
+      "patch": {
+        "metadata": {
+          "k": 1
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/accepted/0",
+      "patch": {
+        "reasoning": {}
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/accepted/1",
+      "patch": {
+        "reasoning": {
+          "effort": null,
+          "summary": null
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/rejected/0",
+      "patch": {
+        "reasoning": {
+          "effort": "low"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/rejected/1",
+      "patch": {
+        "reasoning": {
+          "summary": "auto"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "text/accepted/0",
+      "patch": {
+        "text": {
+          "format": {
+            "type": "text"
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "text/rejected/0",
+      "patch": {
+        "text": {
+          "format": {
+            "type": "json_object"
+          }
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "text/rejected/1",
+      "patch": {
+        "text": {
+          "format": {
+            "type": "json_schema",
+            "name": "x"
+          }
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "text/rejected/2",
+      "patch": {
+        "text": {
+          "verbosity": "low"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "previous_response_id/accepted/0",
+      "patch": {
+        "previous_response_id": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "previous_response_id/rejected/0",
+      "patch": {
+        "previous_response_id": "bad-id"
+      },
+      "status": 404,
+      "code": "response_not_found"
+    },
+    {
+      "route": "responses",
+      "name": "stream-options/{}",
+      "patch": {
+        "stream": true,
+        "stream_options": {}
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stream-options/{'include_obfuscation': False}",
+      "patch": {
+        "stream": true,
+        "stream_options": {
+          "include_obfuscation": false
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "stream-options/{'include_obfuscation': True}",
+      "patch": {
+        "stream": true,
+        "stream_options": {
+          "include_obfuscation": true
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stream-options/{'include_usage': True}",
+      "patch": {
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "stream-options/nonstream",
+      "patch": {
+        "stream_options": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "previous/missing",
+      "patch": {
+        "previous_response_id": "resp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "status": 404,
+      "code": "response_not_found"
+    },
+    {
+      "route": "responses",
+      "name": "chat-budget",
+      "patch": {
+        "max_tokens": 2
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "chat-n",
+      "patch": {
+        "n": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/257",
+      "patch": {
+        "input": [
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          },
+          {
+            "role": "user",
+            "content": "x"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/developer",
+      "patch": {
+        "input": [
+          {
+            "role": "developer",
+            "content": "x"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/text-parts",
+      "patch": {
+        "input": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "hello"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/media",
+      "patch": {
+        "input": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_image",
+                "image_url": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/full-reasoning",
+      "patch": {
+        "input": [
+          {
+            "type": "reasoning",
+            "content": [
+              {
+                "type": "reasoning_text",
+                "text": "why"
+              }
+            ],
+            "summary": []
+          },
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/encrypted-reasoning",
+      "patch": {
+        "input": [
+          {
+            "type": "reasoning",
+            "content": [],
+            "encrypted_content": "x"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/summary-reasoning",
+      "patch": {
+        "input": [
+          {
+            "type": "reasoning",
+            "content": [],
+            "summary": [
+              {
+                "type": "summary_text",
+                "text": "why"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/function-roundtrip",
+      "patch": {
+        "input": [
+          {
+            "type": "function_call",
+            "call_id": "call_test",
+            "name": "lookup",
+            "arguments": "{\"raw\": [1,2]}"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_test",
+            "output": "done"
+          },
+          {
+            "role": "user",
+            "content": "next"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/unresolved-call",
+      "patch": {
+        "input": [
+          {
+            "type": "function_call",
+            "call_id": "call_test",
+            "name": "lookup",
+            "arguments": "{\"raw\": [1,2]}"
+          },
+          {
+            "role": "user",
+            "content": "next"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/nontext-function-output",
+      "patch": {
+        "input": [
+          {
+            "type": "function_call",
+            "call_id": "call_test",
+            "name": "lookup",
+            "arguments": "{\"raw\": [1,2]}"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_test",
+            "output": {
+              "x": 1
+            }
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "input/8-parallel-function-calls",
+      "patch": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "type": "function",
+                "id": "call_0",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_1",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_2",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_3",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_4",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_5",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_6",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_7",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_2",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_3",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_4",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_5",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_6",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_7",
+            "content": "done"
+          },
+          {
+            "role": "user",
+            "content": "next"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "input/9-parallel-function-calls",
+      "patch": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "type": "function",
+                "id": "call_0",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_1",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_2",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_3",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_4",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_5",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_6",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_7",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              },
+              {
+                "type": "function",
+                "id": "call_8",
+                "function": {
+                  "name": "lookup",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_2",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_3",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_4",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_5",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_6",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_7",
+            "content": "done"
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_8",
+            "content": "done"
+          },
+          {
+            "role": "user",
+            "content": "next"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/8-parallel-function-calls",
+      "patch": {
+        "input": [
+          {
+            "type": "function_call",
+            "call_id": "call_0",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_2",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_3",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_4",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_5",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_6",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_7",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_0",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_2",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_3",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_4",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_5",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_6",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_7",
+            "output": "done"
+          },
+          {
+            "role": "user",
+            "content": "next"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/9-parallel-function-calls",
+      "patch": {
+        "input": [
+          {
+            "type": "function_call",
+            "call_id": "call_0",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_2",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_3",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_4",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_5",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_6",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_7",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "call_8",
+            "name": "lookup",
+            "arguments": "{}"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_0",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_2",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_3",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_4",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_5",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_6",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_7",
+            "output": "done"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "call_8",
+            "output": "done"
+          },
+          {
+            "role": "user",
+            "content": "next"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    }
+  ]
+}

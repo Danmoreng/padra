@@ -63,6 +63,12 @@ function tools are limited to 16. Set `parallel_tool_calls: false` for at most o
 returned call. This option does not enable concurrent GPU sequences or execute
 functions on the server.
 
+Sampling ranges are `temperature: 0` (greedy) or 0.0001–2, `top_p: (0, 1]`,
+`top_k: 0–98304` (0 disables the filter), signed 64-bit `seed`,
+`frequency_penalty`/`presence_penalty: -2–2`, and `repetition_penalty: 0.01–100`.
+Null sampling fields select defaults. These are input/forwarding contracts;
+synthetic client tests do not qualify stochastic model quality.
+
 ## Accepted restricted values
 
 Responses accepts `truncation: "disabled"`, `background: false`, empty `include`,
@@ -97,6 +103,29 @@ valid text-only length endings remain continuable.
 The server uses loopback HTTP and local credential namespaces. Public
 authentication/TLS, durable conversation storage, hosted built-in tools and
 multi-sequence GPU scheduling are not provided.
+
+Chat message `content` is a string, or null for an assistant with function calls.
+Responses additionally accepts the text-part/item forms described above. Chat
+content-part arrays and developer roles are unsupported. Unknown/non-owned previous
+response strings return `404/response_not_found`; nonstring IDs are invalid input.
+
+## Contract verification
+
+| Contract | Verification |
+| --- | --- |
+| Accepted/rejected fields, sampling ranges, restricted values, input forms, tool declaration/history limits | 247 HTTP cases in [the versioned field matrix](../tests/contracts/api-fields.json); both adapters' sampling values are also observed at the runtime interface |
+| Unsupported endpoints and request/error IDs | `api-field-contract`, admission/error tests, SDK unsupported-option tests |
+| Events, usage, output indices, raw argument bytes, terminal/GET equality | 32 exact wire goldens, output-order/partial-tool tests, SDK stream helpers |
+| Retention, continuation, partial tools, deletion | Admission/partial-tool tests and SDK retention/GET/delete tests |
+| Early tool deltas, UTF-8/stop, queue errors, disconnect, paused reader | SDK tests; barrier-controlled early tool completion and bounded client receive window |
+| Heartbeats, slow uploads/connections, admin reachability, restart and drain | Separate HTTP operation and transport tests |
+
+The supported SDK baseline is pinned to Python `openai==3.29.0`. The independent
+[SDK update canary](../.github/workflows/sdk-canary.yml) runs on manual dispatch and
+weekly against the version resolved by pip; it does not change that baseline or
+act as a release gate. Both workflows retain actual SDK version, client settings,
+case results and test output. Synthetic client/host tests and real-artifact native
+smokes are distinct. See [client qualification](../tests/client-contract.md).
 
 See the [API guide](api.md), [error contract](api-errors.md) and
 [operation details](server-lifecycle.md) for usage and behavior.
