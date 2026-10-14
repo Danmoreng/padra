@@ -834,11 +834,166 @@ void TestPartialAndInvalidStreamedTools(text::Tokenizer &tokenizer) {
             "partial/invalid tool committed session history");
   }
 }
-int main() {
+void TestTransportMetricAccounting() {
+  auto counters = std::make_shared<TransportCounters>();
+  {
+    Job job(Request("write-accounting"), 4);
+    job.transport = counters;
+    job.StartTransport();
+    job.StartTransport();
+    job.RecordWrite(10, false);
+    Require(counters->active == 1 && counters->first_visible_write_latency.count == 0,
+            "protocol metadata counted as visible write");
+    job.RecordWrite(20, true);
+    job.RecordWrite(30, true);
+    job.FinishTransport(true);
+    job.FinishTransport(false);
+    Require(counters->active == 0 && counters->responses_written == 1 &&
+                counters->write_failures == 0 && counters->body_bytes == 60 &&
+                counters->first_visible_write_latency.count == 1 &&
+                counters->response_write_latency.count == 1,
+            "transport accounting duplicated/lost writes");
+  }
+  {
+    Job abandoned(Request("abandoned"), 4);
+    abandoned.transport = counters;
+    abandoned.StartTransport();
+  }
+  Require(counters->active == 0 && counters->write_failures == 1 &&
+              counters->response_write_latency.count == 2,
+          "abandoned transport leaked accounting");
+}
+void TestHttpWrittenMetrics(text::Tokenizer &tokenizer) {
+  for (bool responses : {false, true})
+    for (bool stream : {false, true})
+      for (bool visible : {false, true}) {
+        auto state = std::make_shared<MockState>();
+        state->tokens = visible ? std::vector<int>{0, 28} : std::vector<int>{28};
+        state->token_delay = 2ms;
+        HttpFixture fixture(tokenizer, state);
+        httplib::Client client("127.0.0.1", fixture.port);
+        auto body = std::string(responses ? ResponseBody : ChatBody);
+        if (stream)
+          body.insert(body.size() - 1, ",\"stream\":true");
+        auto result = client.Post(responses ? "/v1/responses" : "/v1/chat/completions", body,
+                                  "application/json");
+        Require(result && result->status == 200, "written-metric HTTP request failed");
+        const auto until = std::chrono::steady_clock::now() + 1s;
+        while (fixture.coordinator.Metrics().active_transports &&
+               std::chrono::steady_clock::now() < until)
+          std::this_thread::sleep_for(1ms);
+        const auto metrics = fixture.coordinator.Metrics();
+        Require(metrics.active_transports == 0 && metrics.responses_written == 1 &&
+                    metrics.write_failures == 0 &&
+                    metrics.response_body_bytes == result->body.size() &&
+                    metrics.response_write_latency.count == 1,
+                "HTTP write metric does not match sent response");
+        Require(metrics.first_visible_write_latency.count == (visible ? 1u : 0u),
+                "empty/protocol response misclassified as visible");
+        if (visible)
+          Require(metrics.first_visible_write_latency.sum >= .002 &&
+                      metrics.response_write_latency.sum >= metrics.first_visible_write_latency.sum,
+                  "written latency omits generation or exceeds full response");
+      }
+}
+void TestHttpGracefulDrain(text::Tokenizer &tokenizer) {
+  for (bool responses : {false, true})
+    for (bool stream : {false, true}) {
+      auto state = std::make_shared<MockState>();
+      state->block = true;
+      state->tokens = {0, 28};
+      HttpFixture fixture(tokenizer, state);
+      auto entered = state->entered.get_future();
+      auto client = std::async(std::launch::async, [&] {
+        httplib::Client http("127.0.0.1", fixture.port);
+        http.set_read_timeout(2);
+        auto body = std::string(responses ? ResponseBody : ChatBody);
+        if (stream)
+          body.insert(body.size() - 1, ",\"stream\":true");
+        return http.Post(responses ? "/v1/responses" : "/v1/chat/completions", body,
+                         "application/json");
+      });
+      auto stopped = std::async(std::launch::async, [&] {
+        Require(entered.wait_for(2s) == std::future_status::ready,
+                "HTTP drain backend never started");
+        fixture.http.Stop();
+      });
+      ReleaseGuard release{state};
+      const auto until = std::chrono::steady_clock::now() + 2s;
+      while (!fixture.coordinator.Metrics().draining && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(1ms);
+      Require(fixture.coordinator.Metrics().draining &&
+                  stopped.wait_for(0ms) == std::future_status::timeout,
+              "HTTP listener stopped without allowing active transport grace");
+      state->release.set_value();
+      auto result = client.get();
+      Require(result && result->status == 200, "HTTP graceful drain lost active response");
+      if (stream)
+        Require(result->body.find(responses ? "response.completed" : "[DONE]") != result->body.npos,
+                "HTTP graceful drain truncated stream completion");
+      stopped.get();
+      // Fixture teardown and independent shutdown callers may repeat Stop while
+      // the listener thread is still leaving its task queue.
+      auto repeated = std::async(std::launch::async, [&] { fixture.http.Stop(); });
+      fixture.http.Stop();
+      repeated.get();
+      const auto metrics = fixture.coordinator.Metrics();
+      Require(metrics.responses_written == 1 && metrics.write_failures == 0 &&
+                  metrics.active_transports == 0,
+              "drain ended before final transport write");
+    }
+}
+void TestHttpDrainDeadline(text::Tokenizer &tokenizer) {
+  auto state = std::make_shared<MockState>();
+  state->block = true;
+  state->tokens = {0, 28};
+  ServerLimits limits;
+  limits.drain_timeout = 30ms;
+  HttpFixture fixture(tokenizer, state, limits);
+  auto entered = state->entered.get_future();
+  auto client = std::async(std::launch::async, [&] {
+    httplib::Client http("127.0.0.1", fixture.port);
+    http.set_read_timeout(2);
+    return http.Post("/v1/chat/completions", ChatBody, "application/json");
+  });
+  ReleaseGuard release{state};
+  Require(entered.wait_for(2s) == std::future_status::ready, "drain-deadline backend not entered");
+  auto stopped = std::async(std::launch::async, [&] { fixture.http.Stop(); });
+  Require(stopped.wait_for(1s) == std::future_status::ready,
+          "HTTP stop exceeded grace waiting for a blocked backend");
+  stopped.get();
+  state->release.set_value();
+  auto result = client.get();
+  // After the grace deadline, shutdown may close the socket before an error can
+  // be delivered. It must never deliver an apparently successful generation.
+  Require(!result ||
+              (result->status == 503 && result->body.find("server_shutdown") != std::string::npos),
+          "drain deadline reported successful generation");
+  const auto until = std::chrono::steady_clock::now() + 1s;
+  ServerMetrics metrics;
+  do {
+    metrics = fixture.coordinator.Metrics();
+    if (!metrics.active && !metrics.active_transports)
+      break;
+    std::this_thread::yield();
+  } while (std::chrono::steady_clock::now() < until);
+  Require(!metrics.active && metrics.cancelled == 1 && metrics.active_transports == 0 &&
+              metrics.responses_written + metrics.write_failures == 1,
+          "drain deadline leaked job or transport accounting");
+}
+int main(int argc, char **argv) {
   try {
     auto loaded = text::Tokenizer::Load({}, {});
     Require(loaded.ok(), "synthetic fixture failed");
     auto &tokenizer = *loaded.value();
+    if (argc == 2 && std::string_view(argv[1]) == "--transport") {
+      TestTransportMetricAccounting();
+      TestHttpWrittenMetrics(tokenizer);
+      TestHttpGracefulDrain(tokenizer);
+      TestHttpDrainDeadline(tokenizer);
+      std::cout << "PASS HTTP transport accounting, graceful drain, deadline and repeated stop\n";
+      return 0;
+    }
     TestQueueDeadline(tokenizer);
     std::cout << "PASS independent queue expiry and resource release\n";
     for (auto cause : {CancelCause::Disconnect, CancelCause::Shutdown, CancelCause::SessionDiscard})
@@ -865,6 +1020,10 @@ int main() {
     TestMetricsAndIdentity(tokenizer);
     TestHttpDisconnect(tokenizer);
     TestHttpGenerationDeadline(tokenizer);
+    TestTransportMetricAccounting();
+    TestHttpWrittenMetrics(tokenizer);
+    TestHttpGracefulDrain(tokenizer);
+    TestHttpDrainDeadline(tokenizer);
     std::cout << "PASS bounded drain, pinned/shared/expired roots, concurrent rollback, tool "
                  "frames and metrics/identity\n";
     return 0;

@@ -1,14 +1,19 @@
 #include "server/response_stream.h"
 #include "server/coordinator.h"
 namespace mellum16::server {
-ResponseStream::ResponseStream(const ResponseRequest &request, Send send)
-    : request_(request), send_(std::move(send)) {
+ResponseStream::ResponseStream(const ResponseRequest &request, Send send, Written written)
+    : request_(request), send_(std::move(send)), written_(std::move(written)) {
   items_.reserve(10);
 }
-bool ResponseStream::Event(std::string_view type, std::string_view fields) {
-  return send_("event: " + std::string(type) + "\ndata: {\"type\":" + json::Quote(type) +
-               ",\"sequence_number\":" + std::to_string(sequence_++) +
-               (fields.empty() ? "" : "," + std::string(fields)) + "}\n\n");
+bool ResponseStream::Event(std::string_view type, std::string_view fields, bool visible) {
+  const auto frame = "event: " + std::string(type) + "\ndata: {\"type\":" + json::Quote(type) +
+                     ",\"sequence_number\":" + std::to_string(sequence_++) +
+                     (fields.empty() ? "" : "," + std::string(fields)) + "}\n\n";
+  if (!send_(frame))
+    return false;
+  if (written_)
+    written_(frame.size(), visible);
+  return true;
 }
 bool ResponseStream::Begin() {
   return Event("response.created", "\"response\":" + ResponseEnvelope(request_)) &&
@@ -27,7 +32,8 @@ Result<std::size_t> ResponseStream::Ensure(std::string type, std::string id, std
   if (index >= 10)
     return Status(StatusCode::kResourceExhausted, "too many response output items");
   if (!Event("response.output_item.added",
-             "\"output_index\":" + std::to_string(index) + ",\"item\":" + item))
+             "\"output_index\":" + std::to_string(index) + ",\"item\":" + item,
+             type == "function_call"))
     return Status(StatusCode::kCancelled, "Responses network send failed");
   items_.push_back({std::move(id), std::move(type), index});
   if (!part.empty() &&
@@ -52,7 +58,8 @@ bool ResponseStream::Delta(std::string_view type, std::string_view id, std::stri
   return Event(reasoning ? "response.reasoning_text.delta" : "response.output_text.delta",
                "\"output_index\":" + std::to_string(index.value()) + ",\"item_id\":" +
                    json::Quote(id) + ",\"content_index\":0,\"delta\":" + json::Quote(text) +
-                   (reasoning ? "" : ",\"logprobs\":[]"));
+                   (reasoning ? "" : ",\"logprobs\":[]"),
+               !reasoning);
 }
 bool ResponseStream::ChatFrame(std::string_view frame) {
   if (!frame.starts_with("data: "))
@@ -115,7 +122,8 @@ bool ResponseStream::ChatFrame(std::string_view frame) {
             args && args->is_string() && !args->as_string().empty())
           if (!Event("response.function_call_arguments.delta",
                      "\"output_index\":" + std::to_string(*output) + ",\"item_id\":" +
-                         json::Quote(id) + ",\"delta\":" + json::Quote(args->as_string())))
+                         json::Quote(id) + ",\"delta\":" + json::Quote(args->as_string()),
+                     true))
             return false;
       }
   }

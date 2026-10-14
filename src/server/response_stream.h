@@ -7,7 +7,8 @@ namespace mellum16::server {
 class ResponseStream {
 public:
   using Send = std::function<bool(std::string_view)>;
-  ResponseStream(const ResponseRequest &, Send);
+  using Written = std::function<void(std::size_t, bool)>;
+  ResponseStream(const ResponseRequest &, Send, Written = {});
   bool Begin();
   bool ChatFrame(std::string_view);
   bool Finish(const Job &);
@@ -18,12 +19,13 @@ private:
     std::string id, type;
     std::size_t index;
   };
-  bool Event(std::string_view type, std::string_view fields);
+  bool Event(std::string_view type, std::string_view fields, bool visible = false);
   Result<std::size_t> Ensure(std::string type, std::string id, std::string item,
                              std::string part = {});
   bool Delta(std::string_view type, std::string_view id, std::string_view text);
   const ResponseRequest &request_;
   Send send_;
+  Written written_;
   std::size_t sequence_ = 0;
   std::vector<Item> items_;
 };

@@ -165,7 +165,11 @@ queue/readiness check followed by final byte/token admission.
 
 HTTP shutdown removes readiness, rejects new work and fails queued requests.
 Active generation gets a five-second grace period before cancellation; backend
-cancellation takes effect at its next cooperative boundary. Direct coordinator
+cancellation takes effect at its next cooperative boundary. The listener stays
+open during this grace period so admitted responses can finish writing, and stops
+when their transports finish or the grace deadline expires. Socket timeouts and
+cooperative backend boundaries still govern connection/thread teardown; this is
+not a hard process-exit deadline. Repeated HTTP stop calls are safe. Direct coordinator
 shutdown cancels immediately. The GPU continues to execute one request at a time.
 
 `/v1/models` reports validated loaded weight/manifest hashes, tokenizer hash,
@@ -177,6 +181,14 @@ chunk/eager counts. Queue time excludes preparation; output availability measure
 internal text/tool readiness before transport. Job lifetime ends at coordinator
 completion, so these metrics are not client-observed TTFT/end-to-end latency.
 Transport disconnect/backpressure counters include failures after generation ends.
+`mellum_first_visible_write_seconds` measures handler entry to the first successful
+body write containing text or tool identity/arguments; protocol-only and reasoning
+events do not count. `mellum_response_write_seconds` measures handler entry through
+transport completion or failure. Active transports, written responses, write failures
+and successfully written body bytes are counted separately. These are server-side
+socket-write observations, not confirmation of client receipt; request upload,
+network transit and client buffering are excluded. Early admission errors and stored
+GET responses are outside these generation-transport counters.
 
 The review's GPU shape-cache, sampling-algorithm and multi-sequence scheduling
 suggestions require representative workload measurements and numerical validation.

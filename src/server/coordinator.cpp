@@ -63,7 +63,7 @@ public:
       Need(builder_.AppendJsonString(reasoning));
     }
     Need(builder_.Append("},\"finish_reason\":null,\"logprobs\":null}]"));
-    End();
+    End(true, false, !content.empty());
   }
   void Terminal() {
     Envelope();
@@ -93,7 +93,7 @@ public:
     Need(builder_.Append(",\"type\":\"function\",\"function\":{\"name\":"));
     Need(builder_.AppendJsonString(name));
     Need(builder_.Append(",\"arguments\":\"\"}}]},\"finish_reason\":null,\"logprobs\":null}]"));
-    End();
+    End(true, false, true);
   }
   void ToolArguments(std::size_t index, std::string_view arguments) {
     if (!job_.request.stream)
@@ -109,7 +109,7 @@ public:
       Need(builder_.Append(",\"function\":{\"arguments\":"));
       Need(builder_.AppendJsonString(std::string_view(arguments).substr(begin, end - begin)));
       Need(builder_.Append("}}]},\"finish_reason\":null,\"logprobs\":null}]"));
-      End();
+      End(true, false, true);
       begin = end;
     }
   }
@@ -133,12 +133,12 @@ private:
     Need(builder_.AppendJsonString(kModelId));
     Need(builder_.Append(",\"choices\":"));
   }
-  void End(bool null_usage = true, bool ending = false) {
+  void End(bool null_usage = true, bool ending = false, bool visible = false) {
     if (null_usage && job_.request.include_usage)
       Need(builder_.Append(",\"usage\":null"));
     Need(builder_.Append('}'));
     auto frame = builder_.FinishRecord();
-    if (!(ending ? job_.PushEnding(frame) : job_.Push(frame)))
+    if (!(ending ? job_.PushEnding(frame) : job_.Push(frame, visible)))
       job_.Cancel(CancelCause::Backpressure);
   }
   Job &job_;
@@ -183,7 +183,35 @@ void Job::Cancel(CancelCause cause) {
   cancellation.compare_exchange_strong(expected, cause);
   changed.notify_all();
 }
-bool Job::Push(std::span<const char> frame) {
+void Job::StartTransport() {
+  if (!transport || transport_started.exchange(true))
+    return;
+  std::lock_guard lock(transport->mutex);
+  ++transport->active;
+}
+void Job::RecordWrite(std::size_t bytes, bool visible) {
+  if (!transport || !transport_started.load())
+    return;
+  const auto seconds = std::chrono::duration<double>(Clock::now() - request.submitted).count();
+  std::lock_guard lock(transport->mutex);
+  transport->body_bytes += bytes;
+  if (visible && !visible_written.exchange(true))
+    transport->first_visible_write_latency.Observe(seconds);
+}
+void Job::FinishTransport(bool success) {
+  if (!transport || !transport_started.load() || transport_finished.exchange(true))
+    return;
+  const auto seconds = std::chrono::duration<double>(Clock::now() - request.submitted).count();
+  std::lock_guard lock(transport->mutex);
+  --transport->active;
+  if (success)
+    ++transport->responses_written;
+  else
+    ++transport->write_failures;
+  transport->response_write_latency.Observe(seconds);
+  transport->changed.notify_all();
+}
+bool Job::Push(std::span<const char> frame, bool visible) {
   if (!request.stream)
     return true;
   std::lock_guard lock(mutex);
@@ -194,6 +222,7 @@ bool Job::Push(std::span<const char> frame) {
   auto &slot = events[tail];
   std::memcpy(slot.data.data(), frame.data(), frame.size());
   slot.size = frame.size();
+  slot.visible = visible;
   tail = (tail + 1) % events.size();
   ++count;
   changed.notify_all();
@@ -210,6 +239,7 @@ bool Job::PushEnding(std::span<const char> frame) {
   auto &slot = endings[ending_count++];
   std::memcpy(slot.data.data(), frame.data(), frame.size());
   slot.size = frame.size();
+  slot.visible = false;
   return true;
 }
 bool Job::Pop(EventFrame &frame, std::chrono::milliseconds wait) {
@@ -248,7 +278,7 @@ Coordinator::Coordinator(std::unique_ptr<ModelRuntime> runtime, const text::Toke
 Coordinator::~Coordinator() {
   Shutdown();
 }
-Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request) {
+Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request, bool track_transport) {
   if (request.outputs < 1 || request.outputs > 131072)
     return Status(StatusCode::kInvalidArgument, "invalid requested output budget");
   const auto output_budget = admission::Sum(
@@ -284,6 +314,8 @@ Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request) {
   auto job = std::make_shared<Job>(std::move(request), tokenizer_.MaxRawTokenBytes());
   job->session_lease = std::move(lease);
   job->transport = transport_;
+  if (track_transport)
+    job->StartTransport();
   job->admitted_at = Clock::now();
   job->queue_deadline = job->admitted_at + limits_.queue_timeout;
   bytes_ += job->admitted_bytes;
@@ -308,6 +340,19 @@ void Coordinator::BeginDrain(bool graceful) {
     active_->Cancel(CancelCause::Shutdown);
   available_.notify_all();
 }
+bool Coordinator::WaitForDrain() {
+  Clock::time_point deadline;
+  {
+    std::unique_lock lock(mutex_);
+    if (!metrics_.draining || !drain_deadline_)
+      return false;
+    deadline = *drain_deadline_;
+    if (!available_.wait_until(lock, deadline, [&] { return !active_ && queue_.empty(); }))
+      return false;
+  }
+  std::unique_lock lock(transport_->mutex);
+  return transport_->changed.wait_until(lock, deadline, [&] { return transport_->active == 0; });
+}
 void Coordinator::Shutdown() {
   BeginDrain();
   std::lock_guard shutdown(shutdown_mutex_);
@@ -323,6 +368,15 @@ ServerMetrics Coordinator::Metrics() const {
   result.queued_bytes = bytes_;
   result.queued_tokens = tokens_;
   result.active = bool(active_);
+  {
+    std::lock_guard transport_lock(transport_->mutex);
+    result.active_transports = transport_->active;
+    result.responses_written = transport_->responses_written;
+    result.write_failures = transport_->write_failures;
+    result.response_body_bytes = transport_->body_bytes;
+    result.first_visible_write_latency = transport_->first_visible_write_latency;
+    result.response_write_latency = transport_->response_write_latency;
+  }
   result.disconnects = transport_->disconnects.load();
   result.backpressure = transport_->backpressure.load();
   return result;

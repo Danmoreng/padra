@@ -18,6 +18,8 @@ CTest with `ASAN_OPTIONS=detect_leaks=1:abort_on_error=1` and
 `UBSAN_OPTIONS=halt_on_error=1`. Assertions remain enabled in Release tests.
 The host CI matrix also builds the real native Rust tokenizer when enabled;
 server regression requests still use the explicitly synthetic fixture.
+The transport/drain subset is independently repeatable with
+`build/host/padra-server-tests --transport`.
 
 Covered regressions include:
 
@@ -25,7 +27,11 @@ Covered regressions include:
   ordered completion frames and explicit errors on delta/tool backpressure.
 - Queue expiry while another job is blocked, released bytes/tokens/session leases,
   and queued disconnect, shutdown and session deletion.
-- Graceful completion or bounded cancellation during drain.
+- Graceful completion or bounded cancellation during drain, including actual
+  HTTP Chat/Responses streaming and nonstreaming completion, repeated stop calls,
+  and a blocked backend that exceeds the grace deadline.
+- Successful body-write bytes, first visible writes, full transport accounting
+  and abandoned transports (separate from generation completion).
 - Forty independent stored Responses over HTTP, shared/pinned roots, lineage,
   deletion, expiry, concurrent reservations and rollback on failed generation.
 - Consistent Chat/Responses HTTP queue errors, Retry-After, both SSE protocols,

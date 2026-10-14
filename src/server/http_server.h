@@ -12,6 +12,9 @@ public:
 
 private:
   void Chat(const httplib::Request &, httplib::Response &);
+  void SendJobJson(httplib::Response &, const std::shared_ptr<Job> &, std::string, bool visible);
+  void JobErrorResponse(httplib::Response &, const std::shared_ptr<Job> &, int, std::string_view,
+                        std::string_view);
   void Session(const httplib::Request &, httplib::Response &, std::string_view operation);
   void Responses(const httplib::Request &, httplib::Response &);
   void StoredResponses(const httplib::Request &, httplib::Response &, bool remove);
@@ -19,6 +22,9 @@ private:
              std::string_view = "invalid_request_error");
   std::atomic<unsigned> preparations_{0};
   std::mutex response_admission_mutex_;
+  // Serialize shutdown through the library's socket close, including repeat calls.
+  std::mutex stop_mutex_;
+  bool stopped_ = false;
   Coordinator &coordinator_;
   const text::Tokenizer &tokenizer_;
   int port_, capacity_;

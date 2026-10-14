@@ -25,12 +25,20 @@ enum class CancelCause {
 struct EventFrame {
   std::array<char, 8192> data{};
   std::size_t size = 0;
+  bool visible = false;
 };
 struct TransportCounters {
   std::atomic<std::uint64_t> disconnects{0}, backpressure{0};
+  std::mutex mutex;
+  std::condition_variable changed;
+  std::uint64_t active = 0, responses_written = 0, write_failures = 0, body_bytes = 0;
+  LatencyHistogram first_visible_write_latency, response_write_latency;
 };
 struct Job {
   explicit Job(ChatRequest request, std::size_t maximum_token_bytes);
+  ~Job() {
+    FinishTransport(false);
+  }
   std::shared_ptr<SessionLease> session_lease;
   std::shared_ptr<TransportCounters> transport;
   std::atomic<bool> disconnect_recorded{false}, backpressure_recorded{false};
@@ -55,10 +63,14 @@ struct Job {
   double lifetime_seconds = 0;
   double queue_seconds = 0, prefill_seconds = 0, decode_seconds = 0, first_token_seconds = 0,
          visible_seconds = 0;
-  bool Push(std::span<const char>);
+  bool Push(std::span<const char>, bool visible = false);
   bool PushEnding(std::span<const char>);
   bool Pop(EventFrame &, std::chrono::milliseconds wait);
   void Cancel(CancelCause cause);
+  void StartTransport();
+  void RecordWrite(std::size_t, bool visible);
+  void FinishTransport(bool success);
+  std::atomic<bool> transport_started{false}, transport_finished{false}, visible_written{false};
   // Caller holds mutex; include the ending lane when deciding to close SSE.
   bool StreamDrained() const {
     return complete && count == 0 && ending_head == ending_count;
@@ -70,6 +82,9 @@ struct ServerLimits {
 };
 struct ServerMetrics {
   std::uint64_t output_tokens = 0;
+  std::uint64_t active_transports = 0, responses_written = 0, write_failures = 0,
+                response_body_bytes = 0;
+  LatencyHistogram first_visible_write_latency, response_write_latency;
   LatencyHistogram queue_latency, tokenization_latency, prefill_latency, decode_latency,
       first_token_latency, output_available_latency, lifetime_latency;
   std::uint64_t submitted = 0, completed = 0, failed = 0, cancelled = 0, rejected = 0,
@@ -83,8 +98,9 @@ class Coordinator {
 public:
   Coordinator(std::unique_ptr<ModelRuntime>, const text::Tokenizer &, ServerLimits = {});
   ~Coordinator();
-  Result<std::shared_ptr<Job>> Submit(ChatRequest);
+  Result<std::shared_ptr<Job>> Submit(ChatRequest, bool track_transport = false);
   void BeginDrain(bool graceful = false);
+  bool WaitForDrain();
   void Shutdown();
   ServerMetrics Metrics() const;
   bool AdmissionAvailable() const;

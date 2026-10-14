@@ -15,6 +15,18 @@
 #endif
 namespace mellum16::server {
 namespace {
+struct TransportLifetime {
+  explicit TransportLifetime(std::shared_ptr<Job> input) : job(std::move(input)) {
+    job->StartTransport();
+  }
+  ~TransportLifetime() {
+    if (!job->transport_finished.load()) {
+      job->FinishTransport(false);
+      job->Cancel(CancelCause::Disconnect);
+    }
+  }
+  std::shared_ptr<Job> job;
+};
 class Preparation {
 public:
   explicit Preparation(std::atomic<unsigned> &count) : count_(count) {
@@ -173,6 +185,11 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
     m.first_token_latency.Write(out, "mellum_first_token_seconds");
     m.output_available_latency.Write(out, "mellum_output_available_seconds");
     m.lifetime_latency.Write(out, "mellum_job_lifetime_seconds");
+    out << "mellum_active_transports " << m.active_transports << "\nmellum_responses_written_total "
+        << m.responses_written << "\nmellum_response_write_failures_total " << m.write_failures
+        << "\nmellum_response_body_bytes_total " << m.response_body_bytes << '\n';
+    m.first_visible_write_latency.Write(out, "mellum_first_visible_write_seconds");
+    m.response_write_latency.Write(out, "mellum_response_write_seconds");
     response.set_content(out.str(), "text/plain; version=0.0.4");
   });
   http_.Post("/v1/chat/completions",
@@ -216,8 +233,39 @@ bool HttpServer::Listen() {
   return Bind() > 0 && http_.listen_after_bind();
 }
 void HttpServer::Stop() {
+  std::lock_guard lock(stop_mutex_);
+  if (stopped_)
+    return;
   coordinator_.BeginDrain(true);
+  if (!coordinator_.WaitForDrain())
+    coordinator_.BeginDrain(false);
   http_.stop();
+  stopped_ = true;
+}
+void HttpServer::SendJobJson(httplib::Response &response, const std::shared_ptr<Job> &job,
+                             std::string body, bool visible) {
+  auto content = std::make_shared<std::string>(std::move(body));
+  response.set_content_provider(
+      content->size(), "application/json",
+      [job, content, visible](std::size_t offset, std::size_t length, httplib::DataSink &sink) {
+        if (offset > content->size() || length > content->size() - offset)
+          return false;
+        if (!sink.write(content->data() + offset, length))
+          return false;
+        job->RecordWrite(length, visible && length > 0);
+        return true;
+      },
+      [job, content](bool success) {
+        job->FinishTransport(success);
+        if (!success)
+          job->Cancel(CancelCause::Disconnect);
+      });
+}
+void HttpServer::JobErrorResponse(httplib::Response &response, const std::shared_ptr<Job> &job,
+                                  int status, std::string_view message, std::string_view code) {
+  Error(response, status, message, code);
+  auto body = std::move(response.body);
+  SendJobJson(response, job, std::move(body), false);
 }
 void HttpServer::StoredResponses(const httplib::Request &request, httplib::Response &response,
                                  bool remove) {
@@ -247,6 +295,7 @@ void HttpServer::StoredResponses(const httplib::Request &request, httplib::Respo
   response.set_content(record.value()->envelope, "application/json");
 }
 void HttpServer::Responses(const httplib::Request &request, httplib::Response &response) {
+  const auto received = std::chrono::steady_clock::now();
   Preparation preparation(preparations_);
   if (!preparation.acquired() || !coordinator_.AdmissionAvailable()) {
     response.set_header("Retry-After", "1");
@@ -298,6 +347,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
     return;
   }
   chat.value().session_owner = owner.value();
+  chat.value().submitted = received;
   spec->outputs = chat.value().outputs;
   spec->temperature = chat.value().sampling.temperature;
   spec->top_p = chat.value().sampling.top_p;
@@ -346,7 +396,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
   chat.value().adapter_bytes =
       admission::Sum({sizeof(ResponseRequest), spec->chat_body.size(), spec->history.size(),
                       spec->tools.size(), spec->metadata.size(), spec->instructions.size(), 2048});
-  auto admitted = coordinator_.Submit(std::move(chat).value());
+  auto admitted = coordinator_.Submit(std::move(chat).value(), true);
   if (!admitted.ok()) {
     response.set_header("Retry-After", "1");
     Error(response, admitted.status().code() == StatusCode::kNotFound ? 404 : 503,
@@ -355,6 +405,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
   }
   preparation.Release();
   auto job = std::move(admitted).value();
+  response.user_data.emplace("padra.transport", std::make_shared<TransportLifetime>(job));
   response.set_header("X-Request-Id", spec->id);
   response.set_header("Cache-Control", "no-store");
   const auto retain = [store = responses_, reservation, spec, root](const Job &job) -> Status {
@@ -373,25 +424,26 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
       }
     }
     if (!job->complete) {
-      Error(response, 499, "client disconnected", "client_disconnected");
+      JobErrorResponse(response, job, 499, "client disconnected", "client_disconnected");
       return;
     }
     if (!job->failure.ok()) {
       const auto error = ClassifyJobError(job->cancellation.load());
       if (error.retry)
         response.set_header("Retry-After", "1");
-      Error(response, error.status, job->failure.message(), error.code);
+      JobErrorResponse(response, job, error.status, job->failure.message(), error.code);
       return;
     }
     auto stored = retain(*job);
     if (!stored.ok()) {
-      Error(response, 500, stored.message(), "response_store_error");
+      JobErrorResponse(response, job, 500, stored.message(), "response_store_error");
       return;
     }
     response.set_header("X-Mellum-Cached-Tokens", std::to_string(job->cached_tokens));
     response.set_header("X-Mellum-Prefill-Ms", std::to_string(job->prefill_seconds * 1000));
     response.set_header("X-Mellum-Decode-Ms", std::to_string(job->decode_seconds * 1000));
-    response.set_content(ResponseEnvelope(*spec, job.get()), "application/json");
+    SendJobJson(response, job, ResponseEnvelope(*spec, job.get()),
+                !job->content.empty() || !job->tool_calls.empty());
     return;
   }
   response.set_header("X-Accel-Buffering", "no");
@@ -400,9 +452,10 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
       [job, spec, root, reservation, retain,
        closed = request.is_connection_closed](std::size_t, httplib::DataSink &sink) {
         try {
-          ResponseStream events(*spec, [&sink](std::string_view frame) {
-            return sink.write(frame.data(), frame.size());
-          });
+          ResponseStream events(
+              *spec,
+              [&sink](std::string_view frame) { return sink.write(frame.data(), frame.size()); },
+              [job](std::size_t bytes, bool visible) { job->RecordWrite(bytes, visible); });
           if (!events.Begin()) {
             job->Cancel(CancelCause::Disconnect);
             return false;
@@ -427,6 +480,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
                 job->Cancel(CancelCause::Disconnect);
                 return false;
               }
+              job->RecordWrite(13, false);
               last_write = std::chrono::steady_clock::now();
             }
             std::unique_lock lock(job->mutex);
@@ -454,6 +508,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
         }
       },
       [job](bool success) {
+        job->FinishTransport(success);
         if (!success)
           job->Cancel(CancelCause::Disconnect);
       });
@@ -512,6 +567,7 @@ void HttpServer::Session(const httplib::Request &request, httplib::Response &res
       "application/json");
 }
 void HttpServer::Chat(const httplib::Request &request, httplib::Response &response) {
+  const auto received = std::chrono::steady_clock::now();
   Preparation preparation(preparations_);
   if (!preparation.acquired() || !coordinator_.AdmissionAvailable()) {
     response.set_header("Retry-After", "1");
@@ -542,8 +598,9 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
     }
     parsed.value().session_owner = std::move(owner).value();
   }
+  parsed.value().submitted = received;
   const bool stream = parsed.value().stream;
-  auto admitted = coordinator_.Submit(std::move(parsed).value());
+  auto admitted = coordinator_.Submit(std::move(parsed).value(), true);
   if (!admitted.ok()) {
     response.set_header("Retry-After", "1");
     Error(response, admitted.status().code() == StatusCode::kNotFound ? 404 : 503,
@@ -553,6 +610,7 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
   }
   preparation.Release();
   auto job = std::move(admitted).value();
+  response.user_data.emplace("padra.transport", std::make_shared<TransportLifetime>(job));
   response.set_header("X-Request-Id", job->request.id);
   response.set_header("Cache-Control", "no-cache");
   if (!stream) {
@@ -565,14 +623,14 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
       }
     }
     if (!job->complete) {
-      Error(response, 499, "client disconnected", "client_disconnected");
+      JobErrorResponse(response, job, 499, "client disconnected", "client_disconnected");
       return;
     }
     if (!job->failure.ok()) {
       const auto error = ClassifyJobError(job->cancellation.load());
       if (error.retry)
         response.set_header("Retry-After", "1");
-      Error(response, error.status, job->failure.message(), error.code);
+      JobErrorResponse(response, job, error.status, job->failure.message(), error.code);
       return;
     }
     response.set_header("X-Mellum-Queue-Ms", std::to_string(job->queue_seconds * 1000));
@@ -583,7 +641,8 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
     response.set_header("X-Mellum-First-Token-Ms", std::to_string(job->first_token_seconds * 1000));
     response.set_header("X-Mellum-First-Visible-Ms", std::to_string(job->visible_seconds * 1000));
     response.set_header("X-Mellum-Cached-Tokens", std::to_string(job->cached_tokens));
-    response.set_content(CompletionJson(*job), "application/json");
+    SendJobJson(response, job, CompletionJson(*job),
+                !job->content.empty() || !job->tool_calls.empty());
     return;
   }
   response.set_header("X-Accel-Buffering", "no");
@@ -603,6 +662,7 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
                 job->Cancel(CancelCause::Disconnect);
                 return false;
               }
+              job->RecordWrite(frame.size, frame.visible);
               last_write = std::chrono::steady_clock::now();
               continue;
             }
@@ -611,6 +671,7 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
                 job->Cancel(CancelCause::Disconnect);
                 return false;
               }
+              job->RecordWrite(13, false);
               last_write = std::chrono::steady_clock::now();
             }
             {
@@ -627,6 +688,7 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
         }
       },
       [job](bool success) {
+        job->FinishTransport(success);
         if (!success)
           job->Cancel(CancelCause::Disconnect);
       });
