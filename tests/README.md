@@ -72,8 +72,6 @@ The base host suite does not qualify CUDA arithmetic, real model quality, native
 renderer semantics, heartbeat/proxy behavior or sustained multi-client performance.
 Those require separate runs with the actual artifact. The optional Python SDK
 suite below covers its explicitly supported loopback API subset.
-The 2026-10-13 Pro review's reproductions originally asserted the broken behavior;
-these tests require corrected behavior.
 
 ## Native artifact smoke test
 
