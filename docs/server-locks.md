@@ -98,3 +98,14 @@ under a job lock. The immutable published result keeps this safe. A retention
 failure leaves the reservation owned until request/provider destruction; the
 boundary test rejects an undersized commit and verifies that both pending record
 and physical root are then released.
+
+## Listener ownership
+
+HTTP stop serializes drain and closing both listeners. Each `HttpListener` owns its
+bound socket before any listening thread exists. Start/Stop synchronize the handoff
+to the library running flag; stop-before-start closes the bound socket directly.
+Only the Listen owner joins the listening thread during normal operation; the
+server destructor joins any remaining thread after stop. Listener callbacks never
+acquire the outer HTTP stop mutex. Runtime/configuration fields are immutable after
+binding. Each pool owns bounded queued work and shared connection counters; no API
+worker slot is required to service the separate admin listener.

@@ -18,6 +18,7 @@ request options. Unknown fields and unsupported values are rejected.
 | `DELETE /v1/sessions/{id}` | Padra extension: discard a session |
 | `GET /healthz`, `GET /readyz` | Liveness and readiness |
 | `GET /metrics` | Prometheus metrics |
+| Admin listener: `GET /healthz`, `/readyz`, `/metrics`, `/config` | Separate bounded loopback listener; configuration/build identity |
 
 Embeddings, legacy text completions, audio, images/video, files/uploads, batches,
 fine-tuning, assistants/threads, response cancellation and response input-item

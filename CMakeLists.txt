@@ -131,10 +131,10 @@ include(cmake/PadraHttp.cmake)
 padra_add_http()
 set(padra_server_sources
   src/server/chat_request.cpp src/server/chat_stream.cpp src/server/coordinator.cpp
-  src/server/job.cpp src/server/output_processing.cpp src/server/coordinator_execution.cpp src/server/secure_id.cpp
+  src/server/server_config.cpp src/server/job.cpp src/server/output_processing.cpp src/server/coordinator_execution.cpp src/server/secure_id.cpp
   src/server/session_store.cpp src/server/tool_protocol.cpp src/server/responses.cpp
   src/server/response_store.cpp src/server/response_stream.cpp src/server/http_server.cpp
-  src/server/http_request.cpp src/server/http_generation.cpp src/server/http_state.cpp
+  src/server/http_listener.cpp src/server/http_request.cpp src/server/http_generation.cpp src/server/http_state.cpp
   src/server/http_transport.cpp src/server/response_retention.cpp)
 add_library(padra_server ${padra_server_sources})
 target_include_directories(padra_server PRIVATE "${PROJECT_BINARY_DIR}/generated")
@@ -194,6 +194,18 @@ if(BUILD_TESTING)
   padra_warnings(padra-execution-boundary-tests)
   add_test(NAME execution-boundaries COMMAND padra-execution-boundary-tests)
   set_tests_properties(execution-boundaries PROPERTIES TIMEOUT 15)
+  add_executable(padra-http-operation-tests tests/http_operation_tests.cpp)
+  target_link_libraries(padra-http-operation-tests PRIVATE padra_test_support)
+  padra_warnings(padra-http-operation-tests)
+  foreach(case IN ITEMS heartbeat slow-bodies slow-reader restart deadlines)
+    add_test(NAME http-${case} COMMAND padra-http-operation-tests ${case})
+    set_tests_properties(http-${case} PROPERTIES TIMEOUT 30)
+  endforeach()
+  add_executable(padra-server-config-tests tests/server_config_tests.cpp)
+  target_link_libraries(padra-server-config-tests PRIVATE padra_test_support)
+  padra_warnings(padra-server-config-tests)
+  add_test(NAME server-configuration COMMAND padra-server-config-tests)
+  set_tests_properties(server-configuration PROPERTIES TIMEOUT 15)
   add_executable(padra-output-order-tests tests/output_order_tests.cpp)
   target_link_libraries(padra-output-order-tests PRIVATE padra_test_support)
   padra_warnings(padra-output-order-tests)

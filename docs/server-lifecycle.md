@@ -7,11 +7,11 @@ has its own deadline, starting when execution begins; the CLI default is 600
 seconds. There is no separately configured total-request deadline.
 
 Normal stop/EOS, length and tool completion are generation outcomes. Errors and
-cancellations have a separate state. Streaming keeps 64 ordinary frames and a
-separate three-frame completion lane for finish reason, optional usage and
+cancellations have a separate state. Streaming keeps 64 ordinary logical events and a
+separate three-event completion lane for finish reason, optional usage and
 `[DONE]`. A full delta/tool buffer produces an explicit error instead of reporting
 success with a truncated protocol. Idle streams emit an SSE comment heartbeat
-every 15 seconds; deployment-specific proxy behavior still needs testing.
+every 15 seconds by default; deployment-specific proxy behavior still needs testing.
 
 Both APIs return `503/queue_deadline` or `503/server_shutdown` with `Retry-After: 1`,
 and `504/generation_deadline`. SSE/Responses failures use the same domain codes.
@@ -25,7 +25,7 @@ protected. Failed admission releases new roots and pending reservations. Cache
 eviction is final, including when a later step fails. Record and physical-root
 evictions have separate counters; TTL/deletion-only cleanup is excluded. See
 [the lock contract](server-locks.md).
-At most four generation requests prepare/tokenize concurrently, with an early
+By default, at most four generation requests prepare/tokenize concurrently, with an early
 queue/readiness check followed by final byte/token admission.
 
 HTTP shutdown removes readiness, rejects new work and fails queued requests.
@@ -78,3 +78,7 @@ done events, terminal output and stored GET. There is at most one reasoning item
 one message item and eight tool items. Text/reasoning emitted again extends its
 existing item, including text on both sides of a tool call. Nonstreaming requests
 use the same logical ordering; items are not regrouped by type at completion.
+
+See [server configuration](server-configuration.md) for validated queue/HTTP
+settings, the reserved admin listener, resolved configuration, timing boundaries
+and restart behavior.

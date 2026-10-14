@@ -5,6 +5,7 @@
 #include "server/latency_histogram.h"
 #include "server/session_store.h"
 #include "server/job.h"
+#include "server/server_config.h"
 #include <array>
 #include <atomic>
 #include <condition_variable>
@@ -13,10 +14,6 @@
 #include <mutex>
 #include <thread>
 namespace mellum16::server {
-struct ServerLimits {
-  std::size_t queued_requests = 8, queued_bytes = 64 * 1024 * 1024, queued_tokens = 65536;
-  std::chrono::milliseconds queue_timeout{5000}, generation_timeout{30000}, drain_timeout{5000};
-};
 struct ServerMetrics {
   RejectionCounters rejections{};
   std::uint64_t output_tokens = 0;
@@ -41,6 +38,9 @@ public:
   bool WaitForDrain();
   void Shutdown();
   ServerMetrics Metrics() const;
+  const ServerLimits &Limits() const {
+    return limits_;
+  }
   AdmissionDecision CheckAdmission() const;
   void RecordRejection(AdmissionCause, ApiRoute);
   RuntimeStats RuntimeMetrics() const {
@@ -64,7 +64,7 @@ private:
   void RecordOutcome(const Job &); // Caller holds the coordinator mutex.
   std::unique_ptr<ModelRuntime> runtime_;
   const text::Tokenizer &tokenizer_;
-  ServerLimits limits_;
+  const ServerLimits limits_;
   std::shared_ptr<SessionStore> sessions_ = std::make_shared<SessionStore>();
   std::string gpu_session_, gpu_owner_;
   std::optional<KVCheckpointHandle> gpu_checkpoint_;

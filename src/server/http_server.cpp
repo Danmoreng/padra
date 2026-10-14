@@ -9,21 +9,44 @@
 #include <sys/socket.h>
 #endif
 namespace mellum16::server {
+namespace {
+ServerConfig MakeHttpConfig(const Coordinator &coordinator, int port, int capacity,
+                            HttpLimits http) {
+  auto config = ServerConfig::Create({coordinator.Limits(), http, port, capacity});
+  if (!config.ok())
+    throw std::invalid_argument(config.status().message());
+  return std::move(config).value();
+}
+} // namespace
 HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenizer, int port,
-                       int capacity)
-    : coordinator_(coordinator), tokenizer_(tokenizer), port_(port), capacity_(capacity) {
-  http_.new_task_queue = [] { return new httplib::ThreadPool(16, 16, 32); };
+                       int capacity, HttpLimits limits)
+    : HttpServer(coordinator, tokenizer, MakeHttpConfig(coordinator, port, capacity, limits)) {}
+HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenizer,
+                       ServerConfig config)
+    : config_(std::move(config)), coordinator_(coordinator), tokenizer_(tokenizer),
+      port_(config_.port()), capacity_(config_.capacity()) {
+  if (!(config_.generation() == coordinator_.Limits()))
+    throw std::invalid_argument("HTTP/coordinator configuration mismatch");
+  http_.new_task_queue = [this] {
+    return MakeConnectionPool(config_.http().threads, config_.http().queued_connections,
+                              connections_);
+  };
+  admin_.new_task_queue = [this] {
+    return MakeConnectionPool(config_.http().admin_threads, config_.http().admin_queued_connections,
+                              admin_connections_);
+  };
   if (coordinator_.RuntimeMetrics().capacity != capacity_)
     throw std::invalid_argument("HTTP/runtime context capacity mismatch");
   http_.set_payload_max_length(RequestBodyLimit(capacity_));
-  http_.set_read_timeout(5);
-  http_.set_write_timeout(2);
-  http_.set_keep_alive_timeout(2);
-  http_.set_keep_alive_max_count(16);
+  http_.set_read_timeout(config_.http().read_timeout);
+  http_.set_write_timeout(config_.http().write_timeout);
+  http_.set_keep_alive_timeout(config_.http().keep_alive_seconds);
+  http_.set_keep_alive_max_count(config_.http().keep_alive_requests);
   http_.set_tcp_nodelay(true);
 #ifndef _WIN32
-  http_.set_socket_options([](socket_t socket) {
-    int bytes = 16384;
+  http_.set_socket_options([this](socket_t socket) {
+    ConfigureListenSocket(socket);
+    int bytes = config_.http().send_buffer_bytes;
     (void)setsockopt(socket, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes));
   });
 #endif
@@ -60,16 +83,22 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
           Error(response, 500, e.what(), "server_error");
         }
       });
-  http_.Get("/healthz", [](const httplib::Request &, httplib::Response &response) {
+  const httplib::Server::Handler health = [](const httplib::Request &,
+                                             httplib::Response &response) {
     response.set_content("{\"status\":\"alive\"}", "application/json");
-  });
-  http_.Get("/readyz", [this](const httplib::Request &, httplib::Response &response) {
+  };
+  http_.Get("/healthz", health);
+  admin_.Get("/healthz", health);
+  const httplib::Server::Handler ready = [this](const httplib::Request &,
+                                                httplib::Response &response) {
     auto state = coordinator_.Metrics();
     response.status = state.ready ? 200 : 503;
     response.set_content(std::string("{\"ready\":") + (state.ready ? "true" : "false") +
                              ",\"quality_status\":\"unqualified\"}",
                          "application/json");
-  });
+  };
+  http_.Get("/readyz", ready);
+  admin_.Get("/readyz", ready);
   http_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &response) {
     const auto r = coordinator_.RuntimeMetrics();
     std::ostringstream out;
@@ -91,6 +120,7 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << (r.weights_sha256.empty() ? "null" : json::Quote(r.weights_sha256))
         << ",\"manifest_sha256\":"
         << (r.manifest_sha256.empty() ? "null" : json::Quote(r.manifest_sha256))
+        << ",\"server_config\":" << config_.Json(port_, admin_port_)
         << ",\"build_version\":" << json::Quote(kPadraBuildVersion)
         << ",\"build_source_sha256\":" << json::Quote(kPadraBuildSourceSha256)
         << ",\"build_kernel_profile\":" << json::Quote(kPadraBuildKernelProfile)
@@ -99,7 +129,8 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << ",\"test_backend\":" << (r.model_loads == 0 ? "true" : "false") << "}]}";
     response.set_content(out.str(), "application/json");
   });
-  http_.Get("/metrics", [this](const httplib::Request &, httplib::Response &response) {
+  const httplib::Server::Handler metrics = [this](const httplib::Request &,
+                                                  httplib::Response &response) {
     auto m = coordinator_.Metrics();
     auto r = coordinator_.RuntimeMetrics();
     std::ostringstream out;
@@ -138,6 +169,15 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << "\nmellum_response_body_bytes_total " << m.response_body_bytes << '\n';
     m.first_visible_write_latency.Write(out, "mellum_first_visible_write_seconds");
     m.response_write_latency.Write(out, "mellum_response_write_seconds");
+    const auto connections = connections_->Snapshot();
+    const auto admin_connections = admin_connections_->Snapshot();
+    out << "padra_http_active_connections{listener=\"api\"} " << connections.active
+        << "\npadra_http_queued_connections{listener=\"api\"} " << connections.queued
+        << "\npadra_http_rejected_connections_total{listener=\"api\"} " << connections.rejected
+        << "\npadra_http_active_connections{listener=\"admin\"} " << admin_connections.active
+        << "\npadra_http_queued_connections{listener=\"admin\"} " << admin_connections.queued
+        << "\npadra_http_rejected_connections_total{listener=\"admin\"} "
+        << admin_connections.rejected << '\n';
     const auto [records, roots] = responses_->Evictions();
     out << "mellum_response_evicted_records_total " << records
         << "\nmellum_response_evicted_roots_total " << roots << '\n';
@@ -148,6 +188,32 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
               << "\",cause=\"" << kAdmissionCauseNames[cause] << "\"} "
               << m.rejections[route][cause] << '\n';
     response.set_content(out.str(), "text/plain; version=0.0.4");
+  };
+  http_.Get("/metrics", metrics);
+  admin_.Get("/metrics", metrics);
+  admin_.set_read_timeout(config_.http().read_timeout);
+  admin_.set_write_timeout(config_.http().write_timeout);
+  admin_.set_keep_alive_timeout(config_.http().keep_alive_seconds);
+  admin_.set_keep_alive_max_count(config_.http().keep_alive_requests);
+  admin_.set_payload_max_length(1);
+  admin_.set_pre_routing_handler(
+      [this](const httplib::Request &request, httplib::Response &response) {
+        auto error = ValidateLocalHttpRequest(request, admin_port_);
+        if (!error.empty() || (request.method != "GET" && request.method != "HEAD")) {
+          Error(response, 403, error.empty() ? "admin listener accepts read-only requests" : error,
+                "http_policy");
+          return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+      });
+  admin_.Get("/config", [this](const httplib::Request &, httplib::Response &response) {
+    response.set_content("{\"server_config\":" + config_.Json(port_, admin_port_) +
+                             ",\"build_version\":" + json::Quote(kPadraBuildVersion) +
+                             ",\"build_source_sha256\":" + json::Quote(kPadraBuildSourceSha256) +
+                             ",\"build_kernel_profile\":" + json::Quote(kPadraBuildKernelProfile) +
+                             ",\"kernel_profile\":" +
+                             json::Quote(coordinator_.RuntimeMetrics().kernel_profile) + "}",
+                         "application/json");
   });
   http_.Post("/v1/chat/completions",
              [this](const httplib::Request &request, httplib::Response &response) {
@@ -176,18 +242,41 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
                  StoredResponses(request, response, true);
                });
 }
+HttpServer::~HttpServer() {
+  Stop();
+  (void)http_.Wait();
+  (void)admin_.Wait();
+}
 int HttpServer::Bind() {
+  std::lock_guard lock(stop_mutex_);
+  if (stopped_)
+    return -1;
   if (bound_)
     return port_;
-  if (port_ == 0) {
-    port_ = http_.bind_to_any_port("127.0.0.1");
-    bound_ = port_ > 0;
-  } else
-    bound_ = http_.bind_to_port("127.0.0.1", port_);
-  return bound_ ? port_ : -1;
+  port_ = http_.Bind(port_);
+  if (port_ <= 0)
+    return -1;
+  admin_port_ = admin_.Bind(config_.http().admin_port);
+  if (admin_port_ <= 0) {
+    http_.Stop();
+    return -1;
+  }
+  bound_ = true;
+  return port_;
 }
 bool HttpServer::Listen() {
-  return Bind() > 0 && http_.listen_after_bind();
+  if (Bind() <= 0) {
+    std::lock_guard lock(stop_mutex_);
+    return stopped_;
+  }
+  if (!admin_.Start() || !http_.Start()) {
+    Stop();
+    return false;
+  }
+  const bool result = http_.Wait();
+  Stop();
+  (void)admin_.Wait();
+  return result;
 }
 void HttpServer::Stop() {
   std::lock_guard lock(stop_mutex_);
@@ -196,7 +285,8 @@ void HttpServer::Stop() {
   coordinator_.BeginDrain(true);
   if (!coordinator_.WaitForDrain())
     coordinator_.BeginDrain(false);
-  http_.stop();
+  http_.Stop();
+  admin_.Stop();
   stopped_ = true;
 }
 } // namespace mellum16::server

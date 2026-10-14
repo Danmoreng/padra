@@ -5,9 +5,9 @@
 namespace mellum16::server::http_detail {
 class Preparation {
 public:
-  explicit Preparation(std::atomic<unsigned> &count) : count_(count) {
+  explicit Preparation(std::atomic<unsigned> &count, unsigned maximum = 4) : count_(count) {
     auto current = count_.load();
-    while (current < 4)
+    while (current < maximum)
       if (count_.compare_exchange_weak(current, current + 1)) {
         held_ = true;
         break;

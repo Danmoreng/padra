@@ -11,6 +11,9 @@ public:
   using Written = std::function<void(std::size_t, bool)>;
   ResponseStream(const ResponseRequest &, Send, Written = {});
   bool Begin();
+  std::size_t EmittedEvents() const {
+    return sequence_;
+  }
   bool OnEvent(const GenerationEvent &);
   bool Finish(const GenerationResult &);
   bool Fail(std::string_view message);

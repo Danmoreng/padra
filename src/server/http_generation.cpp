@@ -13,7 +13,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
     RejectAdmission(response, decision.cause, ApiRoute::Responses);
     return;
   }
-  http_detail::Preparation preparation(preparations_);
+  http_detail::Preparation preparation(preparations_, config_.http().preparation_requests);
   if (!preparation.acquired()) {
     RejectAdmission(response, AdmissionCause::PreparationLimit, ApiRoute::Responses);
     return;
@@ -148,7 +148,7 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
     RejectAdmission(response, decision.cause, ApiRoute::Chat);
     return;
   }
-  http_detail::Preparation preparation(preparations_);
+  http_detail::Preparation preparation(preparations_, config_.http().preparation_requests);
   if (!preparation.acquired()) {
     RejectAdmission(response, AdmissionCause::PreparationLimit, ApiRoute::Chat);
     return;

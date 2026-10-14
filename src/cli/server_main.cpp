@@ -16,17 +16,32 @@ void Signal(int) {
 } // namespace
 int main(int argc, char **argv) {
   try {
-    if (argc < 5 || argc > 9)
-      throw std::runtime_error(
-          "usage: padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT "
-          "[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] [DEVICE_BUDGET_GIB]");
+    int positional_argc = argc;
+    std::string config_body;
+    if (argc >= 3 && std::string_view(argv[argc - 2]) == "--config") {
+      positional_argc -= 2;
+      std::ifstream file(argv[argc - 1], std::ios::binary);
+      if (!file)
+        throw std::runtime_error("cannot open server configuration");
+      std::array<char, 65537> bytes{};
+      file.read(bytes.data(), bytes.size());
+      if (file.gcount() > 65536 || (!file.eof() && !file.good()))
+        throw std::runtime_error("server configuration read failed or exceeds 64 KiB");
+      config_body.assign(bytes.data(), static_cast<std::size_t>(file.gcount()));
+      if (config_body.empty())
+        throw std::runtime_error("server configuration is empty");
+    }
+    if (positional_argc < 5 || positional_argc > 9)
+      throw std::runtime_error("usage: padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT "
+                               "[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] "
+                               "[DEVICE_BUDGET_GIB] [--config JSON]");
     int port = 0;
     auto [end, error] =
         std::from_chars(argv[4], argv[4] + std::char_traits<char>::length(argv[4]), port);
     if (error != std::errc{} || *end || port < 1024 || port > 65535)
       throw std::runtime_error("port must be1024..65535");
     mellum16::server::ServerLimits limits;
-    if (argc > 5) {
+    if (positional_argc > 5) {
       int milliseconds = 0;
       auto [stop, code] =
           std::from_chars(argv[5], argv[5] + std::char_traits<char>::length(argv[5]), milliseconds);
@@ -35,16 +50,16 @@ int main(int argc, char **argv) {
       limits.generation_timeout = std::chrono::milliseconds(milliseconds);
     }
     int capacity = 131072;
-    if (argc <= 5)
+    if (positional_argc <= 5)
       limits.generation_timeout = std::chrono::milliseconds(600000);
-    if (argc > 6) {
+    if (positional_argc > 6) {
       auto [stop, code] =
           std::from_chars(argv[6], argv[6] + std::char_traits<char>::length(argv[6]), capacity);
       if (code != std::errc{} || *stop)
         throw std::runtime_error("invalid context capacity integer");
     }
     int chunk = 2048, budget = 0;
-    for (int argument = 7; argument < argc; ++argument) {
+    for (int argument = 7; argument < positional_argc; ++argument) {
       int &value = argument == 7 ? chunk : budget;
       auto [stop, code] = std::from_chars(
           argv[argument], argv[argument] + std::char_traits<char>::length(argv[argument]), value);
@@ -57,6 +72,14 @@ int main(int argc, char **argv) {
     if (!context.ok())
       throw std::runtime_error(context.status().message());
     limits.queued_tokens = static_cast<std::size_t>(capacity) * 8;
+    mellum16::server::ServerOptions options{limits, {}, port, capacity};
+    auto validated = config_body.empty()
+                         ? mellum16::server::ServerConfig::Create(options)
+                         : mellum16::server::ServerConfig::Parse(config_body, options);
+    if (!validated.ok())
+      throw std::runtime_error(validated.status().message());
+    auto config = std::move(validated).value();
+    limits = config.generation();
     auto text = mellum16::text::Tokenizer::Load(argv[2], argv[3]);
     if (!text.ok())
       throw std::runtime_error(text.status().message());
@@ -77,7 +100,9 @@ int main(int argc, char **argv) {
     if (!reset.ok())
       throw std::runtime_error(reset.message());
     mellum16::server::Coordinator coordinator(std::move(runtime), *tokenizer, limits);
-    mellum16::server::HttpServer http(coordinator, *tokenizer, port, capacity);
+    mellum16::server::HttpServer http(coordinator, *tokenizer, config);
+    if (http.Bind() <= 0)
+      throw std::runtime_error("API/admin loopback bind failed");
     std::signal(SIGINT, Signal);
     std::signal(SIGTERM, Signal);
     std::atomic<bool> finished{false};
@@ -88,6 +113,9 @@ int main(int argc, char **argv) {
         http.Stop();
     });
     std::cout << "{\"listener\":" << mellum16::json::Quote("127.0.0.1:" + std::to_string(port))
+              << ",\"admin_listener\":"
+              << mellum16::json::Quote("127.0.0.1:" + std::to_string(http.AdminPort()))
+              << ",\"server_config\":" << config.Json(port, http.AdminPort())
               << ",\"model\":\"mellum21-exl3-k4-research\",\"quality_status\":\"unqualified\"}"
               << std::endl;
     const bool listened = http.Listen();

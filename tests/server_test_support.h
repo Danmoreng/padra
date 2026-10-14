@@ -21,7 +21,8 @@ struct MockState {
   std::promise<void> entered, release;
   std::shared_future<void> released = release.get_future().share();
   bool block = false;
-  bool prepare_failure = false, reset_failure = false, generate_failure = false;
+  bool prepare_failure = false, reset_failure = false, generate_failure = false,
+       prepare_block = false;
   int pause_after = 0;
   std::atomic<int> calls{0};
   std::vector<int> tokens{0};
@@ -34,6 +35,10 @@ class MockBackend final : public RuntimeBackend {
 public:
   explicit MockBackend(std::shared_ptr<MockState> state) : state_(std::move(state)) {}
   Status Prepare(std::span<const int>, int outputs, bool, SamplingOptions) override {
+    if (state_->prepare_block) {
+      state_->entered.set_value();
+      state_->released.wait();
+    }
     if (state_->prepare_failure)
       return {StatusCode::kInternal, "injected prepare failure"};
     outputs_ = outputs;
@@ -131,9 +136,9 @@ public:
   int port;
   std::thread listener;
   HttpFixture(text::Tokenizer &tokenizer, std::shared_ptr<MockState> input,
-              ServerLimits limits = {})
+              ServerLimits limits = {}, HttpLimits http_limits = {})
       : state(input), coordinator(Runtime(input), tokenizer, limits),
-        http(coordinator, tokenizer, 0), port(http.Bind()) {
+        http(coordinator, tokenizer, 0, 8192, http_limits), port(http.Bind()) {
     Require(port > 0, "HTTP bind failed");
     listener = std::thread([this] { http.Listen(); });
     bool ready = false;

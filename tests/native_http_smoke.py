@@ -9,6 +9,7 @@ parser.add_argument("--artifact", type=pathlib.Path, required=True)
 parser.add_argument("--tokenizer", type=pathlib.Path, required=True)
 parser.add_argument("--tokenizer-sha256", required=True)
 parser.add_argument("--port", type=int, default=18463)
+parser.add_argument("--server-config", type=pathlib.Path)
 parser.add_argument("--output-dir", type=pathlib.Path, required=True)
 args = parser.parse_args()
 artifact = args.artifact.resolve()
@@ -49,7 +50,7 @@ with log.open("w") as output:
             "8192",
             "2048",
             "0",
-        ],
+        ] + (["--config", str(args.server_config.resolve())] if args.server_config else []),
         stdout=output,
         stderr=output,
     )
@@ -80,6 +81,22 @@ with log.open("w") as output:
         )
         assert not identity["test_backend"]
         assert identity["build_kernel_profile"] in ("baseline-v1", "exact-fusions-v1")
+        resolved = identity["server_config"]
+        admin_base = f"http://127.0.0.1:{resolved['admin_port']}"
+        with urllib.request.urlopen(admin_base + "/config", timeout=3) as response:
+            admin_config = json.load(response)
+        assert admin_config["server_config"] == resolved
+        assert admin_config["build_source_sha256"] == identity["build_source_sha256"]
+        for endpoint in ("/healthz", "/readyz", "/metrics"):
+            with urllib.request.urlopen(admin_base + endpoint, timeout=3) as response:
+                assert response.status == 200
+        if args.server_config:
+            for section, fields in json.loads(args.server_config.read_text()).items():
+                for key, value in fields.items():
+                    if key == "admin_port":
+                        assert value == 0 or value == resolved["admin_port"]
+                    else:
+                        assert resolved[section][key] == value, (section, key)
         body = {
             "model": model,
             "messages": [{"role": "user", "content": "Say hello."}],
@@ -199,6 +216,8 @@ with log.open("w") as output:
         result = {
             "actual_cuda_model": True,
             "artifact_identity_verified": True,
+            "admin_listener_verified": True,
+            "server_config": resolved,
             "chat_and_responses_streams": True,
             "session_followup": True,
             "native_tool_request": True,

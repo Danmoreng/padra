@@ -7,11 +7,9 @@ using Clock = std::chrono::steady_clock;
 }
 Coordinator::Coordinator(std::unique_ptr<ModelRuntime> runtime, const text::Tokenizer &tokenizer,
                          ServerLimits limits)
-    : runtime_(std::move(runtime)), tokenizer_(tokenizer), limits_(limits) {
-  if (!runtime_ || !limits_.queued_requests || !limits_.queued_bytes || !limits_.queued_tokens ||
-      limits_.queue_timeout.count() < 1 || limits_.generation_timeout.count() < 1 ||
-      limits_.drain_timeout.count() < 0)
-    throw std::invalid_argument("invalid coordinator limits/runtime");
+    : runtime_(std::move(runtime)), tokenizer_(tokenizer), limits_(ValidateServerLimits(limits)) {
+  if (!runtime_)
+    throw std::invalid_argument("invalid coordinator runtime");
   expiry_worker_ = std::thread([this] { ExpireQueued(); });
   try {
     worker_ = std::thread([this] { Work(); });

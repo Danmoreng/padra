@@ -2,11 +2,21 @@
 #include "server/coordinator.h"
 #include "server/response_store.h"
 #include "server/response_retention.h"
+#include "server/http_listener.h"
 #include <httplib.h>
 namespace mellum16::server {
 class HttpServer {
 public:
-  HttpServer(Coordinator &, const text::Tokenizer &, int port, int capacity = 8192);
+  HttpServer(Coordinator &, const text::Tokenizer &, int port, int capacity = 8192,
+             HttpLimits = {});
+  HttpServer(Coordinator &, const text::Tokenizer &, ServerConfig);
+  ~HttpServer();
+  int AdminPort() const {
+    return admin_port_;
+  }
+  ConnectionSnapshot Connections() const {
+    return connections_->Snapshot();
+  }
   int Bind();
   bool Listen();
   void Stop();
@@ -29,6 +39,7 @@ private:
   void StoredResponses(const httplib::Request &, httplib::Response &, bool remove);
   void Error(httplib::Response &, int, std::string_view,
              std::string_view = "invalid_request_error");
+  const ServerConfig config_;
   std::atomic<unsigned> preparations_{0};
   // Serialize shutdown through the library's socket close, including repeat calls.
   std::mutex stop_mutex_;
@@ -37,7 +48,10 @@ private:
   const text::Tokenizer &tokenizer_;
   int port_, capacity_;
   bool bound_ = false;
-  httplib::Server http_;
+  HttpListener http_, admin_;
+  int admin_port_ = -1;
+  std::shared_ptr<ConnectionCounters> connections_ = std::make_shared<ConnectionCounters>();
+  std::shared_ptr<ConnectionCounters> admin_connections_ = std::make_shared<ConnectionCounters>();
   std::shared_ptr<ResponseStore> responses_ = std::make_shared<ResponseStore>();
 };
 } // namespace mellum16::server

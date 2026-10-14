@@ -80,3 +80,6 @@ predecessor. See [error contracts](api-errors.md) for the precise state error.
 - [Request lifecycle, limits, shutdown and metrics](server-lifecycle.md)
 - [Store admission and lock contract](server-locks.md)
 - [Client and native smoke tests](../tests/README.md)
+
+[Server configuration and administration](server-configuration.md) describes
+`--config`, resolved settings and the reserved health/readiness/metrics listener.

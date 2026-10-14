@@ -4,6 +4,7 @@
 #include "util/json.h"
 #include "server/chat_stream.h"
 #include "server/response_stream.h"
+#include "server/stream_heartbeat.h"
 #include <iostream>
 #include <syncstream>
 namespace mellum16::server {
@@ -20,31 +21,36 @@ struct TransportLifetime {
   }
   std::shared_ptr<Job> job;
 };
+struct ConsumedEvent {
+  bool success, written;
+};
 template <class Closed, class Consume, class Complete>
 bool PumpStream(const std::shared_ptr<Job> &job, Closed closed, httplib::DataSink &sink,
-                Consume consume, Complete complete) {
+                Consume consume, Complete complete, const HttpLimits &timing) {
   GenerationEvent frame;
-  auto last_write = std::chrono::steady_clock::now();
+  StreamHeartbeat heartbeat(timing.heartbeat, std::chrono::steady_clock::now());
   for (;;) {
     if (closed()) {
       job->Cancel(CancelCause::Disconnect);
       return false;
     }
-    if (job->Pop(frame, std::chrono::milliseconds(20))) {
-      if (!consume(frame)) {
+    if (job->Pop(frame, timing.poll)) {
+      const auto consumed = consume(frame);
+      if (!consumed.success) {
         job->Cancel(CancelCause::Disconnect);
         return false;
       }
-      last_write = std::chrono::steady_clock::now();
+      if (consumed.written)
+        heartbeat.Wrote(std::chrono::steady_clock::now());
       continue;
     }
-    if (std::chrono::steady_clock::now() - last_write >= std::chrono::seconds(15)) {
+    if (heartbeat.Due(std::chrono::steady_clock::now())) {
       if (!sink.write(": heartbeat\n\n", 13)) {
         job->Cancel(CancelCause::Disconnect);
         return false;
       }
       job->RecordWrite(13, false);
-      last_write = std::chrono::steady_clock::now();
+      heartbeat.Wrote(std::chrono::steady_clock::now());
     }
     bool drained;
     {
@@ -113,7 +119,7 @@ bool HttpServer::AwaitJob(const httplib::Request &request, httplib::Response &re
                           const std::shared_ptr<Job> &job) {
   std::unique_lock lock(job->mutex);
   while (!job->complete) {
-    job->changed.wait_for(lock, std::chrono::milliseconds(20));
+    job->changed.wait_for(lock, config_.http().poll);
     if (request.is_connection_closed()) {
       job->Cancel(CancelCause::Disconnect);
       break;
@@ -137,7 +143,8 @@ void HttpServer::SendChatStream(const httplib::Request &request, httplib::Respon
   response.set_header("X-Accel-Buffering", "no");
   response.set_chunked_content_provider(
       "text/event-stream",
-      [job, closed = request.is_connection_closed](std::size_t, httplib::DataSink &sink) {
+      [job, timing = config_.http(),
+       closed = request.is_connection_closed](std::size_t, httplib::DataSink &sink) {
         try {
           ChatStream encoder(*job);
           return PumpStream(
@@ -145,14 +152,15 @@ void HttpServer::SendChatStream(const httplib::Request &request, httplib::Respon
               [&](const GenerationEvent &event) {
                 auto wire = encoder.Encode(event);
                 if (!sink.write(wire.data(), wire.size()))
-                  return false;
+                  return ConsumedEvent{false, false};
                 job->RecordWrite(wire.size(), event.Visible());
-                return true;
+                return ConsumedEvent{true, true};
               },
               [&] {
                 sink.done();
                 return true;
-              });
+              },
+              timing);
         } catch (...) {
           job->Cancel(CancelCause::Disconnect);
           return false;
@@ -171,7 +179,7 @@ void HttpServer::SendResponseStream(const httplib::Request &request, httplib::Re
   response.set_header("X-Accel-Buffering", "no");
   response.set_chunked_content_provider(
       "text/event-stream",
-      [job, spec, retain = std::move(retain),
+      [job, spec, retain = std::move(retain), timing = config_.http(),
        closed = request.is_connection_closed](std::size_t, httplib::DataSink &sink) {
         try {
           ResponseStream events(
@@ -184,7 +192,11 @@ void HttpServer::SendResponseStream(const httplib::Request &request, httplib::Re
           }
           return PumpStream(
               job, closed, sink,
-              [&](const GenerationEvent &event) { return events.OnEvent(event); },
+              [&](const GenerationEvent &event) {
+                const auto before = events.EmittedEvents();
+                const bool ok = events.OnEvent(event);
+                return ConsumedEvent{ok, ok && events.EmittedEvents() != before};
+              },
               [&] {
                 if (job->failure.ok()) {
                   auto stored = retain.Commit(*job);
@@ -201,7 +213,8 @@ void HttpServer::SendResponseStream(const httplib::Request &request, httplib::Re
                 }
                 sink.done();
                 return true;
-              });
+              },
+              timing);
         } catch (...) {
           job->Cancel(CancelCause::Disconnect);
           return false;
