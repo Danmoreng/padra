@@ -158,6 +158,30 @@ def test_responses(client):
     assert stored == mixed.model_dump(exclude_none=True)
 
 
+def test_partial_tools(client):
+    for streaming in (False, True):
+        reply = client.responses.create(
+            model=MODEL,
+            input="tool-valid",
+            tools=[RESPONSE_TOOL],
+            max_output_tokens=60,
+            stream=streaming,
+        )
+        if streaming:
+            with reply:
+                finals = [event.response for event in reply if event.type == "response.incomplete"]
+            assert len(finals) == 1
+            reply = finals[0]
+        assert reply.status == "incomplete" and reply.output[0].status == "incomplete"
+        assert client.responses.retrieve(reply.id).status == "incomplete"
+        try:
+            response(client, "next", previous_response_id=reply.id)
+        except APIStatusError as error:
+            assert error.status_code == 400 and error.code == "response_not_continuable"
+        else:
+            raise AssertionError("incomplete tool response accepted as continuation")
+
+
 def test_retention(client):
     ids = []
     for _ in range(40):
@@ -281,6 +305,7 @@ def main():
             ) as client:
                 test_chat(client)
                 test_responses(client)
+                test_partial_tools(client)
                 test_retention(client)
                 test_queue(client, base)
                 test_disconnect(client, base)

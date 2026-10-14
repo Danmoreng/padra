@@ -27,13 +27,16 @@ struct MockState {
 };
 class MockBackend final : public RuntimeBackend {
   std::shared_ptr<MockState> state_;
+  int outputs_ = 0;
 
 public:
   explicit MockBackend(std::shared_ptr<MockState> state) : state_(std::move(state)) {}
-  Status Prepare(std::span<const int>, int, bool, SamplingOptions) override {
+  Status Prepare(std::span<const int>, int outputs, bool, SamplingOptions) override {
+    outputs_ = outputs;
     return {};
   }
-  Status Append(std::span<const int>, int, bool, SamplingOptions) override {
+  Status Append(std::span<const int>, int outputs, bool, SamplingOptions) override {
+    outputs_ = outputs;
     return {};
   }
   Status Reset() override {
@@ -51,6 +54,8 @@ public:
     }
     InferenceResult result;
     for (int token : state_->tokens) {
+      if (result.generated_ids.size() == static_cast<std::size_t>(outputs_))
+        break;
       if (state_->token_delay.count())
         std::this_thread::sleep_for(state_->token_delay);
       result.generated_ids.push_back(token);

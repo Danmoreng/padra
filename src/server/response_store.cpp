@@ -77,7 +77,7 @@ ResponseStore::Reserve(std::string id, std::string owner, std::size_t predicted)
 }
 Status ResponseStore::Commit(const std::shared_ptr<ResponseReservation> &ticket,
                              std::string envelope, std::string history,
-                             std::shared_ptr<ResponseRoot> root) {
+                             std::shared_ptr<ResponseRoot> root, bool continuable) {
   if (!ticket || ticket->store.get() != this)
     return {StatusCode::kInvalidArgument, "foreign response reservation"};
   std::lock_guard lock(mutex_);
@@ -98,6 +98,7 @@ Status ResponseStore::Commit(const std::shared_ptr<ResponseReservation> &ticket,
   record->owner = ticket->owner;
   record->envelope = std::move(envelope);
   record->history = std::move(history);
+  record->continuable = continuable;
   record->root = std::move(root);
   bytes_ -= e.bytes - size;
   e.bytes = size;

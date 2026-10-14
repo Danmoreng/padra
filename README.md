@@ -197,7 +197,12 @@ then argument fragments stream during generation. Arguments retain their origina
 JSON bytes; the completed call still undergoes full JSON validation. Clients must
 wait for successful completion before using the arguments. If arguments precede
 the name, their bounded prefix waits for identification. A length-truncated call
-remains partial and does not commit session history. Python SDK compatibility has
+remains partial and does not commit session history. If stored, its incomplete
+envelope remains retrievable, but `previous_response_id` referencing it returns
+HTTP 400 with Padra's own `response_not_continuable` code. Retry the original
+request, or continue from the last valid predecessor, with enough output budget.
+Unfinished argument JSON is never repaired or added to valid continuation history.
+Text-only length endings remain continuable. Python SDK compatibility has
 an optional pinned loopback suite; proxy/load qualification and authenticated
 external deployment remain separate extensions. No throughput or model-quality improvement is implied by
 these lifecycle changes.

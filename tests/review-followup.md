@@ -93,3 +93,25 @@ ASan/UBSan 6/6, CUDA/Rust build successful. No sanitizer diagnostic. The SDK
 comparison initially exposed its extra null parsed fields, which are accounted
 for explicitly. Native model smoke was not rerun in this step; full numerical,
 model-quality and sustained-load qualification remain outside these host changes.
+
+## 4. Partial-tool continuation policy (PR03)
+
+The new budget-truncation test first failed because the follow-up returned a
+generic history parse error. Retention now distinguishes the display envelope
+from continuability: incomplete tools remain retrievable but are marked internally
+non-continuable; their incomplete arguments never enter valid history. Resolving
+their previous ID returns HTTP 400/`response_not_continuable` before prompt/history
+construction. This is a Padra-specific contract. Text-only length endings remain
+continuable. Explicit sessions retain their last valid state on a partial tool.
+
+The shared backend now actually honors output budgets. New HTTP tests supply more
+tokens than the budget and check exact output-token accounting at truncated names,
+strings, escapes, Unicode bytes, and a complete call followed by an incomplete
+second call. All cover store on/off, stream/nonstream, GET, follow-up and explicit
+sessions; text-only truncation is a positive continuation control. The pinned SDK
+also checks incomplete tool GET and the precise follow-up error.
+
+Executed Debug/SDK CTest (8 cases; the added SDK check passed after correcting a
+test-file indentation error), GCC 15 Release 7/7 and ASan/UBSan 7/7, using the build
+commands above. No sanitizer diagnostic. CUDA/Rust/native smoke and full model
+quality were not rerun for this host/API change.

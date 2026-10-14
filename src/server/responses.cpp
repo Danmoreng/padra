@@ -507,6 +507,8 @@ std::string ResponseEnvelope(const ResponseRequest &r, const Job *j, std::string
          usage + "}";
 }
 std::string ResponseCompletedHistory(const ResponseRequest &r, const Job &j) {
+  if (j.partial_tool_call)
+    throw std::logic_error("incomplete tool output cannot become continuation history");
   auto old = json::Parse(r.history);
   if (!old.ok() || !old.value().is_array())
     throw std::logic_error("response history lost validated form");

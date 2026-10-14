@@ -21,6 +21,8 @@ struct ResponseRoot {
 };
 struct StoredResponse {
   std::string id, owner, envelope, history;
+  // A retrievable incomplete envelope need not contain valid continuation output.
+  bool continuable = true;
   std::shared_ptr<ResponseRoot> root;
 };
 struct ResponseStoreLimits {
@@ -43,7 +45,7 @@ public:
   Result<std::shared_ptr<ResponseReservation>> Reserve(std::string id, std::string owner,
                                                        std::size_t predicted);
   Status Commit(const std::shared_ptr<ResponseReservation> &, std::string envelope,
-                std::string history, std::shared_ptr<ResponseRoot> root);
+                std::string history, std::shared_ptr<ResponseRoot> root, bool continuable = true);
   Result<std::shared_ptr<const StoredResponse>> Get(const std::string &id,
                                                     const std::string &owner);
   Status Delete(const std::string &id, const std::string &owner);

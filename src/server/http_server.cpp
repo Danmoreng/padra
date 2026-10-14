@@ -326,6 +326,13 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
       return;
     }
     parent = std::move(stored).value();
+    if (!parent->continuable) {
+      Error(response, 400,
+            "response contains an incomplete tool call; retry the original request or use the "
+            "last valid previous_response_id with a sufficient output budget",
+            "response_not_continuable");
+      return;
+    }
   }
   auto parsed = ParseResponseRequest(request.body, parent ? parent->history : "[]");
   if (!parsed.ok()) {
@@ -412,7 +419,9 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
     if (!reservation)
       return {};
     return store->Commit(reservation, ResponseEnvelope(*spec, &job),
-                         ResponseCompletedHistory(*spec, job), root);
+                         job.partial_tool_call ? spec->history
+                                               : ResponseCompletedHistory(*spec, job),
+                         root, !job.partial_tool_call);
   };
   if (!spec->stream) {
     std::unique_lock lock(job->mutex);

@@ -55,6 +55,10 @@ Covered regressions include:
   tools, empty output and length/EOS; live/done indices, reconstructed argument/text
   bytes, exact terminal/GET equality and equivalent nonstream output. The SDK
   accumulator also checks Tool→Text ordering and retained output.
+- `server-partial-tools`: actual token-budget truncation at tool names, argument
+  strings/escapes/Unicode and after one complete call; store on/off, streaming and
+  nonstreaming, GET, follow-up and explicit-session history. Text-only length ends
+  stay continuable. The SDK also checks retrieval and `response_not_continuable`.
 - Duplicate JSON keys, Unicode surrogates, split UTF-8/stop/thinking and owner/lease
   isolation.
 - Named kernel profiles, legacy alias compatibility, unsupported profiles and
