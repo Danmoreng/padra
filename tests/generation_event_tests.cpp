@@ -4,7 +4,9 @@
 #include <type_traits>
 namespace {
 std::atomic<std::size_t> allocations{0};
-}
+constexpr bool count_allocations = PADRA_COUNT_ALLOCATIONS;
+} // namespace
+#if PADRA_COUNT_ALLOCATIONS
 void *operator new(std::size_t size) {
   allocations.fetch_add(1, std::memory_order_relaxed);
   if (auto *p = std::malloc(size ? size : 1))
@@ -26,6 +28,8 @@ void operator delete(void *p, std::size_t) noexcept {
 void operator delete[](void *p, std::size_t) noexcept {
   std::free(p);
 }
+#endif
+
 int main() {
   try {
     static_assert(std::is_trivially_copyable_v<GenerationEvent>);
@@ -39,7 +43,8 @@ int main() {
     auto original = GenerationEvent::Make(EventKind::Text, source);
     for (int i = 0; i < 64; ++i)
       Require(job.Push(original), "ordinary event ring rejected admitted slot");
-    Require(allocations.load() == before, "logical event construction/publication allocated");
+    Require(!count_allocations || allocations.load() == before,
+            "logical event construction/publication allocated");
     source.assign(1024, 'x');
     Require(!job.Push(original) && job.cancellation.load() == CancelCause::Backpressure,
             "full ordinary ring did not signal backpressure");
@@ -59,7 +64,8 @@ int main() {
               "published event borrowed mutable source or changed order");
       const auto count = allocations.load();
       auto wire = encoder.Encode(event);
-      Require(allocations.load() == count, "ordinary Chat encoding allocated after reservation");
+      Require(!count_allocations || allocations.load() == count,
+              "ordinary Chat encoding allocated after reservation");
       Require(wire.size() <= 8192 && wire.size() > 6144,
               "worst-case JSON escaping exceeded frame contract");
     }
@@ -90,10 +96,13 @@ int main() {
     failed->Cancel(CancelCause::Disconnect);
     Require(ResponseEnvelope(response.value(), failed.get()) == frozen,
             "transport cancellation rewrote published generation error");
-    std::cout << "event_bytes=" << sizeof(GenerationEvent)
-              << " ring_bytes=" << sizeof(job.events) + sizeof(job.endings)
-              << " job_bytes=" << sizeof(Job)
-              << "; 64 publications and ordinary Chat encodes: zero counted new allocations\n";
+    std::cout
+        << "event_bytes=" << sizeof(GenerationEvent)
+        << " ring_bytes=" << sizeof(job.events) + sizeof(job.endings)
+        << " job_bytes=" << sizeof(Job)
+        << (count_allocations
+                ? "; 64 publications and ordinary Chat encodes: zero counted new allocations\n"
+                : "; functional checks passed; allocation probe disabled under TSan\n");
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
     return 1;

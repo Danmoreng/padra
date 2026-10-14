@@ -181,6 +181,8 @@ if(BUILD_TESTING)
   set_tests_properties(server-regressions PROPERTIES TIMEOUT 30)
   add_executable(padra-generation-event-tests tests/generation_event_tests.cpp)
   target_link_libraries(padra-generation-event-tests PRIVATE padra_test_support)
+  target_compile_definitions(padra-generation-event-tests PRIVATE
+    PADRA_COUNT_ALLOCATIONS=$<NOT:$<BOOL:${PADRA_ENABLE_TSAN}>>)
   padra_warnings(padra-generation-event-tests)
   add_test(NAME generation-events COMMAND padra-generation-event-tests)
   set_tests_properties(generation-events PROPERTIES TIMEOUT 15)
