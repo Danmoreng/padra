@@ -79,4 +79,25 @@ std::span<const char> ChatStream::Encode(const GenerationEvent &event) {
   Need(!frame.empty());
   return frame;
 }
+std::string ChatUsage(const GenerationResult &job) {
+  return "{\"prompt_tokens\":" + std::to_string(job.prompt_tokens) +
+         ",\"completion_tokens\":" + std::to_string(job.completion_tokens) +
+         ",\"total_tokens\":" + std::to_string(job.prompt_tokens + job.completion_tokens) +
+         ",\"prompt_tokens_details\":{\"cached_tokens\":" + std::to_string(job.cached_tokens) +
+         "}}";
+}
+std::string CompletionJson(const Job &job) {
+  return "{\"id\":" + json::Quote(job.request.id) +
+         ",\"object\":\"chat.completion\",\"created\":" + std::to_string(job.created_at) +
+         ",\"model\":" + json::Quote(kModelId) +
+         (job.request.session_id.empty()
+              ? ""
+              : ",\"session_id\":" + json::Quote(job.request.session_id)) +
+         ",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":" +
+         (job.content.empty() && !job.tool_calls.empty() ? "null" : json::Quote(job.content)) +
+         ",\"reasoning_content\":" + json::Quote(job.reasoning) +
+         (job.tool_calls.empty() ? "" : ",\"tool_calls\":" + ToolCallsJson(job.tool_calls)) +
+         "},\"finish_reason\":" + json::Quote(job.finish_reason) +
+         ",\"logprobs\":null}],\"usage\":" + ChatUsage(job) + "}";
+}
 } // namespace mellum16::server

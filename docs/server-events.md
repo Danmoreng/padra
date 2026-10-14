@@ -53,3 +53,7 @@ ASan/UBSan each 11/11. Five admission/transport/disconnect tests also passed
 artifact HTTP smoke passed, including 40 retained roots, sessions, both streams,
 raw tool output, metrics and graceful exit. This smoke is not model-quality or
 numerical qualification.
+
+The allocation probe runs in ordinary/ASan builds. TSan owns its allocator
+interceptors, so TSan builds run the same functional event tests without replacing
+`new`/`delete` and explicitly report that allocation measurement is disabled.

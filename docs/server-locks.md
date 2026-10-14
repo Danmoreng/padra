@@ -39,3 +39,43 @@ after observing completion through that mutex. Ordinary encoders read stable
 request metadata plus their copied event, not mutable worker result fields.
 Terminal failure classification is captured before publication. See
 [generation events](server-events.md) for the bounded channel and adapter contract.
+
+## Execution and ownership boundaries
+
+`coordinator.cpp` owns admission, FIFO selection, independent queue expiry, metrics
+and drain. `coordinator_execution.cpp` orchestrates KV preparation, output
+processing, history commit and cleanup. `output_processing.cpp` owns the token
+pipeline and logical event publication; it does not prepare KV, mutate stores or
+write sockets. `job.cpp` owns the event channel, cancellation, terminal failure
+snapshot and transport accounting. Chat and Responses encoders own protocol JSON.
+
+`PrepareExecution` is worker-only and restores a matching retained checkpoint or
+resets/prepares the runtime. `GenerateOutput` owns local decoder/parser storage and
+reports runtime failures to the coordinator; parser failures do not by themselves
+poison readiness. `CommitHistory` commits only valid complete tool history and
+updates cache identity after commit. Partial tool output invalidates cache identity
+and remains retrievable but not continuable. `Execute` catches failures from these
+boundaries, clears touched cache identity, resets an unpoisoned runtime and
+publishes a terminal failure. It then always calls `CompleteJob`.
+
+| State dimension | Owner and publication | Resource release |
+| --- | --- | --- |
+| Queued/active/completed job | Coordinator FIFO/active pointer; completion under job mutex | Queue bytes/tokens removed at dequeue or expiry; active pointer cleared once |
+| Generation result | Worker or expiry worker, then const adapter access after completion | Local parser storage unwinds on every success/failure |
+| Session lease/history | Job holds one RAII lease until `CompleteJob` | Worker local lease is dropped first; job lease is reset before completion notification |
+| Pending response/root reservation | HTTP request/provider owns RAII ticket | Drop rolls back uncommitted record/root; commit transfers retained state |
+| Transport unfinished/written/failed | HTTP provider/release callback, idempotent atomics | `FinishTransport` decrements active transports once; generation completion does not close it |
+| Retained continuability | Immutable stored record policy | Partial tools preserve retrievable envelope and last valid history without continuation |
+
+Runtime execution is owned by one generation worker. The expiry worker never calls
+GPU operations. Coordinator locks protect FIFO/cache identity and metrics; runtime
+calls and token callbacks occur outside them. Job locks protect event indices and
+completion publication. `CompleteJob` releases session ownership, records outcome
+under the coordinator lock, releases that lock, then takes the job lock to publish.
+No coordinator lock is held while waiting for HTTP drain or joining workers.
+Callbacks may cancel through atomics without taking the job mutex.
+
+`execution-boundaries` injects reset, preparation, generation, tool-validation and
+two history-normalization failures. Each verifies inactive leases, unchanged
+history, empty queue budgets, exactly one generation outcome, a separate pending
+transport, and the ability to reserve the entire 32 MiB session budget afterward.

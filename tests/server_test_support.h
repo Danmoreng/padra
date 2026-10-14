@@ -21,7 +21,7 @@ struct MockState {
   std::promise<void> entered, release;
   std::shared_future<void> released = release.get_future().share();
   bool block = false;
-  bool prepare_failure = false;
+  bool prepare_failure = false, reset_failure = false, generate_failure = false;
   int pause_after = 0;
   std::atomic<int> calls{0};
   std::vector<int> tokens{0};
@@ -44,6 +44,8 @@ public:
     return {};
   }
   Status Reset() override {
+    if (state_->reset_failure)
+      return {StatusCode::kInternal, "injected reset failure"};
     return {};
   }
   void Cancel() override {}
@@ -56,6 +58,8 @@ public:
       state_->entered.set_value();
       state_->released.wait();
     }
+    if (state_->generate_failure)
+      return Status{StatusCode::kInternal, "injected generation failure"};
     InferenceResult result;
     for (int token : state_->tokens) {
       if (result.generated_ids.size() == static_cast<std::size_t>(outputs_))

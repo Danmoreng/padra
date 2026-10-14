@@ -3,6 +3,9 @@
 #include "server/sse_chunk.h"
 namespace mellum16::server {
 struct Job;
+struct GenerationResult;
+std::string ChatUsage(const GenerationResult &);
+std::string CompletionJson(const Job &);
 // Per HTTP consumer encoder. The coordinator publishes protocol-neutral events.
 class ChatStream {
 public:

@@ -130,7 +130,8 @@ endif()
 include(cmake/PadraHttp.cmake)
 padra_add_http()
 set(padra_server_sources
-  src/server/chat_request.cpp src/server/chat_stream.cpp src/server/coordinator.cpp src/server/secure_id.cpp
+  src/server/chat_request.cpp src/server/chat_stream.cpp src/server/coordinator.cpp
+  src/server/job.cpp src/server/output_processing.cpp src/server/coordinator_execution.cpp src/server/secure_id.cpp
   src/server/session_store.cpp src/server/tool_protocol.cpp src/server/responses.cpp
   src/server/response_store.cpp src/server/response_stream.cpp src/server/http_server.cpp)
 add_library(padra_server ${padra_server_sources})
@@ -186,6 +187,11 @@ if(BUILD_TESTING)
   padra_warnings(padra-generation-event-tests)
   add_test(NAME generation-events COMMAND padra-generation-event-tests)
   set_tests_properties(generation-events PROPERTIES TIMEOUT 15)
+  add_executable(padra-execution-boundary-tests tests/execution_boundary_tests.cpp)
+  target_link_libraries(padra-execution-boundary-tests PRIVATE padra_test_support)
+  padra_warnings(padra-execution-boundary-tests)
+  add_test(NAME execution-boundaries COMMAND padra-execution-boundary-tests)
+  set_tests_properties(execution-boundaries PROPERTIES TIMEOUT 15)
   add_executable(padra-output-order-tests tests/output_order_tests.cpp)
   target_link_libraries(padra-output-order-tests PRIVATE padra_test_support)
   padra_warnings(padra-output-order-tests)
