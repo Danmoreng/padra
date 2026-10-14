@@ -16,34 +16,58 @@
 namespace mellum16::json {
 
 class Value {
- public:
+public:
   using Array = std::vector<Value>;
   using Object = std::map<std::string, Value, std::less<>>;
-  using Storage = std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, Array, Object>;
+  using Storage =
+      std::variant<std::nullptr_t, bool, std::int64_t, double, std::string, Array, Object>;
 
   // Initialize the selected alternative directly; no temporary variant move.
-  template<class T>
-    requires (!std::is_same_v<std::remove_cvref_t<T>, Value> && std::is_constructible_v<Storage, T>)
-  explicit Value(T&& value) : storage_(std::forward<T>(value)) {}
+  template <class T>
+    requires(!std::is_same_v<std::remove_cvref_t<T>, Value> && std::is_constructible_v<Storage, T>)
+  explicit Value(T &&value) : storage_(std::forward<T>(value)) {}
 
+  [[nodiscard]] bool is_null() const {
+    return std::holds_alternative<std::nullptr_t>(storage_);
+  }
+  [[nodiscard]] bool is_bool() const {
+    return std::holds_alternative<bool>(storage_);
+  }
+  [[nodiscard]] bool is_integer() const {
+    return std::holds_alternative<std::int64_t>(storage_);
+  }
+  [[nodiscard]] bool is_number() const {
+    return is_integer() || std::holds_alternative<double>(storage_);
+  }
+  [[nodiscard]] bool is_string() const {
+    return std::holds_alternative<std::string>(storage_);
+  }
+  [[nodiscard]] bool is_array() const {
+    return std::holds_alternative<Array>(storage_);
+  }
+  [[nodiscard]] bool is_object() const {
+    return std::holds_alternative<Object>(storage_);
+  }
 
-  [[nodiscard]] bool is_null() const { return std::holds_alternative<std::nullptr_t>(storage_); }
-  [[nodiscard]] bool is_bool() const { return std::holds_alternative<bool>(storage_); }
-  [[nodiscard]] bool is_integer() const { return std::holds_alternative<std::int64_t>(storage_); }
-  [[nodiscard]] bool is_number() const { return is_integer() || std::holds_alternative<double>(storage_); }
-  [[nodiscard]] bool is_string() const { return std::holds_alternative<std::string>(storage_); }
-  [[nodiscard]] bool is_array() const { return std::holds_alternative<Array>(storage_); }
-  [[nodiscard]] bool is_object() const { return std::holds_alternative<Object>(storage_); }
-
-  [[nodiscard]] bool as_bool() const { return std::get<bool>(storage_); }
-  [[nodiscard]] std::int64_t as_integer() const { return std::get<std::int64_t>(storage_); }
+  [[nodiscard]] bool as_bool() const {
+    return std::get<bool>(storage_);
+  }
+  [[nodiscard]] std::int64_t as_integer() const {
+    return std::get<std::int64_t>(storage_);
+  }
   [[nodiscard]] double as_number() const;
-  [[nodiscard]] const std::string& as_string() const { return std::get<std::string>(storage_); }
-  [[nodiscard]] const Array& as_array() const { return std::get<Array>(storage_); }
-  [[nodiscard]] const Object& as_object() const { return std::get<Object>(storage_); }
-  [[nodiscard]] const Value* find(std::string_view key) const;
+  [[nodiscard]] const std::string &as_string() const {
+    return std::get<std::string>(storage_);
+  }
+  [[nodiscard]] const Array &as_array() const {
+    return std::get<Array>(storage_);
+  }
+  [[nodiscard]] const Object &as_object() const {
+    return std::get<Object>(storage_);
+  }
+  [[nodiscard]] const Value *find(std::string_view key) const;
 
- private:
+private:
   Storage storage_;
 };
 
@@ -56,6 +80,6 @@ struct ParseLimits {
 [[nodiscard]] Result<Value> Parse(std::string_view input, ParseLimits limits = {});
 [[nodiscard]] std::string Escape(std::string_view input);
 [[nodiscard]] std::string Quote(std::string_view input);
-[[nodiscard]] std::string Stringify(const Value& value);
+[[nodiscard]] std::string Stringify(const Value &value);
 
-}  // namespace mellum16::json
+} // namespace mellum16::json

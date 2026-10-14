@@ -10,16 +10,18 @@
 namespace mellum16::compiler {
 
 class Sha256 {
- public:
+public:
   Sha256() noexcept;
 
-  void Update(const void* data, std::size_t size) noexcept;
-  void Update(std::string_view data) noexcept { Update(data.data(), data.size()); }
+  void Update(const void *data, std::size_t size) noexcept;
+  void Update(std::string_view data) noexcept {
+    Update(data.data(), data.size());
+  }
   [[nodiscard]] std::array<std::uint8_t, 32> Final() const noexcept;
   [[nodiscard]] std::string HexDigest() const;
 
- private:
-  void Transform(const std::uint8_t* block) noexcept;
+private:
+  void Transform(const std::uint8_t *block) noexcept;
 
   std::array<std::uint32_t, 8> state_{};
   std::array<std::uint8_t, 64> block_{};
@@ -27,6 +29,6 @@ class Sha256 {
   std::uint64_t total_bytes_ = 0;
 };
 
-[[nodiscard]] std::string Sha256Hex(const void* data, std::size_t size);
+[[nodiscard]] std::string Sha256Hex(const void *data, std::size_t size);
 
-}  // namespace mellum16::compiler
+} // namespace mellum16::compiler

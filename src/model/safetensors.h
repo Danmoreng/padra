@@ -24,8 +24,7 @@ struct StoredTensor {
 // Parse one explicitly selected Safetensors-compatible file.  The caller owns
 // profile/metadata validation; this function owns bounded header, dtype, shape,
 // range and overlap validation.
-[[nodiscard]] Result<std::vector<StoredTensor>> LoadSafetensorsFile(
-    const std::filesystem::path& path);
+[[nodiscard]] Result<std::vector<StoredTensor>>
+LoadSafetensorsFile(const std::filesystem::path &path);
 
-
-}  // namespace mellum16::internal
+} // namespace mellum16::internal

@@ -39,7 +39,8 @@ std::uint8_t ChooseNearestE2M1(float magnitude) {
 }
 
 std::uint8_t ChooseNearestPositiveE4M3Fn(float magnitude) {
-  if (magnitude >= kE4M3FnMax) return 0x7EU;
+  if (magnitude >= kE4M3FnMax)
+    return 0x7EU;
 
   std::uint8_t best = 0;
   float best_error = std::numeric_limits<float>::infinity();
@@ -47,8 +48,7 @@ std::uint8_t ChooseNearestPositiveE4M3Fn(float magnitude) {
     const auto bits = static_cast<std::uint8_t>(candidate);
     const float decoded = DecodeE4M3Fn(bits);
     const float error = std::fabs(magnitude - decoded);
-    if (error < best_error ||
-        (error == best_error && (bits & 1U) == 0U && (best & 1U) != 0U)) {
+    if (error < best_error || (error == best_error && (bits & 1U) == 0U && (best & 1U) != 0U)) {
       best = bits;
       best_error = error;
     }
@@ -63,14 +63,14 @@ std::uint8_t PackedNibble(std::span<const std::uint8_t> packed, std::size_t inde
 }
 
 void StorePackedNibble(std::span<std::uint8_t> packed, std::size_t index, std::uint8_t nibble) {
-  std::uint8_t& byte = packed[index / kPackedElementsPerByte];
+  std::uint8_t &byte = packed[index / kPackedElementsPerByte];
   const unsigned shift = (index % kPackedElementsPerByte == 0U) ? 0U : 4U;
   const std::uint8_t mask = static_cast<std::uint8_t>(0x0FU << shift);
   byte = static_cast<std::uint8_t>((byte & static_cast<std::uint8_t>(~mask)) |
                                    static_cast<std::uint8_t>((nibble & 0x0FU) << shift));
 }
 
-}  // namespace
+} // namespace
 
 float DecodeE2M1(std::uint8_t nibble) noexcept {
   nibble &= 0x0FU;
@@ -79,7 +79,8 @@ float DecodeE2M1(std::uint8_t nibble) noexcept {
 }
 
 Result<std::uint8_t> EncodeE2M1(float value) {
-  if (!std::isfinite(value)) return Invalid("E2M1 input must be finite");
+  if (!std::isfinite(value))
+    return Invalid("E2M1 input must be finite");
   const std::uint8_t magnitude = ChooseNearestE2M1(std::fabs(value));
   const std::uint8_t sign = std::signbit(value) ? 0x08U : 0x00U;
   return static_cast<std::uint8_t>(sign | magnitude);
@@ -90,7 +91,8 @@ bool IsFiniteE4M3Fn(std::uint8_t bits) noexcept {
 }
 
 float DecodeE4M3Fn(std::uint8_t bits) noexcept {
-  if (!IsFiniteE4M3Fn(bits)) return std::numeric_limits<float>::quiet_NaN();
+  if (!IsFiniteE4M3Fn(bits))
+    return std::numeric_limits<float>::quiet_NaN();
 
   const bool negative = (bits & 0x80U) != 0U;
   const int exponent = static_cast<int>((bits >> 3U) & 0x0FU);
@@ -105,7 +107,8 @@ float DecodeE4M3Fn(std::uint8_t bits) noexcept {
 }
 
 Result<std::uint8_t> EncodeE4M3Fn(float value) {
-  if (!std::isfinite(value)) return Invalid("E4M3FN input must be finite");
+  if (!std::isfinite(value))
+    return Invalid("E4M3FN input must be finite");
   const std::uint8_t magnitude = ChooseNearestPositiveE4M3Fn(std::fabs(value));
   const std::uint8_t sign = std::signbit(value) ? 0x80U : 0x00U;
   return static_cast<std::uint8_t>(sign | magnitude);
@@ -131,15 +134,17 @@ Result<QuantizedActivation> QuantizeActivation(std::span<const float> activation
     float amax = 0.0F;
     for (std::size_t local = 0; local < kBlockElements; ++local) {
       const float value = activation[begin + local];
-      if (!std::isfinite(value)) return Invalid("NVFP4 activation values must be finite");
+      if (!std::isfinite(value))
+        return Invalid("NVFP4 activation values must be finite");
       const float scaled = value * global_divisor;
-      if (!std::isfinite(scaled)) return Invalid("NVFP4 activation scaling overflowed");
+      if (!std::isfinite(scaled))
+        return Invalid("NVFP4 activation scaling overflowed");
       amax = std::max(amax, std::fabs(value));
     }
 
-    const auto encoded_scale =
-        EncodeE4M3Fn((amax * kE2M1MaxReciprocal) * global_divisor);
-    if (!encoded_scale.ok()) return encoded_scale.status();
+    const auto encoded_scale = EncodeE4M3Fn((amax * kE2M1MaxReciprocal) * global_divisor);
+    if (!encoded_scale.ok())
+      return encoded_scale.status();
     output.block_scales_e4m3fn[block] = encoded_scale.value();
     const float decoded_scale = DecodeE4M3Fn(encoded_scale.value());
 
@@ -147,19 +152,19 @@ Result<QuantizedActivation> QuantizeActivation(std::span<const float> activation
       const float scaled = activation[begin + local] * global_divisor;
       const float normalized = decoded_scale == 0.0F ? 0.0F : scaled / decoded_scale;
       const auto encoded = EncodeE2M1(normalized);
-      if (!encoded.ok()) return encoded.status();
+      if (!encoded.ok())
+        return encoded.status();
       StorePackedNibble(output.packed_e2m1, begin + local, encoded.value());
     }
   }
   return output;
 }
 
-Result<double> ReferenceDotProduct(const QuantizedActivation& activation,
+Result<double> ReferenceDotProduct(const QuantizedActivation &activation,
                                    std::span<const std::uint8_t> packed_weight_e2m1,
                                    std::span<const std::uint8_t> weight_scales_e4m3fn,
                                    float weight_global_divisor) {
-  if (activation.logical_elements == 0U ||
-      activation.logical_elements % kBlockElements != 0U) {
+  if (activation.logical_elements == 0U || activation.logical_elements % kBlockElements != 0U) {
     return Invalid("NVFP4 oracle activation extent must be a nonzero multiple of 16");
   }
   if (activation.logical_elements > std::numeric_limits<std::size_t>::max()) {
@@ -174,8 +179,7 @@ Result<double> ReferenceDotProduct(const QuantizedActivation& activation,
       weight_scales_e4m3fn.size() != elements / kBlockElements) {
     return Invalid("NVFP4 oracle weight storage does not match the activation extent");
   }
-  if (!IsPositiveFinite(activation.global_divisor) ||
-      !IsPositiveFinite(weight_global_divisor)) {
+  if (!IsPositiveFinite(activation.global_divisor) || !IsPositiveFinite(weight_global_divisor)) {
     return Invalid("NVFP4 oracle global divisors must be positive and finite");
   }
 
@@ -196,9 +200,9 @@ Result<double> ReferenceDotProduct(const QuantizedActivation& activation,
     accumulator += activation_value * weight_value;
   }
 
-  const double divisor = static_cast<double>(activation.global_divisor) *
-                         static_cast<double>(weight_global_divisor);
+  const double divisor =
+      static_cast<double>(activation.global_divisor) * static_cast<double>(weight_global_divisor);
   return accumulator / divisor;
 }
 
-}  // namespace mellum16::nvfp4
+} // namespace mellum16::nvfp4

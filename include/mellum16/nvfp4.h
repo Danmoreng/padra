@@ -32,17 +32,15 @@ struct QuantizedActivation {
 // Quantizes `activation * global_divisor` in independent groups of 16. The local scale is
 // round-to-nearest-even E4M3FN and two E2M1 values are stored per byte, with the even logical
 // element in the low nibble. Inputs must be finite and the logical extent must be divisible by 16.
-[[nodiscard]] Result<QuantizedActivation> QuantizeActivation(
-    std::span<const float> activation,
-    float global_divisor);
+[[nodiscard]] Result<QuantizedActivation> QuantizeActivation(std::span<const float> activation,
+                                                             float global_divisor);
 
 // Independent mathematical oracle for one W4A4 projection row. The packed weight uses the same
 // low-nibble-first source layout as the pinned Safetensors checkpoint. Local represented values
 // are accumulated in binary64, then divided by the stored activation and weight global divisors.
-[[nodiscard]] Result<double> ReferenceDotProduct(
-    const QuantizedActivation& activation,
-    std::span<const std::uint8_t> packed_weight_e2m1,
-    std::span<const std::uint8_t> weight_scales_e4m3fn,
-    float weight_global_divisor);
+[[nodiscard]] Result<double> ReferenceDotProduct(const QuantizedActivation &activation,
+                                                 std::span<const std::uint8_t> packed_weight_e2m1,
+                                                 std::span<const std::uint8_t> weight_scales_e4m3fn,
+                                                 float weight_global_divisor);
 
-}  // namespace mellum16::nvfp4
+} // namespace mellum16::nvfp4

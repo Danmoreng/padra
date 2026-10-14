@@ -11,7 +11,7 @@
 namespace mellum16::json {
 namespace {
 
-void AppendStringified(const Value& value, std::string& output) {
+void AppendStringified(const Value &value, std::string &output) {
   if (value.is_null()) {
     output.append("null");
   } else if (value.is_bool()) {
@@ -28,8 +28,9 @@ void AppendStringified(const Value& value, std::string& output) {
   } else if (value.is_array()) {
     output.push_back('[');
     bool first = true;
-    for (const Value& item : value.as_array()) {
-      if (!first) output.push_back(',');
+    for (const Value &item : value.as_array()) {
+      if (!first)
+        output.push_back(',');
       first = false;
       AppendStringified(item, output);
     }
@@ -37,8 +38,9 @@ void AppendStringified(const Value& value, std::string& output) {
   } else {
     output.push_back('{');
     bool first = true;
-    for (const auto& [key, item] : value.as_object()) {
-      if (!first) output.push_back(',');
+    for (const auto &[key, item] : value.as_object()) {
+      if (!first)
+        output.push_back(',');
       first = false;
       output.append(Quote(key));
       output.push_back(':');
@@ -49,7 +51,7 @@ void AppendStringified(const Value& value, std::string& output) {
 }
 
 class Parser {
- public:
+public:
   Parser(std::string_view input, ParseLimits limits) : input_(input), limits_(limits) {}
 
   Result<Value> Run() {
@@ -65,7 +67,7 @@ class Parser {
     return value;
   }
 
- private:
+private:
   Result<Value> ParseValue(std::size_t depth) {
     if (depth > limits_.max_depth) {
       return Error("nesting limit exceeded");
@@ -78,23 +80,28 @@ class Parser {
     }
 
     switch (input_[position_]) {
-      case 'n': return ParseLiteral("null", Value(nullptr));
-      case 't': return ParseLiteral("true", Value(true));
-      case 'f': return ParseLiteral("false", Value(false));
-      case '"': {
-        auto string = ParseString();
-        if (!string.ok()) {
-          return string.status();
-        }
-        return Value(std::move(string).value());
+    case 'n':
+      return ParseLiteral("null", Value(nullptr));
+    case 't':
+      return ParseLiteral("true", Value(true));
+    case 'f':
+      return ParseLiteral("false", Value(false));
+    case '"': {
+      auto string = ParseString();
+      if (!string.ok()) {
+        return string.status();
       }
-      case '[': return ParseArray(depth + 1);
-      case '{': return ParseObject(depth + 1);
-      default:
-        if (input_[position_] == '-' || IsDigit(input_[position_])) {
-          return ParseNumber();
-        }
-        return Error("unexpected character");
+      return Value(std::move(string).value());
+    }
+    case '[':
+      return ParseArray(depth + 1);
+    case '{':
+      return ParseObject(depth + 1);
+    default:
+      if (input_[position_] == '-' || IsDigit(input_[position_])) {
+        return ParseNumber();
+      }
+      return Error("unexpected character");
     }
   }
 
@@ -230,15 +237,14 @@ class Parser {
     // is_integer(), while metadata sentinels such as tokenizer model_max_length
     // remain parseable.
     std::string terminated(token);
-    char* end = nullptr;
+    char *end = nullptr;
     const double parsed = std::strtod(terminated.c_str(), &end);
     if (end != terminated.c_str() + terminated.size() || !std::isfinite(parsed)) {
       return Error("invalid or non-finite number");
     }
     // Do not silently turn a non-zero JSON number into a neutral zero value.
-    if (parsed == 0.0 &&
-        token.substr(0, token.find_first_of("eE")).find_first_of("123456789") !=
-            std::string_view::npos) {
+    if (parsed == 0.0 && token.substr(0, token.find_first_of("eE")).find_first_of("123456789") !=
+                             std::string_view::npos) {
       return Error("number underflows to zero");
     }
     return Value(parsed);
@@ -266,23 +272,40 @@ class Parser {
         }
         const char escaped = input_[position_++];
         switch (escaped) {
-          case '"': output.push_back('"'); break;
-          case '\\': output.push_back('\\'); break;
-          case '/': output.push_back('/'); break;
-          case 'b': output.push_back('\b'); break;
-          case 'f': output.push_back('\f'); break;
-          case 'n': output.push_back('\n'); break;
-          case 'r': output.push_back('\r'); break;
-          case 't': output.push_back('\t'); break;
-          case 'u': {
-            auto codepoint = ParseUnicodeEscape();
-            if (!codepoint.ok()) {
-              return codepoint.status();
-            }
-            AppendUtf8(codepoint.value(), output);
-            break;
+        case '"':
+          output.push_back('"');
+          break;
+        case '\\':
+          output.push_back('\\');
+          break;
+        case '/':
+          output.push_back('/');
+          break;
+        case 'b':
+          output.push_back('\b');
+          break;
+        case 'f':
+          output.push_back('\f');
+          break;
+        case 'n':
+          output.push_back('\n');
+          break;
+        case 'r':
+          output.push_back('\r');
+          break;
+        case 't':
+          output.push_back('\t');
+          break;
+        case 'u': {
+          auto codepoint = ParseUnicodeEscape();
+          if (!codepoint.ok()) {
+            return codepoint.status();
           }
-          default: return Error("invalid string escape");
+          AppendUtf8(codepoint.value(), output);
+          break;
+        }
+        default:
+          return Error("invalid string escape");
         }
       }
       if (output.size() > limits_.max_string_bytes) {
@@ -299,7 +322,8 @@ class Parser {
     }
     std::uint32_t codepoint = first.value();
     if (codepoint >= 0xD800U && codepoint <= 0xDBFFU) {
-      if (position_ + 2U > input_.size() || input_[position_] != '\\' || input_[position_ + 1U] != 'u') {
+      if (position_ + 2U > input_.size() || input_[position_] != '\\' ||
+          input_[position_ + 1U] != 'u') {
         return Error("high surrogate is not followed by a low surrogate");
       }
       position_ += 2U;
@@ -338,7 +362,7 @@ class Parser {
     return value;
   }
 
-  static void AppendUtf8(std::uint32_t codepoint, std::string& output) {
+  static void AppendUtf8(std::uint32_t codepoint, std::string &output) {
     if (codepoint <= 0x7FU) {
       output.push_back(static_cast<char>(codepoint));
     } else if (codepoint <= 0x7FFU) {
@@ -382,13 +406,17 @@ class Parser {
       } else {
         return false;
       }
-      if (index + continuation_count >= text.size()) return false;
+      if (index + continuation_count >= text.size())
+        return false;
       for (std::size_t offset = 1; offset <= continuation_count; ++offset) {
         const auto continuation = static_cast<unsigned char>(text[index + offset]);
-        if ((continuation & 0xC0U) != 0x80U) return false;
+        if ((continuation & 0xC0U) != 0x80U)
+          return false;
         codepoint = (codepoint << 6U) | (continuation & 0x3FU);
       }
-      if (codepoint < minimum || codepoint > 0x10FFFFU || (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) return false;
+      if (codepoint < minimum || codepoint > 0x10FFFFU ||
+          (codepoint >= 0xD800U && codepoint <= 0xDFFFU))
+        return false;
       index += continuation_count + 1U;
     }
     return true;
@@ -418,8 +446,12 @@ class Parser {
     return false;
   }
 
-  static bool IsDigit(char value) { return value >= '0' && value <= '9'; }
-  static bool IsDigit19(char value) { return value >= '1' && value <= '9'; }
+  static bool IsDigit(char value) {
+    return value >= '0' && value <= '9';
+  }
+  static bool IsDigit19(char value) {
+    return value >= '1' && value <= '9';
+  }
 
   std::string_view input_;
   ParseLimits limits_;
@@ -427,7 +459,7 @@ class Parser {
   std::size_t values_seen_ = 0;
 };
 
-}  // namespace
+} // namespace
 
 double Value::as_number() const {
   if (is_integer()) {
@@ -436,7 +468,7 @@ double Value::as_number() const {
   return std::get<double>(storage_);
 }
 
-const Value* Value::find(std::string_view key) const {
+const Value *Value::find(std::string_view key) const {
   if (!is_object()) {
     return nullptr;
   }
@@ -455,26 +487,40 @@ std::string Escape(std::string_view input) {
   std::ostringstream output;
   for (const unsigned char byte : input) {
     switch (byte) {
-      case '"': output << "\\\""; break;
-      case '\\': output << "\\\\"; break;
-      case '\b': output << "\\b"; break;
-      case '\f': output << "\\f"; break;
-      case '\n': output << "\\n"; break;
-      case '\r': output << "\\r"; break;
-      case '\t': output << "\\t"; break;
-      default:
-        if (byte < 0x20U) {
-          constexpr char digits[] = "0123456789abcdef";
-          output << "\\u00" << digits[byte >> 4U] << digits[byte & 0x0FU];
-        } else {
-          output << static_cast<char>(byte);
-        }
+    case '"':
+      output << "\\\"";
+      break;
+    case '\\':
+      output << "\\\\";
+      break;
+    case '\b':
+      output << "\\b";
+      break;
+    case '\f':
+      output << "\\f";
+      break;
+    case '\n':
+      output << "\\n";
+      break;
+    case '\r':
+      output << "\\r";
+      break;
+    case '\t':
+      output << "\\t";
+      break;
+    default:
+      if (byte < 0x20U) {
+        constexpr char digits[] = "0123456789abcdef";
+        output << "\\u00" << digits[byte >> 4U] << digits[byte & 0x0FU];
+      } else {
+        output << static_cast<char>(byte);
+      }
     }
   }
   return output.str();
 }
 
-std::string Stringify(const Value& value) {
+std::string Stringify(const Value &value) {
   std::string output;
   AppendStringified(value, output);
   return output;
@@ -484,4 +530,4 @@ std::string Quote(std::string_view input) {
   return '"' + Escape(input) + '"';
 }
 
-}  // namespace mellum16::json
+} // namespace mellum16::json
