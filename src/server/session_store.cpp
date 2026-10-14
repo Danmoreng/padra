@@ -71,19 +71,32 @@ Status SessionStore::Delete(const std::string &id, const std::string &owner) {
   Prune();
   return {};
 }
-Result<std::shared_ptr<SessionLease>>
-SessionStore::Acquire(const std::string &id, const std::string &owner, std::size_t predicted) {
+Result<std::shared_ptr<SessionLease>> SessionStore::Acquire(const std::string &id,
+                                                            const std::string &owner,
+                                                            std::size_t predicted,
+                                                            AdmissionDecision *decision) {
+  if (decision)
+    *decision = {};
+  const auto reject = [&](AdmissionCause cause,
+                          Status status) -> Result<std::shared_ptr<SessionLease>> {
+    if (decision)
+      decision->cause = cause;
+    return status;
+  };
   std::lock_guard lock(mutex_);
   Prune();
   auto r = Find(id, owner);
   if (!r)
-    return Missing();
+    return reject(AdmissionCause::SessionMissing, Missing());
   if (r->active)
-    return Status(StatusCode::kResourceExhausted, "session already has a queued/running request");
+    return reject(
+        AdmissionCause::SessionBusy,
+        Status(StatusCode::kResourceExhausted, "session already has a queued/running request"));
   const auto extra = predicted > r->bytes ? predicted - r->bytes : 0;
   if (predicted > limits_.per_record || extra > limits_.bytes - bytes_ - reserved_)
-    return Status(StatusCode::kResourceExhausted,
-                  "bounded logical session history budget exhausted");
+    return reject(
+        AdmissionCause::SessionBudget,
+        Status(StatusCode::kResourceExhausted, "bounded logical session history budget exhausted"));
   auto lease = std::make_shared<SessionLease>();
   lease->record = r;
   lease->store = shared_from_this();

@@ -11,6 +11,8 @@ public:
   void Stop();
 
 private:
+  void RejectAdmission(httplib::Response &, AdmissionCause, ApiRoute, bool count = true,
+                       std::string_view message = {});
   void Chat(const httplib::Request &, httplib::Response &);
   void SendJobJson(httplib::Response &, const std::shared_ptr<Job> &, std::string, bool visible);
   void JobErrorResponse(httplib::Response &, const std::shared_ptr<Job> &, int, std::string_view,

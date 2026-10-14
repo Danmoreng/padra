@@ -20,6 +20,7 @@ struct MockState {
   std::promise<void> entered, release;
   std::shared_future<void> released = release.get_future().share();
   bool block = false;
+  bool prepare_failure = false;
   int pause_after = 0;
   std::atomic<int> calls{0};
   std::vector<int> tokens{0};
@@ -32,6 +33,8 @@ class MockBackend final : public RuntimeBackend {
 public:
   explicit MockBackend(std::shared_ptr<MockState> state) : state_(std::move(state)) {}
   Status Prepare(std::span<const int>, int outputs, bool, SamplingOptions) override {
+    if (state_->prepare_failure)
+      return {StatusCode::kInternal, "injected prepare failure"};
     outputs_ = outputs;
     return {};
   }

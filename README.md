@@ -122,6 +122,9 @@ every 15 seconds; deployment-specific proxy behavior still needs testing.
 
 Both APIs return `503/queue_deadline` or `503/server_shutdown` with `Retry-After: 1`,
 and `504/generation_deadline`. SSE/Responses failures use the same domain codes.
+Admission distinguishes readiness, drain, preparation, queue and session/storage
+limits. Generation requests carry a server-generated `X-Request-Id`, including
+early refusals. See [API errors](docs/api-errors.md) for codes and retry behavior.
 Response records, bytes and new physical roots are admitted together. Eviction
 must actually free all references to a root before that root counts as an available
 session slot. Manual sessions, active leases, pending and pinned records are
@@ -150,6 +153,10 @@ chunk/eager counts. Queue time excludes preparation; output availability measure
 internal text/tool readiness before transport. Job lifetime ends at coordinator
 completion, so these metrics are not client-observed TTFT/end-to-end latency.
 Transport disconnect/backpressure counters include failures after generation ends.
+Admission refusals are counted once in `mellum_admission_rejected_total` with fixed
+route/cause labels; `mellum_queue_rejected_total` is the aggregate counter.
+Admission logs contain request identity, route and cause without request contents
+or credentials.
 `mellum_first_visible_write_seconds` measures handler entry to the first successful
 body write containing text or tool identity/arguments; protocol-only and reasoning
 events do not count. `mellum_response_write_seconds` measures handler entry through

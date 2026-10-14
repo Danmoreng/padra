@@ -9,7 +9,9 @@
 #include "server/secure_id.h"
 #include "util/json.h"
 #include <chrono>
+#include <iostream>
 #include <sstream>
+#include <syncstream>
 #ifndef _WIN32
 #include <sys/socket.h>
 #endif
@@ -71,6 +73,22 @@ void HttpServer::Error(httplib::Response &response, int status, std::string_view
       ErrorJson(message, code, status >= 500 ? "server_error" : "invalid_request_error"),
       "application/json");
 }
+void HttpServer::RejectAdmission(httplib::Response &response, AdmissionCause cause, ApiRoute route,
+                                 bool count, std::string_view message) {
+  if (count)
+    coordinator_.RecordRejection(cause, route);
+  const auto error = ClassifyAdmissionError(cause);
+  const auto name = kAdmissionCauseNames.at(static_cast<std::size_t>(cause));
+  const auto text = message.empty() ? "request admission unavailable: " + std::string(name)
+                                    : std::string(message);
+  Error(response, error.status, text, error.code);
+  if (error.retry)
+    response.set_header("Retry-After", "1");
+  std::osyncstream(std::clog) << "{\"event\":\"admission_rejected\",\"route\":"
+                              << json::Quote(kApiRouteNames.at(static_cast<std::size_t>(route)))
+                              << ",\"cause\":" << json::Quote(name) << ",\"request_id\":"
+                              << json::Quote(response.get_header_value("X-Request-Id")) << "}\n";
+}
 HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenizer, int port,
                        int capacity)
     : coordinator_(coordinator), tokenizer_(tokenizer), port_(port), capacity_(capacity) {
@@ -91,6 +109,16 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
 #endif
   http_.set_pre_routing_handler(
       [this](const httplib::Request &request, httplib::Response &response) {
+        if (request.method == "POST" &&
+            (request.path == "/v1/chat/completions" || request.path == "/v1/responses")) {
+          auto id = MakeSecureId("req_");
+          if (!id.ok()) {
+            RejectAdmission(response, AdmissionCause::Internal,
+                            request.path == "/v1/responses" ? ApiRoute::Responses : ApiRoute::Chat);
+            return httplib::Server::HandlerResponse::Handled;
+          }
+          response.set_header("X-Request-Id", id.value());
+        }
         auto error = ValidateLocalHttpRequest(request, port_);
         if (!error.empty()) {
           Error(response, 403, error, "http_policy");
@@ -193,6 +221,12 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
     const auto [records, roots] = responses_->Evictions();
     out << "mellum_response_evicted_records_total " << records
         << "\nmellum_response_evicted_roots_total " << roots << '\n';
+    for (std::size_t route = 0; route < kApiRouteNames.size(); ++route)
+      for (std::size_t cause = 1; cause < kAdmissionCauseNames.size(); ++cause)
+        if (m.rejections[route][cause])
+          out << "mellum_admission_rejected_total{route=\"" << kApiRouteNames[route]
+              << "\",cause=\"" << kAdmissionCauseNames[cause] << "\"} "
+              << m.rejections[route][cause] << '\n';
     response.set_content(out.str(), "text/plain; version=0.0.4");
   });
   http_.Post("/v1/chat/completions",
@@ -299,10 +333,14 @@ void HttpServer::StoredResponses(const httplib::Request &request, httplib::Respo
 }
 void HttpServer::Responses(const httplib::Request &request, httplib::Response &response) {
   const auto received = std::chrono::steady_clock::now();
+  auto decision = coordinator_.CheckAdmission();
+  if (!decision.allowed()) {
+    RejectAdmission(response, decision.cause, ApiRoute::Responses);
+    return;
+  }
   Preparation preparation(preparations_);
-  if (!preparation.acquired() || !coordinator_.AdmissionAvailable()) {
-    response.set_header("Retry-After", "1");
-    Error(response, 503, "request preparation/queue unavailable", "queue_full");
+  if (!preparation.acquired()) {
+    RejectAdmission(response, AdmissionCause::PreparationLimit, ApiRoute::Responses);
     return;
   }
 
@@ -376,9 +414,11 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
           spec->id, owner.value(), budget, coordinator_.Sessions().shared_from_this(), !root,
           [coordinator = &coordinator_](const std::string &id, const std::string &who) {
             (void)coordinator->DiscardSession(id, who);
-          });
+          },
+          &decision);
       if (!reserved.ok()) {
-        Error(response, 429, reserved.status().message(), "response_store_full");
+        RejectAdmission(response, decision.cause, ApiRoute::Responses, true,
+                        reserved.status().message());
         return;
       }
       reservation = std::move(reserved).value();
@@ -397,17 +437,16 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
   chat.value().adapter_bytes =
       admission::Sum({sizeof(ResponseRequest), spec->chat_body.size(), spec->history.size(),
                       spec->tools.size(), spec->metadata.size(), spec->instructions.size(), 2048});
-  auto admitted = coordinator_.Submit(std::move(chat).value(), true);
+  auto admitted =
+      coordinator_.Submit(std::move(chat).value(), {true, ApiRoute::Responses, &decision});
   if (!admitted.ok()) {
-    response.set_header("Retry-After", "1");
-    Error(response, admitted.status().code() == StatusCode::kNotFound ? 404 : 503,
-          admitted.status().message(), "queue_full");
+    RejectAdmission(response, decision.cause, ApiRoute::Responses, false,
+                    admitted.status().message());
     return;
   }
   preparation.Release();
   auto job = std::move(admitted).value();
   response.user_data.emplace("padra.transport", std::make_shared<TransportLifetime>(job));
-  response.set_header("X-Request-Id", spec->id);
   response.set_header("Cache-Control", "no-store");
   const auto retain = [store = responses_, reservation, spec, root](const Job &job) -> Status {
     if (!reservation)
@@ -571,10 +610,14 @@ void HttpServer::Session(const httplib::Request &request, httplib::Response &res
 }
 void HttpServer::Chat(const httplib::Request &request, httplib::Response &response) {
   const auto received = std::chrono::steady_clock::now();
+  auto decision = coordinator_.CheckAdmission();
+  if (!decision.allowed()) {
+    RejectAdmission(response, decision.cause, ApiRoute::Chat);
+    return;
+  }
   Preparation preparation(preparations_);
-  if (!preparation.acquired() || !coordinator_.AdmissionAvailable()) {
-    response.set_header("Retry-After", "1");
-    Error(response, 503, "request preparation/queue unavailable", "queue_full");
+  if (!preparation.acquired()) {
+    RejectAdmission(response, AdmissionCause::PreparationLimit, ApiRoute::Chat);
     return;
   }
 
@@ -583,7 +626,6 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
     Error(response, 500, id.status().message(), "id_failure");
     return;
   }
-  response.set_header("X-Request-Id", id.value());
   auto parsed = ParseChatRequest(request.body, tokenizer_, capacity_, std::move(id).value());
   if (!parsed.ok()) {
     Error(response,
@@ -603,18 +645,14 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
   }
   parsed.value().submitted = received;
   const bool stream = parsed.value().stream;
-  auto admitted = coordinator_.Submit(std::move(parsed).value(), true);
+  auto admitted = coordinator_.Submit(std::move(parsed).value(), {true, ApiRoute::Chat, &decision});
   if (!admitted.ok()) {
-    response.set_header("Retry-After", "1");
-    Error(response, admitted.status().code() == StatusCode::kNotFound ? 404 : 503,
-          admitted.status().message(),
-          admitted.status().code() == StatusCode::kNotFound ? "session_not_found" : "queue_full");
+    RejectAdmission(response, decision.cause, ApiRoute::Chat, false, admitted.status().message());
     return;
   }
   preparation.Release();
   auto job = std::move(admitted).value();
   response.user_data.emplace("padra.transport", std::make_shared<TransportLifetime>(job));
-  response.set_header("X-Request-Id", job->request.id);
   response.set_header("Cache-Control", "no-cache");
   if (!stream) {
     std::unique_lock lock(job->mutex);

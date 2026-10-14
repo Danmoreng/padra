@@ -46,6 +46,7 @@ def response(client, content, **options):
 def test_chat(client):
     reply = chat(client, "hello")
     assert reply.choices[0].message.content == "hello"
+    assert reply._request_id.startswith("req_")
     for prompt, expected in [
         ("tool-valid", ARGS),
         ("tool-reverse", {"text": "reverse"}),
@@ -215,6 +216,7 @@ def test_queue(client, base):
                 (response if is_response else chat)(client, "hello")
             except APIStatusError as error:
                 assert error.status_code == 503 and error.code == "queue_deadline"
+                assert error.request_id.startswith("req_")
                 assert error.response.headers["Retry-After"] == "1"
                 assert (
                     not blocker.done()

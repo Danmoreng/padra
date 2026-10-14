@@ -42,13 +42,25 @@ void ResponseStore::Prune(Retired &retired, SessionStore *sessions) {
 Result<std::shared_ptr<ResponseReservation>>
 ResponseStore::Reserve(std::string id, std::string owner, std::size_t predicted,
                        std::shared_ptr<SessionStore> sessions, bool create_root,
-                       std::function<void(const std::string &, const std::string &)> discard) {
+                       std::function<void(const std::string &, const std::string &)> discard,
+                       AdmissionDecision *decision) {
+  if (decision)
+    *decision = {};
+  const auto reject = [&](AdmissionCause cause,
+                          Status status) -> Result<std::shared_ptr<ResponseReservation>> {
+    if (decision)
+      decision->cause = cause;
+    return status;
+  };
   if (id.size() != 37 || !id.starts_with("resp_") ||
       id.find_first_not_of("0123456789abcdef", 5) != std::string::npos || owner.empty() ||
       owner.size() > 128 || (create_root && !sessions))
-    return Status(StatusCode::kInvalidArgument, "invalid response/root identity/owner");
+    return reject(AdmissionCause::InvalidRequest,
+                  Status(StatusCode::kInvalidArgument, "invalid response/root identity/owner"));
   if (!predicted || predicted > limits_.per_record)
-    return Status(StatusCode::kResourceExhausted, "bounded response-store admission exhausted");
+    return reject(
+        AdmissionCause::ResponseStoreFull,
+        Status(StatusCode::kResourceExhausted, "bounded response-store admission exhausted"));
 
   // Allocate the new nodes/callback before committing any eviction. Inserting
   // these same-allocator map nodes cannot allocate after planning succeeds.
@@ -67,7 +79,7 @@ ResponseStore::Reserve(std::string id, std::string owner, std::size_t predicted,
   if (create_root) {
     auto generated = MakeSecureId("sess-");
     if (!generated.ok())
-      return generated.status();
+      return reject(AdmissionCause::Internal, generated.status());
     ticket->root = std::make_shared<ResponseRoot>();
     ticket->root->session_id = generated.value();
     ticket->root->owner = owner;
@@ -97,10 +109,12 @@ ResponseStore::Reserve(std::string id, std::string owner, std::size_t predicted,
     response_lock.lock();
   Prune(retired, sessions.get());
   if (records_.contains(id))
-    return Status(StatusCode::kInvalidArgument, "duplicate response identity");
+    return reject(AdmissionCause::InvalidRequest,
+                  Status(StatusCode::kInvalidArgument, "duplicate response identity"));
   if (create_root &&
       (sessions->records_.contains(ticket->root->session_id) || sessions->limits_.per_record < 2))
-    return Status(StatusCode::kResourceExhausted, "root identity/budget unavailable");
+    return reject(AdmissionCause::RootCapacity,
+                  Status(StatusCode::kResourceExhausted, "root identity/budget unavailable"));
 
   struct RootGroup {
     std::size_t references = 0, removed = 0;
@@ -143,11 +157,13 @@ ResponseStore::Reserve(std::string id, std::string owner, std::size_t predicted,
       ++free_roots;
       free_session_bytes += group.record->bytes;
     }
+  const auto root_fits = [&] {
+    return !create_root || (sessions->records_.size() - free_roots < sessions->limits_.entries &&
+                            sessions->bytes_ + sessions->reserved_ - free_session_bytes <=
+                                sessions->limits_.bytes - 2);
+  };
   const auto fits = [&] {
-    return count < limits_.entries && predicted <= limits_.bytes - bytes &&
-           (!create_root || (sessions->records_.size() - free_roots < sessions->limits_.entries &&
-                             sessions->bytes_ + sessions->reserved_ - free_session_bytes <=
-                                 sessions->limits_.bytes - 2));
+    return count < limits_.entries && predicted <= limits_.bytes - bytes && root_fits();
   };
   while (!fits() && retire < eligible.size()) {
     const auto &e = eligible[retire++]->second;
@@ -163,8 +179,11 @@ ResponseStore::Reserve(std::string id, std::string owner, std::size_t predicted,
     }
   }
   if (!fits())
-    return Status(StatusCode::kResourceExhausted,
-                  "bounded joint response/root admission exhausted");
+    return reject(root_fits() ? AdmissionCause::ResponseStoreFull : AdmissionCause::RootCapacity,
+                  Status(StatusCode::kResourceExhausted,
+                         root_fits()
+                             ? "bounded response-store admission exhausted"
+                             : "protected or referenced root sessions exhaust the session budget"));
 
   // Commit the proven plan under both locks. Pending/pinned records and active
   // or manually created sessions cannot be selected. Shared roots count once.

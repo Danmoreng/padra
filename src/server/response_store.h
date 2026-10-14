@@ -1,5 +1,6 @@
 #pragma once
 #include "mellum16/status.h"
+#include "server/admission.h"
 #include <chrono>
 #include <functional>
 #include <map>
@@ -48,7 +49,8 @@ public:
   Result<std::shared_ptr<ResponseReservation>>
   Reserve(std::string id, std::string owner, std::size_t predicted,
           std::shared_ptr<SessionStore> sessions = {}, bool create_root = false,
-          std::function<void(const std::string &, const std::string &)> discard = {});
+          std::function<void(const std::string &, const std::string &)> discard = {},
+          AdmissionDecision *decision = nullptr);
   Status Commit(const std::shared_ptr<ResponseReservation> &, std::string envelope,
                 std::string history, std::shared_ptr<ResponseRoot> root, bool continuable = true);
   Result<std::shared_ptr<const StoredResponse>> Get(const std::string &id,

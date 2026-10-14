@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime/model_runtime.h"
+#include "server/admission.h"
 #include "server/chat_request.h"
 #include "server/latency_histogram.h"
 #include "server/session_store.h"
@@ -91,6 +92,7 @@ struct ServerLimits {
   std::chrono::milliseconds queue_timeout{5000}, generation_timeout{30000}, drain_timeout{5000};
 };
 struct ServerMetrics {
+  RejectionCounters rejections{};
   std::uint64_t output_tokens = 0;
   std::uint64_t active_transports = 0, responses_written = 0, write_failures = 0,
                 response_body_bytes = 0;
@@ -108,12 +110,13 @@ class Coordinator {
 public:
   Coordinator(std::unique_ptr<ModelRuntime>, const text::Tokenizer &, ServerLimits = {});
   ~Coordinator();
-  Result<std::shared_ptr<Job>> Submit(ChatRequest, bool track_transport = false);
+  Result<std::shared_ptr<Job>> Submit(ChatRequest, SubmissionContext = {});
   void BeginDrain(bool graceful = false);
   bool WaitForDrain();
   void Shutdown();
   ServerMetrics Metrics() const;
-  bool AdmissionAvailable() const;
+  AdmissionDecision CheckAdmission() const;
+  void RecordRejection(AdmissionCause, ApiRoute);
   RuntimeStats RuntimeMetrics() const {
     return runtime_->Stats();
   }
@@ -124,6 +127,8 @@ public:
   bool SessionCacheAvailable(const std::string &, const std::string &) const;
 
 private:
+  AdmissionDecision CheckAdmissionLocked() const;
+  void RecordRejectionLocked(AdmissionCause, ApiRoute);
   void Work();
   void ExpireQueued();
   void Execute(const std::shared_ptr<Job> &);

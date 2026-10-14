@@ -1,8 +1,23 @@
 // Test-only vocabulary/renderer. Production UTF-8 decoding, request validation,
 // coordinator, stores and HTTP code are compiled without replacements.
 #include "text/tokenizer.h"
+#include "tokenization_gate.h"
 #include "util/json.h"
 #include <stdexcept>
+namespace mellum16::server::test {
+namespace {
+std::mutex barrier_mutex;
+std::shared_ptr<TokenizationBarrier> barrier;
+} // namespace
+void SetTokenizationBarrier(std::shared_ptr<TokenizationBarrier> value) {
+  std::lock_guard lock(barrier_mutex);
+  barrier = std::move(value);
+}
+std::shared_ptr<TokenizationBarrier> CurrentBarrier() {
+  std::lock_guard lock(barrier_mutex);
+  return barrier;
+}
+} // namespace mellum16::server::test
 namespace mellum16::text {
 Tokenizer::~Tokenizer() = default;
 Result<std::unique_ptr<Tokenizer>> Tokenizer::Load(const std::filesystem::path &,
@@ -20,6 +35,8 @@ Result<std::unique_ptr<Tokenizer>> Tokenizer::Load(const std::filesystem::path &
   return t;
 }
 Result<std::vector<int>> Tokenizer::Encode(std::string_view text) const {
+  if (auto barrier = server::test::CurrentBarrier())
+    barrier->Wait();
   std::vector<int> ids;
   for (unsigned char c : text)
     ids.push_back(128 + c);

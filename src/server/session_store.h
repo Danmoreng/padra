@@ -1,5 +1,6 @@
 #pragma once
 #include "mellum16/status.h"
+#include "server/admission.h"
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -41,7 +42,8 @@ public:
   Result<SessionSnapshot> Get(const std::string &id, const std::string &owner);
   Status Delete(const std::string &id, const std::string &owner);
   Result<std::shared_ptr<SessionLease>> Acquire(const std::string &id, const std::string &owner,
-                                                std::size_t predicted);
+                                                std::size_t predicted,
+                                                AdmissionDecision * = nullptr);
   Status Commit(const std::shared_ptr<SessionLease> &, std::string history);
   void Release(const std::shared_ptr<SessionRecord> &, std::size_t reservation);
   std::pair<std::size_t, std::size_t> Stats();

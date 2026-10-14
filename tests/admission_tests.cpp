@@ -225,6 +225,14 @@ void ProtectedHttp(text::Tokenizer &tokenizer) {
   auto blocked = client.Post("/v1/responses", ResponseBody, "application/json");
   Require(blocked && blocked->status == 429 && fixture.coordinator.Sessions().Stats().first == 32,
           "protected manual session capacity was evicted/increased");
+  Require(JsonResponse(blocked, 429).find("error")->find("code")->as_string() ==
+                  "session_unavailable" &&
+              blocked->get_header_value("Retry-After") == "1" &&
+              fixture.coordinator.Metrics().rejected == 1 &&
+              fixture.coordinator.Metrics().rejections[static_cast<std::size_t>(
+                  ApiRoute::Responses)][static_cast<std::size_t>(AdmissionCause::RootCapacity)] ==
+                  1,
+          "joint root-capacity error/count contract differs");
 }
 int main() {
   try {

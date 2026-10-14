@@ -50,6 +50,11 @@ Covered regressions include:
   manual sessions/pins/leases/pending roots, joint byte limits, TTL, rollback after
   reservation/root creation/Submit failure, reentrant discard callbacks and
   concurrent manual/response creation. No production limits are raised.
+- `server-admission-errors`: both routes during drain/not-readiness, full queues,
+  byte/token budgets, preparation saturation, late queue/drain loss and queued/
+  active session conflicts. Tests use tokenizer/backend barriers and require
+  matching HTTP/code/retry/request IDs, exactly-once bounded counters and rollback.
+  Accepted queue deadlines (streaming and nonstreaming) are not admission refusals.
 - Consistent Chat/Responses HTTP queue errors, Retry-After, both SSE protocols,
   real client disconnects, artifact identity and bounded latency histograms.
 - Incremental tool bytes, split markers/fields, Unicode, reordered fields, duplicate

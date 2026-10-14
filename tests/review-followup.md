@@ -142,3 +142,37 @@ The admission suite additionally passed 100 consecutive ASan/UBSan runs before
 the final notification-throw guard; the final suite includes that new case too.
 CUDA/Rust build and native HTTP smoke passed. No numerical arithmetic/defaults
 changed; full model quality and sustained multi-client load were not qualified.
+
+## 6. Structured admission and rejection contracts (PR05)
+
+The new drain regression first failed because shutdown was reported as queue
+capacity. Preflight and final admission now return a bounded cause. Queue count,
+bytes/tokens, readiness, drain, preparation and session/storage causes share one
+HTTP/code/retry mapping. Final Submit counts its own refusal; the HTTP handler
+counts only refusals before Submit, so a late rejection is not counted twice.
+An admitted job's deadline/stream error remains an outcome, not another refusal.
+Queue publication precedes resource/transport charges to avoid admission debt if
+deque allocation throws. Forced allocator failure itself was not injected.
+
+Request IDs are minted before preparation and retained through parsing/final
+admission instead of being replaced by output IDs. JSON refusal logs contain only
+route, cause and request identity. Metric labels come from fixed enums. Contracts
+are documented as current behavior in `docs/api-errors.md` and the README.
+
+The test-only tokenizer barrier makes preparation saturation and admission loss
+after successful preflight deterministic. Tests cover both APIs during drain and
+not-readiness, queue count/bytes/tokens, four blocked preparations, late queue/
+drain loss, active/queued session conflicts, missing sessions, typed store limits,
+root-capacity refusal, request IDs/retry headers and exact route/cause counters.
+Streaming/nonstreaming admitted queue deadlines do not increment rejections. The
+pinned SDK checks request IDs on success and timeout errors.
+
+Executed Debug/SDK 10/10, GCC 15 Release 9/9 and ASan/UBSan 9/9. The five targeted
+admission/error/transport/disconnect cases passed 100 consecutive ASan/UBSan
+executions each (500 total), stopping on first failure; log:
+`build/review-sanitizers/final-stability.log`. This series preceded only the final
+exception-safe reordering of queue publication/charges; full suites were rerun
+after that reorder. CUDA/Rust build and native model HTTP smoke passed, including
+one actual generated tool call and forty independent stored responses. Full
+numerical/model-task quality, TSan, baseline-profile GPU qualification and sustained
+load remain outside this six-step serving work.

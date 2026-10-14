@@ -291,9 +291,15 @@ Coordinator::Coordinator(std::unique_ptr<ModelRuntime> runtime, const text::Toke
 Coordinator::~Coordinator() {
   Shutdown();
 }
-Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request, bool track_transport) {
-  if (request.outputs < 1 || request.outputs > 131072)
+Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request, SubmissionContext context) {
+  if (context.decision)
+    *context.decision = {};
+  if (request.outputs < 1 || request.outputs > 131072) {
+    if (context.decision)
+      context.decision->cause = AdmissionCause::InvalidRequest;
+    RecordRejection(AdmissionCause::InvalidRequest, context.route);
     return Status(StatusCode::kInvalidArgument, "invalid requested output budget");
+  }
   const auto output_budget = admission::Sum(
       {admission::Bytes(request.outputs,
                         admission::Bytes(admission::Sum({tokenizer_.MaxRawTokenBytes(), 3}), 3)),
@@ -305,11 +311,20 @@ Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request, bool track
   const auto tokens =
       admission::Sum({request.input_ids.size(), static_cast<std::size_t>(request.outputs)});
   std::lock_guard lock(mutex_);
-  if (metrics_.draining || !metrics_.ready || queue_.size() >= limits_.queued_requests ||
-      predicted > limits_.queued_bytes - bytes_ || tokens > limits_.queued_tokens - tokens_) {
-    ++metrics_.rejected;
-    return Status(StatusCode::kResourceExhausted, "bounded FIFO queue unavailable/full");
-  }
+  const auto reject = [&](AdmissionCause cause, Status status) -> Result<std::shared_ptr<Job>> {
+    if (context.decision)
+      context.decision->cause = cause;
+    RecordRejectionLocked(cause, context.route);
+    return status;
+  };
+  auto decision = CheckAdmissionLocked();
+  if (decision.allowed() && predicted > limits_.queued_bytes - bytes_)
+    decision.cause = AdmissionCause::QueueBytes;
+  if (decision.allowed() && tokens > limits_.queued_tokens - tokens_)
+    decision.cause = AdmissionCause::QueueTokens;
+  if (!decision.allowed())
+    return reject(decision.cause, Status(StatusCode::kResourceExhausted,
+                                         "bounded generation admission unavailable"));
   std::shared_ptr<SessionLease> lease;
   if (!request.session_id.empty()) {
     const auto history_budget = admission::Sum(
@@ -317,23 +332,24 @@ Result<std::shared_ptr<Job>> Coordinator::Submit(ChatRequest request, bool track
          admission::Bytes(request.outputs,
                           admission::Bytes(admission::Sum({tokenizer_.MaxRawTokenBytes(), 3}), 18)),
          1024});
-    auto acquired = sessions_->Acquire(request.session_id, request.session_owner, history_budget);
-    if (!acquired.ok()) {
-      ++metrics_.rejected;
-      return acquired.status();
-    }
+    auto acquired =
+        sessions_->Acquire(request.session_id, request.session_owner, history_budget, &decision);
+    if (!acquired.ok())
+      return reject(decision.cause, acquired.status());
     lease = std::move(acquired).value();
   }
   auto job = std::make_shared<Job>(std::move(request), tokenizer_.MaxRawTokenBytes());
   job->session_lease = std::move(lease);
   job->transport = transport_;
-  if (track_transport)
-    job->StartTransport();
   job->admitted_at = Clock::now();
   job->queue_deadline = job->admitted_at + limits_.queue_timeout;
+  // Publishing may allocate. Charge resources only once it succeeds, while the
+  // worker is still excluded by mutex_, so an exception leaves no admission debt.
+  queue_.push_back(job);
+  if (context.track_transport)
+    job->StartTransport();
   bytes_ += job->admitted_bytes;
   tokens_ += tokens;
-  queue_.push_back(job);
   ++metrics_.submitted;
   available_.notify_all();
   return job;
@@ -394,9 +410,28 @@ ServerMetrics Coordinator::Metrics() const {
   result.backpressure = transport_->backpressure.load();
   return result;
 }
-bool Coordinator::AdmissionAvailable() const {
+AdmissionDecision Coordinator::CheckAdmissionLocked() const {
+  if (metrics_.draining)
+    return {AdmissionCause::Draining};
+  if (!metrics_.ready)
+    return {AdmissionCause::NotReady};
+  if (queue_.size() >= limits_.queued_requests)
+    return {AdmissionCause::QueueFull};
+  return {};
+}
+AdmissionDecision Coordinator::CheckAdmission() const {
   std::lock_guard lock(mutex_);
-  return metrics_.ready && !metrics_.draining && queue_.size() < limits_.queued_requests;
+  return CheckAdmissionLocked();
+}
+void Coordinator::RecordRejectionLocked(AdmissionCause cause, ApiRoute route) {
+  if (cause == AdmissionCause::None)
+    throw std::logic_error("rejection needs a cause");
+  ++metrics_.rejected;
+  ++metrics_.rejections.at(static_cast<std::size_t>(route)).at(static_cast<std::size_t>(cause));
+}
+void Coordinator::RecordRejection(AdmissionCause cause, ApiRoute route) {
+  std::lock_guard lock(mutex_);
+  RecordRejectionLocked(cause, route);
 }
 bool Coordinator::SessionCacheAvailable(const std::string &id, const std::string &owner) const {
   std::lock_guard lock(mutex_);
