@@ -28,7 +28,7 @@ function(padra_add_native_text)
       build ${cargo_options} --release --manifest-path "${text_source}/Cargo.toml"
       --target-dir "${PROJECT_BINARY_DIR}/native-text" --jobs "${PADRA_CARGO_JOBS}"
     DEPENDS "${text_source}/Cargo.toml" "${text_source}/Cargo.lock"
-      "${text_source}/src/lib.rs" "${text_source}/src/renderer.rs"
+      "${text_source}/src/lib.rs" "${text_source}/src/renderer.rs" "${text_source}/src/tests.rs"
     VERBATIM)
   add_custom_target(padra-native-text-build DEPENDS "${text_archive}")
   add_library(padra_native_text STATIC IMPORTED GLOBAL)

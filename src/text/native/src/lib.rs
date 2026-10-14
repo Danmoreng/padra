@@ -105,3 +105,6 @@ pub unsafe extern "C" fn mellum_render_chat(data: *const u8, len: usize, output:
         return_bytes(rendered.into_bytes(),output);Ok(())
     })
 }
+
+#[cfg(test)]
+mod tests;

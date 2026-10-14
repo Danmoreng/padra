@@ -28,6 +28,9 @@ Result<std::unique_ptr<Tokenizer>> Tokenizer::Load(const std::filesystem::path &
   t->sha256_ = std::string(64, '0');
   t->raw_[0] = "x";
   t->raw_[1] = "STOP";
+  t->raw_[2] = "€";
+  t->raw_[3] = "😀";
+  t->raw_[4] = "é";
   t->special_[28] = true;
   t->max_raw_ = 4;
   for (int c = 0; c < 256; ++c)

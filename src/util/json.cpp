@@ -81,11 +81,11 @@ private:
 
     switch (input_[position_]) {
     case 'n':
-      return ParseLiteral("null", Value(nullptr));
+      return ParseLiteral("null", nullptr);
     case 't':
-      return ParseLiteral("true", Value(true));
+      return ParseLiteral("true", true);
     case 'f':
-      return ParseLiteral("false", Value(false));
+      return ParseLiteral("false", false);
     case '"': {
       auto string = ParseString();
       if (!string.ok()) {
@@ -105,12 +105,12 @@ private:
     }
   }
 
-  Result<Value> ParseLiteral(std::string_view literal, Value value) {
+  template <class T> Result<Value> ParseLiteral(std::string_view literal, T value) {
     if (input_.substr(position_, literal.size()) != literal) {
       return Error("invalid literal");
     }
     position_ += literal.size();
-    return value;
+    return Value(value);
   }
 
   Result<Value> ParseArray(std::size_t depth) {

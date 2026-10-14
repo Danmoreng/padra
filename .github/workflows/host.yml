@@ -5,6 +5,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
+        compiler: [gcc, clang]
         build_type: [Debug, Release]
         native_text: ['OFF', 'ON']
         sanitizers: ['OFF', 'ON']
@@ -15,6 +16,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.89.0
         if: matrix.native_text == 'ON'
+      - name: Select compiler
+        run: |
+          if [ '${{ matrix.compiler }}' = clang ]; then
+            echo CXX=clang++-18 >> "$GITHUB_ENV"
+          else
+            echo CXX=g++-13 >> "$GITHUB_ENV"
+          fi
       - name: Configure
         run: >-
           cmake -S . -B build -G Ninja
@@ -24,6 +32,9 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
       - name: Build
         run: cmake --build build -j2
+      - name: Native tokenizer and renderer tests
+        if: matrix.native_text == 'ON'
+        run: cargo test --locked --manifest-path src/text/native/Cargo.toml --target-dir build/native-text --jobs 2
       - name: Test
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
@@ -48,3 +59,61 @@ jobs:
         run: cmake --build build -j2
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 -m venv format-venv
+          format-venv/bin/pip install clang-format==22.1.0
+          python3 tools/check_format.py --clang-format format-venv/bin/clang-format
+
+  thread-sanitizer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # TSan reserves a fixed shadow address range. Use compatible ASLR entropy
+      # on this disposable runner; failures are never retried or suppressed.
+      - run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - name: Configure separate TSan build
+        env:
+          CXX: clang++-18
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DPADRA_ENABLE_CUDA=OFF -DPADRA_ENABLE_NATIVE_TEXT=OFF
+          -DPADRA_ENABLE_TSAN=ON
+      - run: cmake --build build -j2
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build --output-on-failure
+
+  parser-fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure instrumented parser target
+        env:
+          CXX: clang++-18
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DPADRA_ENABLE_CUDA=OFF -DPADRA_ENABLE_NATIVE_TEXT=OFF
+          -DPADRA_ENABLE_SANITIZERS=ON -DPADRA_ENABLE_FUZZING=ON
+      - run: cmake --build build --target padra-parser-fuzz -j2
+      - name: Fuzz versioned corpus
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          mkdir -p build/fuzz-corpus
+          cp tests/corpus/parsers/v1/* build/fuzz-corpus/
+          build/padra-parser-fuzz -seed=1346454610 -max_len=4096 -runs=10000 build/fuzz-corpus
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: parser-fuzz-failure
+          path: |
+            crash-*
+            leak-*
+            timeout-*

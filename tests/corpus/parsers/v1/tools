@@ -1,0 +1,1 @@
+before<tool_call>{"name":"lookup","arguments":{"raw": [1, true],"text":"\"<tool_call>"}}</tool_call>after<tool_call>{"arguments":{},"name":"next"}</tool_call>

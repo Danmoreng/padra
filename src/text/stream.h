@@ -8,6 +8,9 @@ public:
   StopMatcher(std::vector<std::string> stops, std::size_t max_chunk_bytes);
   std::string_view Push(std::string_view);
   std::string_view Finish();
+  std::size_t BufferedBytes() const {
+    return pending_.size();
+  }
   bool stopped() const {
     return stopped_;
   }
@@ -29,6 +32,9 @@ public:
   explicit ThinkingParser(std::size_t max_chunk_bytes);
   ThinkingOutput Push(std::string_view);
   ThinkingOutput Finish();
+  std::size_t BufferedBytes() const {
+    return pending_.size();
+  }
   bool in_reasoning() const {
     return phase_ == Phase::Reasoning;
   }

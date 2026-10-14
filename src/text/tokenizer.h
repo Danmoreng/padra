@@ -26,7 +26,7 @@ public:
 
 private:
   Tokenizer() = default;
-  void *handle_ = nullptr;
+  [[maybe_unused]] void *handle_ = nullptr;
   std::vector<std::string> raw_;
   std::vector<bool> special_;
   std::size_t max_raw_ = 0;
@@ -40,6 +40,9 @@ public:
   explicit StreamDecoder(const Tokenizer &, bool skip_special = true);
   std::string_view Push(int id);
   std::string_view Finish();
+  std::size_t BufferedBytes() const {
+    return pending_.size();
+  }
 
 private:
   std::string_view Process(bool final);

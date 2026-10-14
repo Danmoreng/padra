@@ -50,6 +50,12 @@ public:
   bool incomplete() const {
     return inside_;
   }
+  std::size_t BufferedBytes() const {
+    std::size_t bytes = held_size_;
+    for (const auto &raw : raw_)
+      bytes += raw.size();
+    return bytes;
+  }
   std::string_view raw(std::size_t i) const {
     return raw_[i];
   }

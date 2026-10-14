@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import subprocess
+import re
 
 VERSION = '22.1.0'
 parser = argparse.ArgumentParser(description=__doc__)
@@ -10,7 +11,7 @@ parser.add_argument('--clang-format', default='clang-format')
 args = parser.parse_args()
 root = Path(__file__).resolve().parent.parent
 version = subprocess.check_output([args.clang_format, '--version'], text=True)
-if f'version {VERSION}' not in version:
+if not re.search(r'\bversion ' + re.escape(VERSION) + r'(?:\s|$)', version):
     raise SystemExit(f'Expected clang-format {VERSION}, got {version.strip()}')
 files = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
 files = [f for f in files if f.startswith(('src/', 'include/', 'tests/'))
