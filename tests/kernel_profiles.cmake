@@ -24,3 +24,5 @@ check_profile(named-exact exact-fusions-v1 -DPADRA_KERNEL_PROFILE=exact-fusions-
 check_profile(named-baseline baseline-v1 -DPADRA_KERNEL_PROFILE=baseline-v1)
 check_profile(unknown reject -DPADRA_KERNEL_PROFILE=unknown)
 check_profile(conflict reject -DPADRA_KERNEL_PROFILE=baseline-v1 -DPADRA_EXL3_PREFILL_ASYNC64=ON)
+check_profile(prefill-global global-dataflow-v1 -DPADRA_PREFILL_PROFILE=global-dataflow-v1)
+check_profile(prefill-unknown reject -DPADRA_PREFILL_PROFILE=unknown)

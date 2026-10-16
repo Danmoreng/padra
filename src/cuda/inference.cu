@@ -1,5 +1,6 @@
 // Experimental fully resident Mellum forward with explicit activation/dispatch profiles.
 #include "runtime/inference.h"
+#include "runtime/build_identity.h"
 #include "runtime/native_artifacts.h"
 #include "runtime/server_memory.h"
 #include "runtime/chunk_graph_contract.h"
@@ -1853,6 +1854,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           ";prefill-dataflow=unchanged-G3-operations/keys/"
           "values,QK-complete-barrier-before-singleK-overwrite,padded-shared-stride136";
     }
+#if PADRA_PREFILL_GLOBAL_DATAFLOW
+    if (o.padded_bf16_prefill_attention || q8Native) {
+      result.kernel_profile += "+prefill-global-direct-address-unit-alpha-v1";
+      result.math_profile += ";exact-global-dataflow=direct-prefix-address/warp-unit-alpha-skip";
+    }
+#endif
     if (o.gqa8_prefill_attention) {
       const std::string old = "prefill-online-bf16-m32n32-d128-group4-cta8-v1";
       const auto pos = result.kernel_profile.find(old);
@@ -3513,7 +3520,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
               ChunkGraphKey key{
                   model.weights_sha256,
                   compiler::Sha256Hex(result.math_profile.data(), result.math_profile.size()),
-                  __DATE__ " " __TIME__ "/SM120",
+                  std::string(kPadraBuildSourceSha256) + "/" + kPadraBuildKernelProfile + "/" +
+                      kPadraBuildPrefillProfile + "/SM120",
                   KVCacheLayout::Make(o.kv_cache_format, 1).name(),
                   o.capacity,
                   batch,

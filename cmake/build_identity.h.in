@@ -2,5 +2,6 @@
 namespace mellum16 {
 inline constexpr char kPadraBuildVersion[]="@PROJECT_VERSION@";
 inline constexpr char kPadraBuildKernelProfile[]="@PADRA_ACTIVE_KERNEL_PROFILE@";
+inline constexpr char kPadraBuildPrefillProfile[]="@PADRA_PREFILL_PROFILE@";
 inline constexpr char kPadraBuildSourceSha256[]="@PADRA_BUILD_SOURCE_SHA256@";
 }

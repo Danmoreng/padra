@@ -77,7 +77,7 @@ struct Graph {
 struct Options {
   int base = 1024, tokens = 8, capacity = 131072, repeats = 7, warmup = 3;
   bool local = false, round = false, graph = false, poison = false;
-  std::string fixture, dump;
+  std::string fixture, dump, variant = "baseline";
 };
 Options Parse(int argc, char **argv) {
   Options o;
@@ -114,6 +114,8 @@ Options Parse(int argc, char **argv) {
         o.warmup = integer(v);
       else if (key == "--fixture")
         o.fixture = v;
+      else if (key == "--variant")
+        o.variant = v;
       else if (key == "--dump-fixture")
         o.dump = v;
       else
@@ -124,7 +126,33 @@ Options Parse(int argc, char **argv) {
       o.base > o.capacity - o.tokens || o.repeats < 1 || o.repeats > 100 || o.warmup < 1 ||
       o.warmup > 100)
     throw std::runtime_error("inadmissible attention shape/repetitions");
+  if (o.variant != "baseline" && o.variant != "address" && o.variant != "alpha" &&
+      o.variant != "address-alpha")
+    throw std::runtime_error("unknown attention variant");
   return o;
+}
+template <class Action> void VisitVariant(const Options &o, Action action) {
+  const auto visit = [&]<bool Local, bool Round>() {
+    if (o.variant == "address")
+      action.template operator()<Local, Round, true, false>();
+    else if (o.variant == "alpha")
+      action.template operator()<Local, Round, false, true>();
+    else if (o.variant == "address-alpha")
+      action.template operator()<Local, Round, true, true>();
+    else
+      action.template operator()<Local, Round, false, false>();
+  };
+  if (o.local) {
+    if (o.round)
+      visit.template operator()<true, true>();
+    else
+      visit.template operator()<true, false>();
+  } else {
+    if (o.round)
+      visit.template operator()<false, true>();
+    else
+      visit.template operator()<false, false>();
+  }
 }
 template <class T>
 void Fixture(std::vector<T> &v, const std::string &input, const std::string &output,
@@ -261,41 +289,35 @@ int main(int argc, char **argv) {
     Check(cudaMemset(bad.pointer, 0, 4));
     const dim3 grid((o.tokens + 7) / 8, 4);
     auto launch = [&](bool frozen) {
-      const auto run = [&]<bool Local, bool Round>() {
+      const auto run = [&]<bool Local, bool Round, bool Direct, bool Skip>() {
         if (frozen)
           frozen_prefill_attention::PipelineBF16<Local, Round><<<grid, 128, 0, stream.value>>>(
               dq.As<float>(), dk.As<__nv_bfloat16>(), dv.As<__nv_bfloat16>(),
               dck.As<__nv_bfloat16>(), dcv.As<__nv_bfloat16>(), dout.As<float>(), o.base, o.tokens,
               cap, bad.As<int>(), state.As<PrefillState>(), o.capacity);
         else
-          padded_single_prefill_attention::PipelineBF16<Local, Round>
+          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip>
               <<<grid, 128, 0, stream.value>>>(
                   dq.As<float>(), dk.As<__nv_bfloat16>(), dv.As<__nv_bfloat16>(),
                   dck.As<__nv_bfloat16>(), dcv.As<__nv_bfloat16>(), dout.As<float>(), o.base,
                   o.tokens, cap, bad.As<int>(), state.As<PrefillState>(), o.capacity);
       };
-      if (o.local) {
-        if (o.round)
-          run.template operator()<true, true>();
-        else
-          run.template operator()<true, false>();
-      } else {
-        if (o.round)
-          run.template operator()<false, true>();
-        else
-          run.template operator()<false, false>();
-      }
+      VisitVariant(o, run);
       Check(cudaGetLastError());
     };
     launch(true);
     Check(cudaStreamSynchronize(stream.value));
     Check(cudaMemcpy(ref.data(), dout.pointer, nq * 4, cudaMemcpyDeviceToHost));
-    Graph graph;
+    Graph graph, control;
     if (o.graph) {
       Check(cudaStreamBeginCapture(stream.value, cudaStreamCaptureModeThreadLocal));
       launch(false);
       Check(cudaStreamEndCapture(stream.value, &graph.graph));
       Check(cudaGraphInstantiate(&graph.exec, graph.graph, 0));
+      Check(cudaStreamBeginCapture(stream.value, cudaStreamCaptureModeThreadLocal));
+      launch(true);
+      Check(cudaStreamEndCapture(stream.value, &control.graph));
+      Check(cudaGraphInstantiate(&control.exec, control.graph, 0));
     }
     auto run = [&] {
       if (o.graph)
@@ -303,20 +325,39 @@ int main(int argc, char **argv) {
       else
         launch(false);
     };
-    for (int i = 0; i < o.warmup; ++i)
+    const auto run_control = [&] {
+      if (o.graph)
+        Check(cudaGraphLaunch(control.exec, stream.value));
+      else
+        launch(true);
+    };
+    for (int i = 0; i < o.warmup; ++i) {
       run();
+      run_control();
+    }
     Check(cudaStreamSynchronize(stream.value));
     Event start, stop;
-    std::vector<float> ms;
-    for (int i = 0; i < o.repeats; ++i) {
+    std::vector<float> ms, control_ms;
+    const auto measure = [&](auto action, std::vector<float> &values) {
       Check(cudaEventRecord(start.value, stream.value));
-      run();
+      action();
       Check(cudaEventRecord(stop.value, stream.value));
       Check(cudaEventSynchronize(stop.value));
       float elapsed = 0;
       Check(cudaEventElapsedTime(&elapsed, start.value, stop.value));
-      ms.push_back(elapsed);
+      values.push_back(elapsed);
+    };
+    for (int i = 0; i < o.repeats; ++i) {
+      if (i % 2) {
+        measure(run_control, control_ms);
+        measure(run, ms);
+      } else {
+        measure(run, ms);
+        measure(run_control, control_ms);
+      }
     }
+    run();
+    Check(cudaStreamSynchronize(stream.value));
     Check(cudaMemcpy(actual.data(), dout.pointer, nq * 4, cudaMemcpyDeviceToHost));
     int failed = 0;
     Check(cudaMemcpy(&failed, bad.pointer, 4, cudaMemcpyDeviceToHost));
@@ -330,25 +371,16 @@ int main(int argc, char **argv) {
     Check(cudaRuntimeGetVersion(&runtime));
     cudaFuncAttributes attributes{};
     int active_blocks = 0;
-    const auto resources = [&]<bool Local, bool Round>() {
-      Check(cudaFuncGetAttributes(&attributes,
-                                  padded_single_prefill_attention::PipelineBF16<Local, Round>));
+    const auto resources = [&]<bool Local, bool Round, bool Direct, bool Skip>() {
+      Check(cudaFuncGetAttributes(
+          &attributes, padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip>));
       Check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-          &active_blocks, padded_single_prefill_attention::PipelineBF16<Local, Round>, 128, 0));
+          &active_blocks, padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip>,
+          128, 0));
     };
-    if (o.local) {
-      if (o.round)
-        resources.template operator()<true, true>();
-      else
-        resources.template operator()<true, false>();
-    } else {
-      if (o.round)
-        resources.template operator()<false, true>();
-      else
-        resources.template operator()<false, false>();
-    }
+    VisitVariant(o, resources);
     std::cout << "{\"fixture_sha256\":" << mellum16::json::Quote(hash.HexDigest())
-              << ",\"build_source_sha256\":"
+              << ",\"variant\":" << mellum16::json::Quote(o.variant) << ",\"build_source_sha256\":"
               << mellum16::json::Quote(mellum16::kPadraBuildSourceSha256)
               << ",\"benchmark_source_sha256\":"
               << mellum16::json::Quote(PADRA_ATTENTION_BENCH_SHA256) << ",\"nvcc\":\""
@@ -370,6 +402,9 @@ int main(int argc, char **argv) {
               << ",\"milliseconds\":[";
     for (std::size_t i = 0; i < ms.size(); ++i)
       std::cout << (i ? "," : "") << ms[i];
+    std::cout << "],\"control_milliseconds\":[";
+    for (std::size_t i = 0; i < control_ms.size(); ++i)
+      std::cout << (i ? "," : "") << control_ms[i];
     std::cout << "]}\n";
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

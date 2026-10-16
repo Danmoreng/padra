@@ -44,3 +44,19 @@ use an independent scalar FP64 softmax oracle with BF16 operands. Its tolerance
 is `0.002 + 0.02*abs(reference)` because production rounds intermediate
 unnormalized probabilities to BF16. This catches indexing/mask errors separately
 from frozen bitwise checks; it does not qualify downstream model quality.
+
+## Exact global dataflow selection
+
+`PADRA_PREFILL_PROFILE=baseline-v1` is the default. The opt-in
+`global-dataflow-v1` build uses direct global-prefix addressing and a warp-uniform
+unit-alpha fast path. Local ring addressing, softmax denominator updates,
+probability rounding, output rounding and decode kernels retain their contracts.
+No extra device workspace is allocated. Build/profile identity and kernel labels
+identify the selected path; captured graph identity includes source and profile.
+
+The benchmark's `--variant` selects `baseline`, `address`, `alpha`, or
+`address-alpha` independently of the server build selection. Every variant is
+checked against the frozen control. Warmed timing alternates control/candidate
+order and reports both raw arrays (`control_milliseconds`, `milliseconds`).
+Compare representative shapes and downstream model results before changing a
+runtime default; an isolated-kernel result is not an application speed claim.

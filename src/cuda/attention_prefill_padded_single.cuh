@@ -2,6 +2,9 @@
 // One K buffer:prefetch begins only after all currentQK reads finish and CTA sync.
 // Native N4b BF16 MMA/FP32 softmax/rounded-P/output boundaries retained;
 // head-position mapping, register Q and K/V prefetch adapted from pinned llama.
+#ifndef PADRA_PREFILL_GLOBAL_DATAFLOW
+#define PADRA_PREFILL_GLOBAL_DATAFLOW 0
+#endif
 namespace padded_single_prefill_attention {
 constexpr int kThreads = 128, kRows = 8, kHeads = 8, kKeys = 32, kDim = 128, kStride = 136;
 __device__ __forceinline__ float GroupMax(float x) {
@@ -28,13 +31,15 @@ __device__ __forceinline__ float KV(const __nv_bfloat16 *cache, const float *chu
 // Scheduling reference: llama.cpp MIT, pin10a60cf fattn-mma-f16.cuh
 // register-resident Q + asynchronous K/V stages; ported to BF16 with explicit
 // old-cache versus float-backed current chunk and pre-load visibility checks.
+template <bool Local, bool DirectGlobalAddress>
 __device__ __forceinline__ void Stage(__nv_bfloat16 *target, const __nv_bfloat16 *cache,
                                       const __nv_bfloat16 *chunk, int keyBase, int first, int last,
                                       int base, int cap, int kvhead) {
   for (int i = threadIdx.x; i < kKeys * kDim / 8; i += kThreads) {
     const int key = keyBase + i / (kDim / 8), d = (i % (kDim / 8)) * 8;
     const bool valid = key >= first && key <= last;
-    const auto src = valid ? (key < base ? cache + (key % cap) * 512 + kvhead * kDim + d
+    const int slot = DirectGlobalAddress && !Local ? key : key % cap;
+    const auto src = valid ? (key < base ? cache + slot * 512 + kvhead * kDim + d
                                          : chunk + (key - base) * 512 + kvhead * kDim + d)
                            : cache;
     asm volatile("cp.async.ca.shared.global [%0], [%1], 16, %2;" ::"r"(
@@ -47,7 +52,8 @@ __device__ __forceinline__ void Stage(__nv_bfloat16 *target, const __nv_bfloat16
 __device__ __forceinline__ void Wait() {
   asm volatile("cp.async.wait_group 0;" ::: "memory");
 }
-template <bool Local, bool RoundOutput = true>
+template <bool Local, bool RoundOutput = true, bool DirectGlobalAddress = false,
+          bool SkipUnitAlpha = false>
 __launch_bounds__(kThreads, 2) __global__
     void PipelineBF16(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc,
                       const __nv_bfloat16 *chunkK, const __nv_bfloat16 *chunkV, float *output,
@@ -94,13 +100,13 @@ __launch_bounds__(kThreads, 2) __global__
     }
   }
   const int initial = (first / kKeys) * kKeys;
-  Stage(keys[0], kc, chunkK, initial, first, last, base, cap, kvhead);
+  Stage<Local, DirectGlobalAddress>(keys[0], kc, chunkK, initial, first, last, base, cap, kvhead);
   Wait();
   __syncthreads();
   float accum[16][4] = {};
   float maximum[2] = {-INFINITY, -INFINITY}, sum[2] = {0, 0};
   for (int keyBase = initial, stage = 0; keyBase <= last; keyBase += kKeys) {
-    Stage(values, vc, chunkV, keyBase, first, last, base, cap, kvhead);
+    Stage<Local, DirectGlobalAddress>(values, vc, chunkV, keyBase, first, last, base, cap, kvhead);
     float scores[4][4] = {};
 #pragma unroll
     for (int k = 0; k < kDim; k += 16) {
@@ -117,7 +123,8 @@ __launch_bounds__(kThreads, 2) __global__
     Wait();
     __syncthreads();
     if (keyBase + kKeys <= last)
-      Stage(keys[0], kc, chunkK, keyBase + kKeys, first, last, base, cap, kvhead);
+      Stage<Local, DirectGlobalAddress>(keys[0], kc, chunkK, keyBase + kKeys, first, last, base,
+                                        cap, kvhead);
     float blockMaximum[2] = {-INFINITY, -INFINITY};
 #pragma unroll
     for (int tile = 0; tile < 4; ++tile) {
@@ -155,11 +162,16 @@ __launch_bounds__(kThreads, 2) __global__
 #pragma unroll
     for (int r = 0; r < 2; ++r)
       sum[r] = fmaf(sum[r], alpha[r], blockSum[r]);
+    bool rescale = true;
+    if constexpr (SkipUnitAlpha)
+      rescale = !__all_sync(0xffffffff, alpha[0] == 1.f && alpha[1] == 1.f);
+    if (rescale) {
 #pragma unroll
-    for (int tile = 0; tile < 16; ++tile) {
+      for (int tile = 0; tile < 16; ++tile) {
 #pragma unroll
-      for (int j = 0; j < 4; ++j)
-        accum[tile][j] *= alpha[j / 2];
+        for (int j = 0; j < 4; ++j)
+          accum[tile][j] *= alpha[j / 2];
+      }
     }
 #pragma unroll
     for (int step = 0; step < 2; ++step) {
@@ -220,7 +232,8 @@ void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, co
     PipelineBF16<true, RoundOutput><<<grid, kThreads, 0, stream>>>(
         q, kc, vc, packedK, packedV, output, base, tokens, cap, bad, prefill, context_limit);
   else
-    PipelineBF16<false, RoundOutput><<<grid, kThreads, 0, stream>>>(
+    PipelineBF16<false, RoundOutput, PADRA_PREFILL_GLOBAL_DATAFLOW != 0,
+                 PADRA_PREFILL_GLOBAL_DATAFLOW != 0><<<grid, kThreads, 0, stream>>>(
         q, kc, vc, packedK, packedV, output, base, tokens, cap, bad, prefill, context_limit);
 }
 } // namespace padded_single_prefill_attention
