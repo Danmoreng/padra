@@ -26,3 +26,6 @@ check_profile(unknown reject -DPADRA_KERNEL_PROFILE=unknown)
 check_profile(conflict reject -DPADRA_KERNEL_PROFILE=baseline-v1 -DPADRA_EXL3_PREFILL_ASYNC64=ON)
 check_profile(prefill-global global-dataflow-v1 -DPADRA_PREFILL_PROFILE=global-dataflow-v1)
 check_profile(prefill-unknown reject -DPADRA_PREFILL_PROFILE=unknown)
+
+check_profile(prefill-matrix global-matrix-v1 -DPADRA_PREFILL_PROFILE=global-matrix-v1)
+check_profile(prefill-split global-matrix-split-v1 -DPADRA_PREFILL_PROFILE=global-matrix-split-v1)

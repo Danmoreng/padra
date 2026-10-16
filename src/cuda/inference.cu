@@ -1048,10 +1048,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             reinterpret_cast<const void *>(fast_attention::MergeOnlineDecodeBF16<false>)})
         Check(cudaFuncGetAttributes(&attributes, kernel));
     if (o.padded_bf16_prefill_attention)
-      for (const auto kernel :
-           {reinterpret_cast<const void *>(padded_single_prefill_attention::PipelineBF16<true>),
-            reinterpret_cast<const void *>(padded_single_prefill_attention::PipelineBF16<false>),
-            reinterpret_cast<const void *>(padded_single_prefill_attention::EncodeChunk)})
+      for (const auto kernel : padded_single_prefill_attention::SelectedKernels<true>())
         Check(cudaFuncGetAttributes(&attributes, kernel));
     if (o.packed_bf16_prefill_attention)
       for (const auto kernel :
@@ -1134,11 +1131,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             reinterpret_cast<const void *>(q8_native::DequantizePrefix<PrefillState>),
             reinterpret_cast<const void *>(q8_native::Commit<PrefillState>),
             reinterpret_cast<const void *>(q8_native::RotateRows<false>),
-            reinterpret_cast<const void *>(q8_native::RotateRows<true>),
-            reinterpret_cast<const void *>(
-                padded_single_prefill_attention::PipelineBF16<false, false>),
-            reinterpret_cast<const void *>(
-                padded_single_prefill_attention::PipelineBF16<true, false>)})
+            reinterpret_cast<const void *>(q8_native::RotateRows<true>)})
+        Check(cudaFuncGetAttributes(&attributes, kernel));
+    if (q8Native)
+      for (const auto kernel : padded_single_prefill_attention::SelectedKernels<false>())
         Check(cudaFuncGetAttributes(&attributes, kernel));
     if (q8Native) {
       Check(cudaFuncSetAttribute(q8_native::Split<false>,
@@ -1364,6 +1360,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
             ? admission::Bytes(batch, 512 * 2 * sizeof(__nv_bfloat16))
             : 0;
+    const auto prefillPartialBytes = PrefillPartialBytes(batch);
     const auto q8NativePrefixBytes = q8Native ? admission::Bytes(o.capacity, 2048) : 0;
     const auto q8NativeQueryBytes = q8Native ? 128 * sizeof(q8_native::QueryBlock) : 0;
     const std::size_t checkpointBytes =
@@ -1386,6 +1383,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         o.exl3_experts ? admission::Bytes(batch, 8 * 2304 * (o.exl3_prefill_fp16 ? 6 : 8)) : 0;
     const auto plannedResident =
         admission::Sum({checkpointBytes,
+                        prefillPartialBytes,
                         q8NativePrefixBytes,
                         q8NativeQueryBytes,
                         packedChunkBytes,
@@ -1447,6 +1445,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             (r.attention ? model.diagnostic_attention.data() : model.weights.data()) +
                 r.source_offset,
             r.bytes, cudaMemcpyHostToDevice, stream.s));
+    Buffer prefillPartials(prefillPartialBytes);
     Buffer packedChunk(packedChunkBytes);
     auto *packedChunkK = packedChunk.As<__nv_bfloat16>();
     auto *packedChunkV = o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
@@ -1860,6 +1859,17 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       result.math_profile += ";exact-global-dataflow=direct-prefix-address/warp-unit-alpha-skip";
     }
 #endif
+#if PADRA_PREFILL_MATRIX_LOAD
+    if (o.padded_bf16_prefill_attention || q8Native)
+      result.kernel_profile += "+prefill-global-ldmatrix-k32-v1";
+#endif
+#if PADRA_PREFILL_SPLIT_KV
+    if (o.padded_bf16_prefill_attention || q8Native) {
+      result.kernel_profile += "+prefill-global-split4-small-chunk-v1";
+      result.math_profile +=
+          ";global-splitKV=4-if-T<=512-and-base>=8192/FP32-stable-merge/partition-relative-BF16-P";
+    }
+#endif
     if (o.gqa8_prefill_attention) {
       const std::string old = "prefill-online-bf16-m32n32-d128-group4-cta8-v1";
       const auto pos = result.kernel_profile.find(old);
@@ -2022,6 +2032,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           "selected-BF16-MMA-softmax-order;encoding-inclusive";
     }
     result.resident_buffer_bytes = admission::Sum({checkpointBuffer.bytes,
+                                                   prefillPartials.bytes,
                                                    q8NativePrefix.bytes,
                                                    q8NativeQuery.bytes,
                                                    packedChunk.bytes,
@@ -3276,7 +3287,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
               q8_native::RotateRows<false><<<n * 8, 128, 0, stream.s>>>(bq, n, bad.As<int>());
               padded_single_prefill_attention::Launch<false>(
                   bq, q8PrefixK, q8PrefixV, bk, bv, ba, base, n, a.cap, l % 4 != 3, bad.As<int>(),
-                  stream.s, packedChunkK, packedChunkV, prefill, contextMaximum);
+                  stream.s, packedChunkK, packedChunkV, prefill, contextMaximum,
+                  prefillPartials.As<float>());
               q8_native::RotateRows<true><<<n * 8, 128, 0, stream.s>>>(ba, n, bad.As<int>());
             } else if (q8Cache) {
               kv_q8::Encode<false><<<n, 128, 0, stream.s>>>(
@@ -3293,7 +3305,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             } else if (o.padded_bf16_prefill_attention) {
               padded_single_prefill_attention::Launch(
                   bq, a.kc, a.vc, bk, bv, ba, base, n, a.cap, l % 4 != 3, bad.As<int>(), stream.s,
-                  packedChunkK, packedChunkV, prefill, contextMaximum);
+                  packedChunkK, packedChunkV, prefill, contextMaximum, prefillPartials.As<float>());
             } else if (o.packed_bf16_prefill_attention) {
               packed_prefill_attention::Launch(bq, a.kc, a.vc, bk, bv, ba, base, n, a.cap,
                                                l % 4 != 3, bad.As<int>(), stream.s, packedChunkK,

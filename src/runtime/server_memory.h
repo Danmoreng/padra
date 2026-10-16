@@ -3,6 +3,7 @@
 #include <map>
 #include <string>
 #include "size_checked.h"
+#include "prefill_profile.h"
 #include "kv_cache_layout.h"
 #include "exl3_masked_schedule.h"
 #include "kv_checkpoint.h"
@@ -53,6 +54,7 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
   add("prompt", admission::Bytes(persistent ? capacity : prompt, 4));
   add("device_state", 32);
   add("attention_placeholders", 6);
+  add("prefill_partials", PrefillPartialBytes(batch));
   add("attention_scratch",
       admission::Bytes(std::min((capacity + 31) / 32, 32), 32 * (128 + 1) * 4));
   const auto compact = std::min((batch * 8 + 15) / 16 + 63, 64 * ((batch + 15) / 16));

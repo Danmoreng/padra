@@ -60,3 +60,33 @@ checked against the frozen control. Warmed timing alternates control/candidate
 order and reports both raw arrays (`control_milliseconds`, `milliseconds`).
 Compare representative shapes and downstream model results before changing a
 runtime default; an isolated-kernel result is not an application speed claim.
+
+## Tile and partition controls
+
+The operator harness additionally supports `ldmatrix`, `split2`, `split4` and
+`matrix-adaptive`. Split variants change the partition maximum and BF16
+probability rounding. They require finite
+outputs within `0.002 + 0.02*abs(frozen)` and the small-shape FP64 oracle bound.
+ULP and RMS differences are reported as diagnostics. Exact address, unit-alpha
+and K32 `ldmatrix` controls require bitwise equality. A separate fragment test
+compares every QK/PV fragment bit before any timing. These operator bounds do not
+replace downstream logit, routing or task-quality qualification.
+
+`--capture-base 0 --base 129024 --graph` replays the same captured graph at both
+prefixes, with independently computed controls. The capacity and active query
+count stay fixed. This exercises device-driven prefix and partition selection.
+
+The server build profile `global-matrix-v1` retains K32 arithmetic with exact
+fragment loads. `global-matrix-split-v1` also selects four partitions for global
+chunks of at most 512 queries once the device prefix reaches 8192. Earlier
+prefixes and larger chunks retain unsplit K32 arithmetic. Local attention and
+native Q8 decode retain their existing kernels. This split profile has a distinct
+arithmetic identity; it is an explicit selection, not the default.
+
+Split workspace is admitted and allocated before execution: at most
+`min(chunk,512) * 32 * 4 * 130 * sizeof(float)`, or 32.5 MiB. Each partition stores
+128 unnormalized FP32 values plus one complete maximum and denominator per
+query/head. Empty partitions use `(-infinity,0,zero)`. The final stable merge
+applies output rounding once. Prefix selection reads `PrefillState` on replay;
+no capture-time prefix length determines the partitioning. Source, build profile
+and arithmetic identity distinguish the graph cache entries.

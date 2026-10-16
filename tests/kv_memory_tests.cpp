@@ -56,6 +56,8 @@ int main() {
     Require(native.buffers.at("kv") == std::size_t(7 * 131072 + 21 * 1024) * 1088);
     Require(native.buffers.at("q8_0_prefix_workspace") == 131072ULL * 2048);
     Require(native.buffers.at("q8_0_query") == 128 * 36 && native.Fits(ceiling));
+    Require(native.buffers.at("prefill_partials") == PrefillPartialBytes(256));
+    Require(PrefillPartialBytes(2048) == (PADRA_PREFILL_SPLIT_KV ? 512ULL * 32 * 4 * 130 * 4 : 0));
     const auto layout =
         KVCacheLayout::Make(KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2, 131072);
     Require(layout.v_offset == 131072ULL * 544 && layout.bytes == 131072ULL * 1088);
