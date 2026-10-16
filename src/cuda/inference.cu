@@ -688,6 +688,17 @@ struct Buffer {
     return static_cast<T *>(p);
   }
 };
+struct TimingEvent {
+  cudaEvent_t value = nullptr;
+  TimingEvent() {
+    Check(cudaEventCreate(&value));
+  }
+  ~TimingEvent() {
+    if (value)
+      cudaEventDestroy(value);
+  }
+  TimingEvent(const TimingEvent &) = delete;
+};
 struct Stream {
   cudaStream_t s = nullptr;
   Stream() {
@@ -1435,6 +1446,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                         " chunk=" + std::to_string(o.prefill_chunk) +
                         " capacity=" + std::to_string(o.capacity));
     Stream stream;
+    TimingEvent promptStarted, promptLogitsReady;
     Buffer arena(static_cast<std::size_t>(weightsbytes));
     Buffer deviceState(o.device_decode ? sizeof(DecodeState) : 4);
     if (model.uploads.empty())
@@ -2191,6 +2203,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         }
       }
       auto initialized = std::chrono::steady_clock::now();
+      bool promptLogitsRecorded = false;
+      result.prompt_forward_stream_seconds = 0;
+      Check(cudaEventRecord(promptStarted.value, stream.s));
       result.initialization_seconds = std::chrono::duration<double>(initialized - begin).count();
       auto prefill_finished = initialized, last_token_ready = initialized;
       int generated = 0, executed = 0, token = o.input_ids[0];
@@ -2659,6 +2674,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                          SamplingOptions fixed = {}) {
         Norm<<<1, 128, 0, stream.s>>>(x, normalized, norm, 2304, 1);
         project(head, normalized, logits);
+        if (initialize) {
+          Check(cudaEventRecord(promptLogitsReady.value, stream.s));
+          promptLogitsRecorded = true;
+        }
         if (sampled && fixed.stochastic())
           gpu_sampling::Launch(logits, sampleAdjusted, sampleSorted, sampleIds, sampleSortedIds,
                                sampleCumulative, sampleState, control.As<Control>(), bad.As<int>(),
@@ -2986,6 +3005,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         result.decode_setup_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - setup).count();
         initialized = std::chrono::steady_clock::now();
+        Check(cudaEventRecord(promptStarted.value, stream.s));
         prefill_finished = initialized;
         last_token_ready = initialized;
         result.initialization_seconds = std::chrono::duration<double>(initialized - begin).count();
@@ -3586,6 +3606,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           if (worker->dropped)
             continue;
           initialized = prefill_finished = last_token_ready = std::chrono::steady_clock::now();
+          Check(cudaEventRecord(promptStarted.value, stream.s));
           result.initialization_seconds = loadSeconds;
           if (worker->cancel.load()) {
             result.cancelled = true;
@@ -3653,6 +3674,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           result.prefill_setup_seconds =
               std::chrono::duration<double>(std::chrono::steady_clock::now() - setup).count();
           initialized = std::chrono::steady_clock::now();
+          Check(cudaEventRecord(promptStarted.value, stream.s));
           prefill_finished = initialized;
           last_token_ready = initialized;
           result.initialization_seconds =
@@ -3666,6 +3688,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
               continue;
             result.initialization_seconds = loadSeconds;
             initialized = prefill_finished = last_token_ready = std::chrono::steady_clock::now();
+            Check(cudaEventRecord(promptStarted.value, stream.s));
             if (worker->cancel.load()) {
               result.cancelled = true;
               result.generated_ids.clear();
@@ -3714,6 +3737,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       Check(cudaStreamSynchronize(stream.s));
       result.prefill_tokens = static_cast<int>(o.input_ids.size());
       result.decode_steps = executed - result.prefill_tokens;
+      if (promptLogitsRecorded) {
+        float milliseconds = 0;
+        Check(cudaEventElapsedTime(&milliseconds, promptStarted.value, promptLogitsReady.value));
+        result.prompt_forward_stream_seconds = double(milliseconds) / 1000.;
+      }
       result.prefill_seconds =
           std::chrono::duration<double>(prefill_finished - initialized).count();
       if (result.decode_steps > 0)

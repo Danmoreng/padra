@@ -132,6 +132,9 @@ struct InferenceResult {
   std::string prefill_execution = "stream";
   bool cancelled = false;
   int prefill_tokens = 0, decode_steps = 0;
+  // CUDA stream elapsed time through the final prompt logits, before selection.
+  // Kept separate from wall-clock TTFT/prefill and N-1 decode measurements.
+  double prompt_forward_stream_seconds = 0;
   std::uint64_t weights_bytes = 0, kv_bytes = 0, resident_buffer_bytes = 0;
   std::uint64_t device_free_before = 0, device_free_after_initialization = 0,
                 device_free_after_execution = 0;

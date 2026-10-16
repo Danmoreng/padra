@@ -5,6 +5,13 @@ Configure a CUDA build with `-DPADRA_ENABLE_ATTENTION_BENCH=ON`, then build the
 compares the active padded BF16 attention kernel with a frozen K32 control from
 engine commit `61851c0` on identical post-RoPE Q and old/current-chunk K/V.
 
+Fresh server builds select `PADRA_PREFILL_PROFILE=global-matrix-v1`,
+`PADRA_Q8_PREFILL_PROFILE=packed-chunk-v1` and
+`PADRA_EXL3_PREFILL_TRANSPORT=async64-v1`. These preserve the existing arithmetic
+and leave `PADRA_KERNEL_PROFILE=baseline-v1` as the decode profile. Existing CMake
+caches retain their configured selections. Split-KV requires an explicit
+`global-matrix-split-v1` selection because it changes probability rounding.
+
 ```sh
 python tools/attention_bench.py --binary BUILD/padra-attention-bench \
   --output RESULT.json -- --base 65536 --tokens 256 --capacity 131072 --graph
@@ -47,9 +54,9 @@ from frozen bitwise checks; it does not qualify downstream model quality.
 
 ## Exact global dataflow selection
 
-`PADRA_PREFILL_PROFILE=baseline-v1` is the default. The opt-in
-`global-dataflow-v1` build uses direct global-prefix addressing and a warp-uniform
-unit-alpha fast path. Local ring addressing, softmax denominator updates,
+`PADRA_PREFILL_PROFILE=baseline-v1` selects the frozen arithmetic/dataflow control.
+The opt-in `global-dataflow-v1` build uses direct global-prefix addressing and a
+warp-uniform unit-alpha fast path. Local ring addressing, softmax denominator updates,
 probability rounding, output rounding and decode kernels retain their contracts.
 No extra device workspace is allocated. Build/profile identity and kernel labels
 identify the selected path; captured graph identity includes source and profile.
@@ -113,7 +120,16 @@ included in build and graph identity.
 for EXL3 K4 prefill at four or more tokens. It preserves sequential K16 MMA order
 and BF16 boundaries. K3/K6 and smaller requests retain their existing codec
 paths. Gate and up inputs retain their separate matrix-specific transforms.
-The default `baseline-v1` retains the packed-activation transport control.
+`baseline-v1` retains the packed-activation transport control.
 This selection changes no decode fusion flags and allocates no additional
 persistent workspace. `PADRA_KERNEL_PROFILE` continues to select decode fusions
 independently. Build and graph identity include the prefill transport selection.
+
+## Timing boundaries
+
+`InferenceResult.prompt_forward_stream_seconds` measures CUDA-stream elapsed time
+from the generation boundary through final prompt logits, before token selection.
+It is separate from wall-clock `prefill_seconds`, which includes selection and
+control transfer, and from external time to first token. `decode_seconds` covers
+the subsequent N-1 token steps. These ranges are alternatives, not additive GPU
+and CPU costs. Preparation/graph construction is reported separately.

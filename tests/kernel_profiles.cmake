@@ -40,3 +40,7 @@ file(READ "${PADRA_TEST_BINARY}/exl3-independent/generated/runtime/build_identit
 if(NOT independent_identity MATCHES "kPadraBuildKernelProfile\\[\\]=\"baseline-v1\"")
   message(FATAL_ERROR "independent EXL3 prefill transport changed the decode profile")
 endif()
+
+check_profile(prefill-default global-matrix-v1)
+check_profile(q8-default packed-chunk-v1)
+check_profile(exl3-default async64-v1)
