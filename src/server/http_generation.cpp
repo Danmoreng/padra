@@ -109,9 +109,10 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
     }
     spec->chat_body = chat.value().body;
   }
-  chat.value().adapter_bytes =
-      admission::Sum({sizeof(ResponseRequest), spec->chat_body.size(), spec->history.size(),
-                      spec->tools.size(), spec->metadata.size(), spec->instructions.size(), 2048});
+  chat.value().adapter_bytes = admission::Sum(
+      {sizeof(ResponseRequest), spec->chat_body.size(), spec->history.size(), spec->tools.size(),
+       spec->metadata.size(), spec->instructions.size(), spec->reasoning.size(),
+       spec->prompt_cache_key.size(), spec->prompt_cache_retention.size(), 2048});
   auto admitted =
       coordinator_.Submit(std::move(chat).value(), {true, ApiRoute::Responses, &decision});
   if (!admitted.ok()) {

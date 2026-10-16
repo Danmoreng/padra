@@ -81,6 +81,23 @@ public:
       output = "<think>why €</think>\nanswer";
     if (text.value().find("utf8-stop") != std::string::npos)
       output = "€ hello STOP tail";
+    if (text.value().find("pi-thinking-read-fixture") != std::string::npos) {
+      if (text.value().find("\"role\":\"tool\"") == std::string::npos)
+        output =
+            R"(<think>inspect € probe</think><tool_call>{"name":"read","arguments":{"path":"probe.txt"}}</tool_call>)";
+      else if (text.value().find("\"reasoning_content\":\"inspect € probe\"") == std::string::npos)
+        return {StatusCode::kInvalidArgument,
+                "Pi fixture lost full reasoning before tool continuation"};
+    }
+    if (text.value().find("pi-history-fixture") != std::string::npos) {
+      if (text.value().find("pi-history-check") == std::string::npos)
+        output = "<think>retained € trace</think>first";
+      else {
+        if (text.value().find("\"reasoning_content\":\"retained € trace\"") == std::string::npos)
+          return {StatusCode::kInvalidArgument, "Pi fixture lost reasoning between user turns"};
+        output = "history verified";
+      }
+    }
     if (text.value().find("slow-reader") != std::string::npos) {
       output = std::string(5000, 'x');
       delay_ = std::chrono::milliseconds(1);

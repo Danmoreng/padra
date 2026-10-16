@@ -2,6 +2,43 @@
 #include <fstream>
 #include <iterator>
 namespace {
+void ResponseCompatibility(text::Tokenizer &tokenizer) {
+  const auto body =
+      R"({"model":"mellum21-exl3-k4-research","input":[{"role":"developer","content":"instructions"},{"role":"user","content":[{"type":"input_text","text":"hello"}]}],"store":false,"prompt_cache_key":"pi-session","prompt_cache_retention":"in-memory","reasoning":{"effort":"none","summary":"auto"},"include":["reasoning.encrypted_content"]})";
+  auto parsed = ParseResponseRequest(body);
+  Require(parsed.ok(), "Pi Responses controls were rejected");
+  auto chat = ParseChatRequest(parsed.value().chat_body, tokenizer, 8192, "pi-response");
+  Require(chat.ok() && !json::Parse(chat.value().body).value().find("enable_thinking")->as_bool(),
+          "Responses effort did not reach model thinking control");
+  auto history = json::Parse(parsed.value().history).value().as_array();
+  Require(history[0].find("role")->as_string() == "system",
+          "developer instruction lost template role");
+  GenerationResult result;
+  result.reasoning = "why €";
+  result.output_count = 1;
+  result.output_order[0] = {OutputKind::Reasoning, 0};
+  auto envelope = json::Parse(ResponseEnvelope(parsed.value(), &result)).value();
+  const auto &reasoning = envelope.find("output")->as_array()[0];
+  Require(reasoning.find("encrypted_content")->is_null() &&
+              reasoning.find("summary")->as_array().empty() &&
+              reasoning.find("content")->as_array()[0].find("text")->as_string() == "why €",
+          "Responses misrepresented plaintext as encryption or a summary");
+  Require(envelope.find("prompt_cache_key")->as_string() == "pi-session" &&
+              envelope.find("reasoning")->find("effort")->as_string() == "none",
+          "Responses lost accepted option metadata");
+  auto replay = json::Parse(body).value().as_object();
+  replay.insert_or_assign("input",
+                          json::Value(json::Value::Array{
+                              reasoning, json::Value(json::Value::Object{
+                                             {"role", json::Value(std::string("user"))},
+                                             {"content", json::Value(std::string("next"))}})}));
+  auto continued = ParseResponseRequest(json::Stringify(json::Value(replay)));
+  Require(continued.ok() && continued.value().history.find("why €") != std::string::npos,
+          "stateless replay lost native reasoning");
+  // A routing hint must not imply retained responses or create explicit sessions.
+  Require(!parsed.value().store && chat.value().session_id.empty(),
+          "prompt cache hint created server-owned conversation state");
+}
 void TextNormalization(text::Tokenizer &tokenizer) {
   const auto plain =
       R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"system","content":"Follow instructions"},{"role":"user","content":"hello €"}],"max_tokens":8,"enable_thinking":false})";
@@ -116,6 +153,7 @@ int main(int argc, char **argv) {
     }
     SamplingForwarding(*tokenizer.value());
     TextNormalization(*tokenizer.value());
+    ResponseCompatibility(*tokenizer.value());
     std::cout
         << checked
         << " normative API field cases, unsupported endpoints and both sampling adapters passed\n";

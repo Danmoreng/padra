@@ -59,14 +59,10 @@ Result<std::string> CanonicalBody(std::string_view body, const json::Value &root
                    json::Stringify(json::Value(std::move(canonical))));
   }
   if (auto *effort = root.find("reasoning_effort"); effort && !effort->is_null()) {
-    if (!effort->is_string())
-      return Invalid("reasoning_effort must be string or null");
-    const auto &value = effort->as_string();
-    if (value != "none" && value != "minimal" && value != "low" && value != "medium" &&
-        value != "high" && value != "xhigh" && value != "max")
-      return Invalid("unsupported reasoning_effort");
-    // Mellum has a binary thinking switch, not separate per-effort budgets.
-    const bool thinking = value != "none";
+    auto selected = ThinkingForEffort(*effort);
+    if (!selected.ok())
+      return selected.status();
+    const bool thinking = selected.value();
     if (auto *explicit_thinking = root.find("enable_thinking")) {
       if (!explicit_thinking->is_bool() || explicit_thinking->as_bool() != thinking)
         return Invalid("reasoning_effort conflicts with enable_thinking");
@@ -77,6 +73,15 @@ Result<std::string> CanonicalBody(std::string_view body, const json::Value &root
   return result;
 }
 } // namespace
+Result<bool> ThinkingForEffort(const json::Value &effort) {
+  if (!effort.is_string())
+    return Invalid("reasoning effort must be string");
+  const auto &value = effort.as_string();
+  if (value != "none" && value != "minimal" && value != "low" && value != "medium" &&
+      value != "high" && value != "xhigh" && value != "max")
+    return Invalid("unsupported reasoning effort");
+  return value != "none";
+}
 std::string ErrorJson(std::string_view message, std::string_view code, std::string_view type) {
   return "{\"error\":{\"message\":" + json::Quote(message) + ",\"type\":" + json::Quote(type) +
          ",\"param\":null,\"code\":" + json::Quote(code) + "}}";

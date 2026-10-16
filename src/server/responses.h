@@ -10,9 +10,13 @@ struct ResponseRequest {
   std::string id, previous_id, chat_body, history, instructions = "null", metadata = "{}",
                                                    tools = "[]", tool_choice = "\"none\"";
   std::string reasoning_id, message_id;
+  std::string reasoning = "{\"effort\":null,\"summary\":null}";
+  // Optional cache-routing hints. They do not create or retain KV state.
+  std::string prompt_cache_key, prompt_cache_retention;
   std::array<std::string, 8> function_ids;
   std::int64_t created_at = 0;
   bool store = true, stream = false, parallel = true;
+  bool include_encrypted_reasoning = false;
   int outputs = 256;
   float temperature = 0, top_p = 1;
 };

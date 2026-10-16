@@ -132,7 +132,7 @@ Status AppendItems(json::Value::Array &messages, const json::Value &input) {
       auto *content = item.find("content");
       if (!role || !role->is_string() || !content)
         return Invalid("Responses message needs role/content");
-      const auto &r = role->as_string();
+      const auto r = role->as_string() == "developer" ? std::string("system") : role->as_string();
       if (r != "user" && r != "system" && r != "assistant")
         return Unsupported("Responses role is not in original Mellum template");
       auto text = TextParts(*content, r == "assistant");
@@ -214,8 +214,10 @@ Status AppendItems(json::Value::Array &messages, const json::Value &input) {
     } else
       return Unsupported("unsupported Responses input item: " + t);
     if (auto *status = item.find("status");
-        status && (!status->is_string() || status->as_string() != "completed"))
-      return Invalid("only completed input items can continue a response");
+        status && (!status->is_string() ||
+                   (status->as_string() != "completed" && !((t == "message" || t == "reasoning") &&
+                                                            status->as_string() == "incomplete"))))
+      return Invalid("input items must be completed, or incomplete text/reasoning");
     if (auto *id = item.find("id"); id && !id->is_string())
       return Invalid("item ID must be string");
     if (messages.size() > 256)
@@ -252,6 +254,8 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
                               "stop",
                               "enable_thinking",
                               "metadata",
+                              "prompt_cache_key",
+                              "prompt_cache_retention",
                               "reasoning",
                               "text",
                               "truncation",
@@ -265,6 +269,17 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
     return Status(StatusCode::kNotFound, "unknown model");
   ResponseRequest result;
   result.model = selected_model;
+  if (auto *key = root.find("prompt_cache_key"); key && !key->is_null()) {
+    if (!key->is_string() || key->as_string().empty() || key->as_string().size() > 64)
+      return Invalid("prompt_cache_key requires 1..64 UTF8 bytes");
+    result.prompt_cache_key = key->as_string();
+  }
+  if (auto *retention = root.find("prompt_cache_retention"); retention && !retention->is_null()) {
+    if (!retention->is_string() ||
+        (retention->as_string() != "in-memory" && retention->as_string() != "24h"))
+      return Invalid("prompt_cache_retention requires in-memory or 24h");
+    result.prompt_cache_retention = retention->as_string();
+  }
   if (auto *v = root.find("previous_response_id"); v && !v->is_null()) {
     if (!v->is_string() || v->as_string().size() != 37 || !v->as_string().starts_with("resp_") ||
         v->as_string().find_first_not_of("0123456789abcdef", 5) != std::string::npos)
@@ -302,16 +317,34 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
     return Unsupported("only truncation=disabled is implemented");
   if (auto *v = root.find("background"); v && !v->is_null() && (!v->is_bool() || v->as_bool()))
     return Unsupported("background responses are not implemented");
-  if (auto *v = root.find("include"); v && (!v->is_array() || !v->as_array().empty()))
-    return Unsupported("nonempty include is not implemented");
+  if (auto *v = root.find("include")) {
+    if (!v->is_array() || v->as_array().size() > 1)
+      return Unsupported("include supports only reasoning.encrypted_content");
+    for (const auto &field : v->as_array()) {
+      if (!field.is_string() || field.as_string() != "reasoning.encrypted_content")
+        return Unsupported("include supports only reasoning.encrypted_content");
+      result.include_encrypted_reasoning = true;
+    }
+  }
   if (auto *v = root.find("reasoning"); v && !v->is_null()) {
     auto f = Fields(*v, {"effort", "summary"});
     if (!f.ok())
       return f;
-    for (auto *key : {"effort", "summary"})
-      if (NonNull(*v, key))
-        return Unsupported(
-            "reasoning effort/summary control is not implemented; use enable_thinking");
+    if (auto *effort = v->find("effort"); effort && !effort->is_null()) {
+      auto thinking = ThinkingForEffort(*effort);
+      if (!thinking.ok())
+        return thinking.status();
+      if (auto *explicit_thinking = root.find("enable_thinking");
+          explicit_thinking &&
+          (!explicit_thinking->is_bool() || explicit_thinking->as_bool() != thinking.value()))
+        return Invalid("reasoning.effort conflicts with enable_thinking");
+    }
+    // Automatic presentation uses Mellum's full reasoning_text content. There
+    // is no separate summarizer; summary stays empty and optional encryption null.
+    if (auto *summary = v->find("summary");
+        summary && !summary->is_null() && (!summary->is_string() || summary->as_string() != "auto"))
+      return Unsupported("only automatic reasoning presentation is implemented");
+    result.reasoning = json::Stringify(*v);
   }
   if (auto *v = root.find("text"); v && !v->is_null()) {
     auto f = Fields(*v, {"format"});
@@ -354,6 +387,8 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
     messages.insert(messages.begin(), Message("system", root.find("instructions")->as_string()));
   std::string chat = "{\"model\":" + json::Quote(selected_model) +
                      ",\"messages\":" + json::Stringify(json::Value(std::move(messages)));
+  if (auto *reasoning = root.find("reasoning"); reasoning && NonNull(*reasoning, "effort"))
+    chat += ",\"reasoning_effort\":" + json::Stringify(*reasoning->find("effort"));
   for (const auto *key :
        {"temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty",
         "repetition_penalty", "stop", "enable_thinking", "tool_choice", "parallel_tool_calls"})
@@ -453,7 +488,8 @@ std::string ResponseOutputItems(const ResponseRequest &r, const GenerationResult
       out += "{\"id\":" + json::Quote(r.reasoning_id) +
              ",\"type\":\"reasoning\",\"summary\":[],\"content\":[{\"type\":\"reasoning_text\","
              "\"text\":" +
-             json::Quote(j.reasoning) + "}],\"status\":" + json::Quote(status) + "}";
+             json::Quote(j.reasoning) + "}],\"status\":" + json::Quote(status) +
+             (r.include_encrypted_reasoning ? ",\"encrypted_content\":null}" : "}");
     } else if (key.kind == OutputKind::Message) {
       out += "{\"id\":" + json::Quote(r.message_id) +
              ",\"type\":\"message\",\"role\":\"assistant\",\"status\":" + json::Quote(status) +
@@ -501,12 +537,18 @@ std::string ResponseEnvelope(const ResponseRequest &r, const GenerationResult *j
          ",\"previous_response_id\":" +
          (r.previous_id.empty() ? "null" : json::Quote(r.previous_id)) +
          ",\"store\":" + (r.store ? "true" : "false") + ",\"tools\":" + r.tools +
+         (r.prompt_cache_key.empty() ? ""
+                                     : ",\"prompt_cache_key\":" + json::Quote(r.prompt_cache_key)) +
+         (r.prompt_cache_retention.empty()
+              ? ""
+              : ",\"prompt_cache_retention\":" + json::Quote(r.prompt_cache_retention)) +
          ",\"tool_choice\":" + r.tool_choice + ",\"temperature\":" +
          (j ? std::to_string(j->temperature) : std::to_string(r.temperature)) +
          ",\"top_p\":" + (j ? std::to_string(j->top_p) : std::to_string(r.top_p)) +
          ",\"max_output_tokens\":" +
          (j ? std::to_string(j->output_budget) : std::to_string(r.outputs)) +
-         ",\"reasoning\":{\"effort\":null,\"summary\":null},\"text\":{\"format\":{\"type\":"
+         ",\"reasoning\":" + r.reasoning +
+         ",\"text\":{\"format\":{\"type\":"
          "\"text\"}},\"truncation\":\"disabled\",\"background\":false,\"usage\":" +
          usage + "}";
 }

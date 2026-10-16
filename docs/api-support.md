@@ -35,7 +35,7 @@ listing endpoints are not implemented.
 | Streaming | `stream`; optional `stream_options.include_usage` | `stream`; usage in terminal response |
 | Sampling and repetition control | `temperature`, `top_p`, `top_k`, `seed`, `repetition_penalty`, `frequency_penalty`, `presence_penalty` | Same |
 | Stop strings | `stop`: one string or up to four strings | Same |
-| Thinking control | `reasoning_effort` or Padra `enable_thinking` | Padra `enable_thinking`; no effort/summary control |
+| Thinking control | `reasoning_effort` or Padra `enable_thinking` | `reasoning.effort` or Padra `enable_thinking` |
 | Function definitions | Nested `tools[].function` | Flat `tools[]` with `type: "function"` |
 | Tool selection | `tool_choice: "auto"` or `"none"` | Same |
 | Multiple function calls | `parallel_tool_calls`; up to eight returned calls | Same |
@@ -72,18 +72,31 @@ Sampling ranges are `temperature: 0` (greedy) or 0.0001–2, `top_p: (0, 1]`,
 Null sampling fields select defaults. These are input/forwarding contracts;
 synthetic client tests do not qualify stochastic model quality.
 
-Chat `reasoning_effort: "none"` disables thinking. `minimal`, `low`, `medium`,
-`high`, `xhigh` and `max` enable thinking. Mellum provides one thinking mode, so
+Chat `reasoning_effort: "none"` and Responses `reasoning.effort: "none"` disable
+thinking. `minimal`, `low`, `medium`, `high`, `xhigh` and `max` enable thinking. Mellum provides one thinking mode, so
 these nonzero efforts do not select distinct token budgets or guarantee different
 amounts of reasoning. Omission/null retains the default enabled thinking mode.
-An explicit `enable_thinking` must agree with a non-null `reasoning_effort`.
+An explicit `enable_thinking` must agree with a non-null effort on either API.
+
+Responses accepts `prompt_cache_key` (1–64 UTF-8 bytes) and
+`prompt_cache_retention` (`"in-memory"` or `"24h"`), or null, as best-effort cache
+hints. They are echoed when non-null; they do not create sessions, extend stored
+response TTLs, or guarantee KV reuse or a retention duration. With `store: false`,
+Pi sends full history and uses no retained response records. Actual cached-token
+usage is reported independently. Explicit stored continuation remains available
+through `previous_response_id`.
 
 ## Accepted restricted values
 
-Responses accepts `truncation: "disabled"`, `background: false`, empty `include`,
-and `text.format: {"type":"text"}`. Non-null reasoning effort/summary controls,
-automatic truncation, background execution, nonempty includes and alternative text
-formats are unsupported. Responses `stream_options` requires `stream: true` and
+Responses accepts `truncation: "disabled"`, `background: false`, and
+`text.format: {"type":"text"}`. `reasoning.summary` accepts null or `"auto"`.
+Automatic presentation uses Mellum's full plaintext `reasoning_text` in `content`,
+with an empty `summary` array; a separate summarizer is not implemented.
+`include` accepts `[]` or `["reasoning.encrypted_content"]`. This model has no opaque
+encrypted reasoning: the requested field is explicitly null, and clients replay
+the full plaintext `content` instead. Other includes, explicit summary styles,
+automatic truncation, background execution and alternative text formats are
+unsupported. Responses `stream_options` requires `stream: true` and
 accepts only `include_obfuscation: false` (or an empty object); stream obfuscation
 and Responses `stream_options.include_usage` are unsupported. Terminal Responses
 events include usage without that option.
@@ -95,12 +108,16 @@ object; schema compliance is not enforced by constrained decoding.
 
 ## Input and output boundaries
 
-Responses message input supports `user`, `system` and `assistant` roles with text.
+Responses message input supports `user`, `system`, `developer` and `assistant` roles with text.
 Function results use `function_call_output` with matching `call_id` and text output.
 Plaintext reasoning replay requires full `reasoning_text` content; encrypted
 reasoning and summaries in place of full reasoning are unsupported. Media content
 parts, nonempty annotations/logprobs, logit bias, logprob requests and structured
 output/JSON-schema formats are unsupported.
+
+Reasoning replay retains supplied text in canonical history. Rendering follows
+Mellum's original template: reasoning after the latest user query can accompany
+tool continuation, while older reasoning is omitted after a new user query.
 
 Output text, reasoning and function items retain stable IDs/indices across SSE,
 terminal output and stored retrieval. There is at most one message item, one
@@ -116,16 +133,17 @@ multi-sequence GPU scheduling are not provided.
 Chat message `content` accepts a string or an array of `{type: "text", text: "..."}`
 parts, concatenated without adding separators, or null for an assistant with
 function calls. Chat `developer` instructions use Mellum's `system` template role;
-the template has no separate developer priority level. Images and other nontext
-parts are rejected. Responses accepts the text-part/item forms described above;
-its developer role remains unsupported. Unknown/non-owned previous
-response strings return `404/response_not_found`; nonstring IDs are invalid input.
+the template has no separate developer priority level. Responses uses the same
+developer-to-system mapping. Images and other nontext parts are rejected.
+Completed text/reasoning items, and text/reasoning truncated by an output limit,
+can be replayed. Incomplete function calls cannot continue a response.
+Unknown/non-owned previous response strings return `404/response_not_found`; nonstring IDs are invalid input.
 
 ## Contract verification
 
 | Contract | Verification |
 | --- | --- |
-| Accepted/rejected fields, sampling ranges, restricted values, input forms, tool declaration/history limits | 277 HTTP cases in [the versioned field matrix](../tests/contracts/api-fields.json); both adapters' sampling values are also observed at the runtime interface |
+| Accepted/rejected fields, sampling ranges, restricted values, input forms, tool declaration/history limits | 320 HTTP cases in [the versioned field matrix](../tests/contracts/api-fields.json); both adapters' sampling values are also observed at the runtime interface |
 | Unsupported endpoints and request/error IDs | `api-field-contract`, admission/error tests, SDK unsupported-option tests |
 | Events, usage, output indices, raw argument bytes, terminal/GET equality | 32 exact wire goldens, output-order/partial-tool tests, SDK stream helpers |
 | Retention, continuation, partial tools, deletion | Admission/partial-tool tests and SDK retention/GET/delete tests |

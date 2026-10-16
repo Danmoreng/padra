@@ -37,6 +37,8 @@ struct ChatRequest {
   std::chrono::steady_clock::time_point submitted = std::chrono::steady_clock::now();
   double tokenize_seconds = 0;
 };
+// Mellum exposes one enabled thinking mode; effort names are compatibility hints.
+Result<bool> ThinkingForEffort(const json::Value &);
 Result<ChatRequest> ParseChatRequest(std::string_view, const text::Tokenizer &, int capacity,
                                      std::string id, std::string_view selected_model = kModelId);
 // Attach a retained root after request validation and response-store admission.

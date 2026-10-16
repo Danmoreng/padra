@@ -3556,14 +3556,13 @@
     },
     {
       "route": "responses",
-      "name": "include/rejected/0",
+      "name": "include/accepted/0-pi-compatible",
       "patch": {
         "include": [
           "reasoning.encrypted_content"
         ]
       },
-      "status": 400,
-      "code": "invalid_request_error"
+      "status": 200
     },
     {
       "route": "responses",
@@ -3698,25 +3697,23 @@
     },
     {
       "route": "responses",
-      "name": "reasoning/rejected/0",
+      "name": "reasoning/accepted/0-pi-compatible",
       "patch": {
         "reasoning": {
           "effort": "low"
         }
       },
-      "status": 400,
-      "code": "invalid_request_error"
+      "status": 200
     },
     {
       "route": "responses",
-      "name": "reasoning/rejected/1",
+      "name": "reasoning/accepted/1-pi-compatible",
       "patch": {
         "reasoning": {
           "summary": "auto"
         }
       },
-      "status": 400,
-      "code": "invalid_request_error"
+      "status": 200
     },
     {
       "route": "responses",
@@ -4905,7 +4902,7 @@
     },
     {
       "route": "responses",
-      "name": "input/developer",
+      "name": "input/developer-pi-compatible",
       "patch": {
         "input": [
           {
@@ -4914,8 +4911,7 @@
           }
         ]
       },
-      "status": 400,
-      "code": "invalid_request_error"
+      "status": 200
     },
     {
       "route": "responses",
@@ -5944,6 +5940,501 @@
                 "text": "result"
               }
             ]
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/accepted/0",
+      "patch": {
+        "prompt_cache_key": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/accepted/1",
+      "patch": {
+        "prompt_cache_key": "session-key"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/accepted/2",
+      "patch": {
+        "prompt_cache_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/rejected/0",
+      "patch": {
+        "prompt_cache_key": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/rejected/1",
+      "patch": {
+        "prompt_cache_key": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/rejected/2",
+      "patch": {
+        "prompt_cache_key": ""
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/rejected/3",
+      "patch": {
+        "prompt_cache_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_key/rejected/4",
+      "patch": {
+        "prompt_cache_key": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/accepted/0",
+      "patch": {
+        "prompt_cache_retention": null
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/accepted/1",
+      "patch": {
+        "prompt_cache_retention": "in-memory"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/accepted/2",
+      "patch": {
+        "prompt_cache_retention": "24h"
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/rejected/0",
+      "patch": {
+        "prompt_cache_retention": false
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/rejected/1",
+      "patch": {
+        "prompt_cache_retention": 1
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/rejected/2",
+      "patch": {
+        "prompt_cache_retention": "forever"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "prompt_cache_retention/rejected/3",
+      "patch": {
+        "prompt_cache_retention": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/0",
+      "patch": {
+        "reasoning": {
+          "effort": "none"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/1",
+      "patch": {
+        "reasoning": {
+          "effort": "minimal"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/2",
+      "patch": {
+        "reasoning": {
+          "effort": "medium"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/3",
+      "patch": {
+        "reasoning": {
+          "effort": "high"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/4",
+      "patch": {
+        "reasoning": {
+          "effort": "xhigh"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/5",
+      "patch": {
+        "reasoning": {
+          "effort": "max"
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/6",
+      "patch": {
+        "reasoning": {
+          "effort": null
+        }
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/rejected/0",
+      "patch": {
+        "reasoning": {
+          "effort": true
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/rejected/1",
+      "patch": {
+        "reasoning": {
+          "effort": 2
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/rejected/2",
+      "patch": {
+        "reasoning": {
+          "effort": "unknown"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/effort/rejected/3",
+      "patch": {
+        "reasoning": {
+          "effort": {}
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/conflicting-switch",
+      "patch": {
+        "reasoning": {
+          "effort": "none"
+        },
+        "enable_thinking": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/matching-switch",
+      "patch": {
+        "reasoning": {
+          "effort": "none"
+        },
+        "enable_thinking": false
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/summary/rejected/0",
+      "patch": {
+        "reasoning": {
+          "summary": "concise"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/summary/rejected/1",
+      "patch": {
+        "reasoning": {
+          "summary": "detailed"
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/summary/rejected/2",
+      "patch": {
+        "reasoning": {
+          "summary": false
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/summary/rejected/3",
+      "patch": {
+        "reasoning": {
+          "summary": 0
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "reasoning/summary/rejected/4",
+      "patch": {
+        "reasoning": {
+          "summary": {}
+        }
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/unsupported/0",
+      "patch": {
+        "include": [
+          "web_search_call.action.sources"
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/unsupported/1",
+      "patch": {
+        "include": [
+          "reasoning.encrypted_content",
+          "unknown"
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/unsupported/2",
+      "patch": {
+        "include": [
+          1
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/unsupported/3",
+      "patch": {
+        "include": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "include/unsupported/4",
+      "patch": {
+        "include": "reasoning.encrypted_content"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/plaintext-reasoning/completed",
+      "patch": {
+        "input": [
+          {
+            "type": "reasoning",
+            "content": [
+              {
+                "type": "reasoning_text",
+                "text": "why €"
+              }
+            ],
+            "summary": [],
+            "encrypted_content": null,
+            "status": "completed"
+          },
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/plaintext-reasoning/incomplete",
+      "patch": {
+        "input": [
+          {
+            "type": "reasoning",
+            "content": [
+              {
+                "type": "reasoning_text",
+                "text": "why €"
+              }
+            ],
+            "summary": [],
+            "encrypted_content": null,
+            "status": "incomplete"
+          },
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/plaintext-reasoning/in_progress",
+      "patch": {
+        "input": [
+          {
+            "type": "reasoning",
+            "content": [
+              {
+                "type": "reasoning_text",
+                "text": "why €"
+              }
+            ],
+            "summary": [],
+            "encrypted_content": null,
+            "status": "in_progress"
+          },
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "responses",
+      "name": "input/developer-text-parts",
+      "patch": {
+        "input": [
+          {
+            "role": "developer",
+            "content": [
+              {
+                "type": "input_text",
+                "text": "instructions"
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "responses",
+      "name": "input/incomplete-text",
+      "patch": {
+        "input": [
+          {
+            "type": "message",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "earlier"
+              }
+            ],
+            "status": "incomplete"
+          },
+          {
+            "role": "user",
+            "content": "hello"
           }
         ]
       },

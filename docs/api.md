@@ -26,17 +26,33 @@ Text-only content-part arrays and `developer` instructions are accepted. Chat
 disable thinking; the other accepted effort names all select Mellum's enabled
 thinking mode, without separate effort budgets. See [API support](api-support.md).
 
-### Pi Coding Agent
+## Responses
 
-Pi can connect using its built-in `openai-completions` API. Merge this provider
-into `~/.pi/agent/models.json`, using the server's actual port and model ID:
+```sh
+curl http://127.0.0.1:8080/v1/responses \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"mellum21-exl3-k4-research","input":"Hello","max_output_tokens":256,"store":false,"enable_thinking":false}'
+```
+
+Responses accepts text or supported message/function/reasoning items. Use
+`stream: true` for Responses SSE events. With `store: true` (the default), an
+eligible retained response can be continued with `previous_response_id` and read
+or deleted at `/v1/responses/{id}`. Retention is bounded, process-local and expires;
+it is not durable conversation storage. Top-level `instructions` applies to its
+request and is not inherited by the next request.
+
+## Pi Coding Agent
+
+Pi can connect using its built-in `openai-responses` or `openai-completions` API.
+Merge this provider into `~/.pi/agent/models.json`, using the server's actual port
+and model ID:
 
 ```json
 {
   "providers": {
     "padra": {
       "baseUrl": "http://127.0.0.1:8080/v1",
-      "api": "openai-completions",
+      "api": "openai-responses",
       "apiKey": "local-padra",
       "models": [{
         "id": "mellum21-exl3-k4-research",
@@ -59,24 +75,12 @@ pi --model padra/mellum21-exl3-k4-research
 No provider extension, request adapter or proxy is required. The context window
 must match the server capacity; input plus output budget must fit within it. Pi's
 thinking levels share Mellum's single enabled mode, while `off` sends `none`.
-Use Chat Completions for Pi: Padra's Responses subset does not accept Pi's default
-prompt-cache and encrypted-reasoning options. See [client qualification](../tests/client-contract.md)
-for the optional real Pi CLI smoke test.
-
-## Responses
-
-```sh
-curl http://127.0.0.1:8080/v1/responses \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"mellum21-exl3-k4-research","input":"Hello","max_output_tokens":256,"store":false,"enable_thinking":false}'
-```
-
-Responses accepts text or supported message/function/reasoning items. Use
-`stream: true` for Responses SSE events. With `store: true` (the default), an
-eligible retained response can be continued with `previous_response_id` and read
-or deleted at `/v1/responses/{id}`. Retention is bounded, process-local and expires;
-it is not durable conversation storage. Top-level `instructions` applies to its
-request and is not inherited by the next request.
+Responses preserves Mellum's full plaintext reasoning across tool and user turns.
+`summary: "auto"` uses that native presentation; a separate summary is not generated.
+An encrypted-content include returns `encrypted_content: null`. Pi can replay the
+plaintext reasoning item without opaque state. Cache keys are best-effort hints,
+with no additional cache retention or KV reuse guarantee. See
+[client qualification](../tests/client-contract.md) for the optional real Pi CLI smoke test.
 
 ## Python client
 
