@@ -12,7 +12,7 @@ __global__ void Input(const DeviceMatrix *matrices, int layer, int part, const i
   if (pair >= pairs)
     return;
   const auto m = exl3_expert::Matrix(matrices, layer, part, ids, pair, bad);
-  if (m.format != 3 || m.cols != cols || blockDim.x != 256) {
+  if ((m.format != 3 && m.format != 5) || m.cols != cols || blockDim.x != 256) {
     if (!lane)
       atomicExch(bad, 1);
     return;

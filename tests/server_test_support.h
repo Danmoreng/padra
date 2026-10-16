@@ -23,7 +23,7 @@ struct MockState {
   bool block = false;
   bool prepare_failure = false, reset_failure = false, generate_failure = false,
        prepare_block = false;
-  int pause_after = 0;
+  int pause_after = 0, expert_rate = 4;
   std::atomic<int> calls{0};
   std::mutex sampling_mutex;
   SamplingOptions sampling;
@@ -65,7 +65,9 @@ public:
   }
   void Cancel() override {}
   RuntimeStats Stats() const override {
-    return {};
+    RuntimeStats stats;
+    stats.expert_rate = state_->expert_rate;
+    return stats;
   }
   Result<InferenceResult> Generate(TokenCallback callback, PrefillCallback) override {
     const bool first = state_->calls.fetch_add(1) == 0;

@@ -26,6 +26,7 @@ __device__ __forceinline__ void Admission(float v, __half h, unsigned *stats) {
   if (__half2float(h) != v)
     atomicAdd(stats + 8, 1U);
 }
+template <int Rate>
 __global__ void Projection(const DeviceMatrix *matrices, int layer, int requested, const int *ids,
                            const float *input, float *output, float *otherOutput, int pairs,
                            int *bad, unsigned *ranges = nullptr) {
@@ -51,8 +52,8 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int requeste
   }
   const auto m = exl3_expert::Matrix(matrices, layer, part, ids, pair, bad);
   const int base = blockIdx.x * 128, group = lane / 4, ki = (lane % 4) * 2;
-  if (m.format != 3 || base + 128 > m.rows || m.cols < 128 || m.cols % 128 || m.cols > 2304 ||
-      blockDim.x != 256) {
+  if (m.format != (Rate == 4 ? 3 : 5) || base + 128 > m.rows || m.cols < 128 || m.cols % 128 ||
+      m.cols > 2304 || blockDim.x != 256) {
     if (!threadIdx.x)
       atomicExch(bad, 1);
     return;
@@ -80,28 +81,28 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int requeste
     }
   }
   __syncthreads();
-  unsigned prefetched[4];
+  exl3_lane_codec::Word<Rate> prefetched[4];
   const int iterations = m.cols / 16;
 #pragma unroll
   for (int d = 0; d < 4; ++d) {
     const std::uint64_t t = std::uint64_t(d) * std::uint64_t(m.rows / 16) + base / 16 + warp;
-    prefetched[d] = reinterpret_cast<const unsigned *>(m.data + t * 128)[lane];
+    prefetched[d] = exl3_lane_codec::Load<Rate>(m.data + t * (32 * Rate), lane);
   }
   float accum[4] = {};
   for (int at = 0; at < iterations; at += 4) {
 #pragma unroll
     for (int d = 0; d < 4; ++d) {
       const int iteration = at + d, k = iteration * 16;
-      const unsigned word = prefetched[d];
+      const auto word = prefetched[d];
       if (iteration + 4 < iterations) {
         const std::uint64_t t =
             std::uint64_t(iteration + 4) * std::uint64_t(m.rows / 16) + base / 16 + warp;
-        prefetched[d] = reinterpret_cast<const unsigned *>(m.data + t * 128)[lane];
+        prefetched[d] = exl3_lane_codec::Load<Rate>(m.data + t * (32 * Rate), lane);
       }
       const unsigned b[2] = {exl3_mma_dot::PackHalf(transformed + k + ki),
                              exl3_mma_dot::PackHalf(transformed + k + ki + 8)};
       unsigned a[4];
-      exl3_lane_codec::Four(word, a);
+      exl3_lane_codec::Four<Rate>(word, a);
       exl3_masked::Mma(a, b, accum);
     }
   }
@@ -128,9 +129,14 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int requeste
 }
 inline void Launch(const DeviceMatrix *matrices, int layer, int part, const int *ids,
                    const float *input, float *output, float *scratch, int pairs, int *bad,
-                   cudaStream_t stream, unsigned *ranges = nullptr, float *otherOutput = nullptr) {
+                   cudaStream_t stream, unsigned *ranges = nullptr, float *otherOutput = nullptr,
+                   int rate = 4) {
   const int rows = part == 2 ? 2304 : 896;
-  Projection<<<dim3(rows / 128, pairs, part == 0 ? 2 : 1), 256, 0, stream>>>(
-      matrices, layer, part, ids, input, output, otherOutput, pairs, bad, ranges);
+  if (rate == 6)
+    Projection<6><<<dim3(rows / 128, pairs, part == 0 ? 2 : 1), 256, 0, stream>>>(
+        matrices, layer, part, ids, input, output, otherOutput, pairs, bad, ranges);
+  else
+    Projection<4><<<dim3(rows / 128, pairs, part == 0 ? 2 : 1), 256, 0, stream>>>(
+        matrices, layer, part, ids, input, output, otherOutput, pairs, bad, ranges);
 }
 } // namespace exl3_mma_dual

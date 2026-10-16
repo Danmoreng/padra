@@ -1,10 +1,12 @@
 #pragma once
 #include "util/json.h"
+#include "server/chat_request.h"
 #include <array>
 #include <string>
 namespace mellum16::server {
 struct GenerationResult;
 struct ResponseRequest {
+  std::string model = kModelId;
   std::string id, previous_id, chat_body, history, instructions = "null", metadata = "{}",
                                                    tools = "[]", tool_choice = "\"none\"";
   std::string reasoning_id, message_id;
@@ -17,7 +19,8 @@ struct ResponseRequest {
 // Previous history excludes the previous request's top-level instructions.
 // Original nested tool/schema order is retained in chat_body.
 Result<ResponseRequest> ParseResponseRequest(std::string_view body,
-                                             std::string_view previous_history = "[]");
+                                             std::string_view previous_history = "[]",
+                                             std::string_view selected_model = kModelId);
 std::string ResponseOutputItems(const ResponseRequest &, const GenerationResult &);
 std::string ResponseEnvelope(const ResponseRequest &, const GenerationResult *job = nullptr,
                              std::string_view status = "in_progress");

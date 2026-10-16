@@ -17,15 +17,15 @@ struct ServerMemoryPlan {
     return required() <= free;
   }
 };
-// Selected all-row K4 profile only; exact native cudaMalloc inventory, not a
+// Selected all-row K4/K6 profiles; exact native cudaMalloc inventory, not a
 // generic estimator. These ABI widths are independently asserted by CUDA.
 inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int prompt, int chunk,
                                          bool persistent = false,
                                          std::size_t sampling_workspace = 0,
                                          KVCacheFormat kv_format = KVCacheFormat::BF16,
-                                         bool checkpoint = false) {
+                                         bool checkpoint = false, int expert_rate = 4) {
   if (capacity < 1 || capacity > 131072 || prompt < 1 || prompt > capacity || chunk < 2 ||
-      chunk > 2048)
+      chunk > 2048 || (expert_rate != 4 && expert_rate != 6))
     throw std::invalid_argument("invalid selected-profile memory shape");
   const std::size_t batch = persistent ? chunk : std::min(chunk, prompt);
   ServerMemoryPlan plan;

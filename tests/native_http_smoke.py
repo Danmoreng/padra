@@ -2,7 +2,7 @@ import hashlib, json, pathlib, signal, subprocess, time, urllib.request, urllib.
 import argparse
 
 parser = argparse.ArgumentParser(
-    description="Run native Padra HTTP integration smoke tests with an existing EXL3K4 artifact."
+    description="Run native Padra HTTP integration smoke tests with an admitted EXL3 K4/K6 artifact."
 )
 parser.add_argument("--server", type=pathlib.Path, required=True)
 parser.add_argument("--artifact", type=pathlib.Path, required=True)
@@ -16,7 +16,6 @@ artifact = args.artifact.resolve()
 tokenizer = args.tokenizer.resolve()
 port = args.port
 base = f"http://127.0.0.1:{port}"
-model = "mellum21-exl3-k4-research"
 sha = args.tokenizer_sha256
 args.output_dir.mkdir(parents=True, exist_ok=True)
 log = args.output_dir / "native-http-smoke-server.log"
@@ -69,6 +68,8 @@ with log.open("w") as output:
         else:
             raise RuntimeError("server readiness timeout")
         identity = fetch("/v1/models")["data"][0]
+        model = identity["id"]
+        assert model in ("mellum21-exl3-k4-research", "mellum21-exl3-k6-research")
         manifest = json.loads((artifact / "manifest.json").read_text())
         assert identity["checkpoint_sha256"] == manifest["weights_sha256"]
         assert (

@@ -15,7 +15,7 @@ void ChatStream::Envelope() {
   Need(builder_.Append(",\"object\":\"chat.completion.chunk\",\"created\":"));
   Need(builder_.AppendUnsigned(job_.created_at));
   Need(builder_.Append(",\"model\":"));
-  Need(builder_.AppendJsonString(kModelId));
+  Need(builder_.AppendJsonString(job_.request.model));
   Need(builder_.Append(",\"choices\":"));
 }
 std::span<const char> ChatStream::Encode(const GenerationEvent &event) {
@@ -89,7 +89,7 @@ std::string ChatUsage(const GenerationResult &job) {
 std::string CompletionJson(const Job &job) {
   return "{\"id\":" + json::Quote(job.request.id) +
          ",\"object\":\"chat.completion\",\"created\":" + std::to_string(job.created_at) +
-         ",\"model\":" + json::Quote(kModelId) +
+         ",\"model\":" + json::Quote(job.request.model) +
          (job.request.session_id.empty()
               ? ""
               : ",\"session_id\":" + json::Quote(job.request.session_id)) +

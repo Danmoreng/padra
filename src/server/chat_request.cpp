@@ -24,7 +24,8 @@ std::string ErrorJson(std::string_view message, std::string_view code, std::stri
          ",\"param\":null,\"code\":" + json::Quote(code) + "}}";
 }
 Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenizer &tokenizer,
-                                     int capacity, std::string id) {
+                                     int capacity, std::string id,
+                                     std::string_view selected_model) {
   if (body.size() > RequestBodyLimit(capacity))
     return Status(StatusCode::kResourceExhausted,
                   "request body exceeds selected capacity profile byte limit");
@@ -60,8 +61,8 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
       return Status(StatusCode::kUnsupported, "unsupported request parameter: " + key);
   }
   auto *model = root.find("model");
-  if (!model || !model->is_string() || model->as_string() != kModelId)
-    return Status(StatusCode::kNotFound, "unknown model; use mellum21-exl3-k4-research");
+  if (!model || !model->is_string() || model->as_string() != selected_model)
+    return Status(StatusCode::kNotFound, "unknown model; use " + std::string(selected_model));
   auto *messages = root.find("messages");
   if (!messages || !messages->is_array() || messages->as_array().empty() ||
       messages->as_array().size() > 256)
@@ -131,6 +132,7 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
   if (!budget.ok())
     return budget.status();
   ChatRequest result;
+  result.model = selected_model;
   result.outputs = budget.value();
   result.sampling = sampling;
   result.id = std::move(id);

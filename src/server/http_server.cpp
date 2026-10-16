@@ -24,7 +24,8 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
 HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenizer,
                        ServerConfig config)
     : config_(std::move(config)), coordinator_(coordinator), tokenizer_(tokenizer),
-      port_(config_.port()), capacity_(config_.capacity()) {
+      port_(config_.port()), capacity_(config_.capacity()),
+      model_id_(ModelIdForRate(coordinator_.RuntimeMetrics().expert_rate)) {
   if (!(config_.generation() == coordinator_.Limits()))
     throw std::invalid_argument("HTTP/coordinator configuration mismatch");
   http_.new_task_queue = [this] {
@@ -102,14 +103,15 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
   http_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &response) {
     const auto r = coordinator_.RuntimeMetrics();
     std::ostringstream out;
-    out << "{\"object\":\"list\",\"data\":[{\"id\":" << json::Quote(kModelId)
+    out << "{\"object\":\"list\",\"data\":[{\"id\":" << json::Quote(model_id_)
         << ",\"object\":\"model\",\"created\":0,\"owned_by\":\"mellum16\",\"context_capacity\":"
         << capacity_
         << ",\"quality_status\":\"unqualified\",\"sampling_profiles\":[\"greedy\",\"gpu-graph-"
            "parameters-penalties-splitmix64-v2\"],\"kv_format\":"
         << json::Quote(KVCacheLayout::Make(r.kv_format, 1).name()) << ",\"execution_profile\":"
         << json::Quote(ServerExecutionProfile(capacity_, true, r.kv_format, r.prefill_chunk,
-                                              r.device_budget_gib, r.checkpoint_enabled))
+                                              r.device_budget_gib, r.checkpoint_enabled,
+                                              r.expert_rate))
         << ",\"prefill_chunk\":" << r.prefill_chunk
         << ",\"device_budget_gib\":" << r.device_budget_gib
         << ",\"active_gpu_sessions\":1,\"logical_session_limit\":32,\"session_ttl_seconds\":1800,"

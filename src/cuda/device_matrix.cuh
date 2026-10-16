@@ -33,6 +33,9 @@ inline DeviceMatrix BindDeviceMatrix(const internal::CompiledModel &model, unsig
   case internal::WeightFormat::Exl3K8:
     d.format = 4;
     break;
+  case internal::WeightFormat::Exl3K6:
+    d.format = 5;
+    break;
   default:
     throw std::runtime_error("invalid production matrix format");
   }
@@ -47,7 +50,7 @@ inline DeviceMatrix BindDeviceMatrix(const internal::CompiledModel &model, unsig
   d.data = pointer(d.format == 0 ? "data" : "packed");
   if (d.format == 1 || d.format == 2)
     d.scales = pointer("scales");
-  if (d.format == 3 || d.format == 4) {
+  if (d.format == 3 || d.format == 4 || d.format == 5) {
     d.suh = reinterpret_cast<const std::uint16_t *>(pointer("suh"));
     d.svh = reinterpret_cast<const std::uint16_t *>(pointer("svh"));
   }

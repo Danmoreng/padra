@@ -1,7 +1,9 @@
 # OpenAI-compatible API
 
 Base URL: `http://127.0.0.1:8080/v1` (use your configured port).
-Model ID: `mellum21-exl3-k4-research`.
+Model ID: `mellum21-exl3-k4-research` or `mellum21-exl3-k6-research`, selected by
+the loaded checkpoint. `GET /v1/models` reports the active ID; requests must use
+that ID. The examples below use K4.
 
 Padra implements text/function subsets of Chat Completions and Responses.
 See [API support](api-support.md) for endpoints, accepted options and exclusions.

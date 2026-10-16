@@ -50,7 +50,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
       return;
     }
   }
-  auto parsed = ParseResponseRequest(request.body, parent ? parent->history : "[]");
+  auto parsed = ParseResponseRequest(request.body, parent ? parent->history : "[]", model_id_);
   if (!parsed.ok()) {
     Error(response,
           parsed.status().code() == StatusCode::kNotFound            ? 404
@@ -63,7 +63,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
   std::shared_ptr<ResponseRoot> root = parent ? parent->root : nullptr;
   if (root && !coordinator_.Sessions().Get(root->session_id, root->owner).ok())
     root.reset();
-  auto chat = ParseChatRequest(spec->chat_body, tokenizer_, capacity_, spec->id);
+  auto chat = ParseChatRequest(spec->chat_body, tokenizer_, capacity_, spec->id, model_id_);
   if (!chat.ok()) {
     Error(response, chat.status().code() == StatusCode::kResourceExhausted ? 413 : 400,
           chat.status().message());
@@ -159,7 +159,8 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
     Error(response, 500, id.status().message(), "id_failure");
     return;
   }
-  auto parsed = ParseChatRequest(request.body, tokenizer_, capacity_, std::move(id).value());
+  auto parsed =
+      ParseChatRequest(request.body, tokenizer_, capacity_, std::move(id).value(), model_id_);
   if (!parsed.ok()) {
     Error(response,
           parsed.status().code() == StatusCode::kNotFound            ? 404

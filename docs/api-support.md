@@ -1,6 +1,8 @@
 # API support
 
-Padra supports the subset below, using model ID `mellum21-exl3-k4-research`.
+Padra supports the subset below for the loaded K4 or K6 checkpoint. Use the active
+model ID from `GET /v1/models`: `mellum21-exl3-k4-research` or
+`mellum21-exl3-k6-research`.
 Compatibility with an OpenAI client does not imply support for all OpenAI APIs or
 request options. Unknown fields and unsupported values are rejected.
 

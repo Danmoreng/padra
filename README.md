@@ -5,7 +5,7 @@
 # Padra
 
 A standalone C++20/CUDA inference server for
-**JetBrains/Mellum2.1-12B-A2.5B-Thinking**, using the native EXL3K4 checkpoint.
+**JetBrains/Mellum2.1-12B-A2.5B-Thinking**, using native EXL3 K4 or K6 checkpoints.
 Padra is inspired by Padparadscha; its name is independent of GPU memory size.
 
 The server includes native tokenization, the original model chat/thinking template,
@@ -15,10 +15,15 @@ GPU-resident. Default context is 131,072 tokens with BF16 KV. 8/12 GiB memory ce
 are explicit profiles. Other checkpoint precisions and physical 8/12 GB GPUs are
 not qualified.
 
+K4 and K6 use FP16 MMA expert kernels with rate-specific packed-weight decoders
+and BF16 activation boundaries. Both retain FP8 attention projections and BF16
+routers, embeddings and output weights. K6 requires more VRAM for its larger
+expert weights.
+
 This repository contains serving source, build files, server regression tests and
 required licenses. A prepared native artifact is required; weights and conversion
 outputs are not distributed here. The runtime uses the `mellum16` namespace and
-`mellum16-exl3-k4-v1` artifact identifier.
+the pinned native K4/K6 artifact identities.
 
 ## Build
 
@@ -84,9 +89,13 @@ Explicit chunks 512/256 and ceilings 8/12 GiB are supported. Admission includes 
 700 MiB reserve and 42 MiB session snapshot. Unsupported or oversized configurations
 fail explicitly; no silent context/precision/chunk/CPU-offload fallback.
 
-Use an admitted mellum16-exl3-k4-v1/native artifact and the matching original
+Use an admitted native K4 or K6 artifact and the matching original
 source tokenizer. Source revision: 92ddae9fc7665e9f801d141d2e5a6b2caf2460c4.
 Tokenizer SHA256: 58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a.
+
+The [model repository](https://huggingface.co/danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3)
+provides K4 and K6 packages. See [model setup](docs/models.md) for downloads,
+verification, launch commands and memory requirements.
 
 Padra exposes an OpenAI-compatible API server on `127.0.0.1`, including Chat
 Completions and Responses. See the [API guide](docs/api.md) for client setup and

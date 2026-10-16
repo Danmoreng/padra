@@ -224,7 +224,8 @@ Status AppendItems(json::Value::Array &messages, const json::Value &input) {
   return {};
 }
 } // namespace
-Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_view previous) {
+Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_view previous,
+                                             std::string_view selected_model) {
   if (body.size() > 2 * 1024 * 1024 || previous.size() > 8 * 1024 * 1024)
     return Status(StatusCode::kResourceExhausted, "Responses body/history byte limit exceeded");
   auto parsed = json::Parse(body);
@@ -260,9 +261,10 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
   if (!fields.ok())
     return fields;
   auto *model = root.find("model");
-  if (!model || !model->is_string() || model->as_string() != kModelId)
+  if (!model || !model->is_string() || model->as_string() != selected_model)
     return Status(StatusCode::kNotFound, "unknown model");
   ResponseRequest result;
+  result.model = selected_model;
   if (auto *v = root.find("previous_response_id"); v && !v->is_null()) {
     if (!v->is_string() || v->as_string().size() != 37 || !v->as_string().starts_with("resp_") ||
         v->as_string().find_first_not_of("0123456789abcdef", 5) != std::string::npos)
@@ -350,7 +352,7 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
   result.history = json::Stringify(json::Value(messages));
   if (result.instructions != "null")
     messages.insert(messages.begin(), Message("system", root.find("instructions")->as_string()));
-  std::string chat = "{\"model\":" + json::Quote(kModelId) +
+  std::string chat = "{\"model\":" + json::Quote(selected_model) +
                      ",\"messages\":" + json::Stringify(json::Value(std::move(messages)));
   for (const auto *key :
        {"temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty",
@@ -493,7 +495,7 @@ std::string ResponseEnvelope(const ResponseRequest &r, const GenerationResult *j
          ",\"incomplete_details\":" +
          (status == "incomplete" ? "{\"reason\":\"max_output_tokens\"}" : "null") +
          ",\"instructions\":" + r.instructions + ",\"metadata\":" + r.metadata +
-         ",\"model\":" + json::Quote(kModelId) +
+         ",\"model\":" + json::Quote(r.model) +
          ",\"output\":" + (j ? ResponseOutputItems(r, *j) : "[]") +
          ",\"parallel_tool_calls\":" + (r.parallel ? "true" : "false") +
          ",\"previous_response_id\":" +

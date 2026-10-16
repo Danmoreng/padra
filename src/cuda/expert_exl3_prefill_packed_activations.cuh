@@ -5,6 +5,7 @@
 #include "exl3_silu_lut.cuh"
 #include "exl3_input_wide_vector.cuh"
 #include "expert_exl3_dot_codec.cuh"
+#include "expert_exl3_lane_codec.cuh"
 #include "runtime/exl3_masked_schedule.h"
 namespace exl3_packed_activations {
 using Tile = mellum16::exl3_masked_schedule::Tile;
@@ -34,7 +35,7 @@ __global__ void InputActivated(const DeviceMatrix *matrices, int layer, const in
   if (pair >= pairs)
     return;
   const auto m = exl3_expert::Matrix(matrices, layer, 2, ids, pair, bad);
-  if (m.format != 3 || m.cols != 896 || blockDim.x != 128) {
+  if ((m.format != 3 && m.format != 5) || m.cols != 896 || blockDim.x != 128) {
     if (!lane)
       atomicExch(bad, 1);
     return;
@@ -123,6 +124,7 @@ __device__ __forceinline__ void Stage(__half *a, const __half *input, const int 
   }
   asm volatile("cp.async.commit_group;" ::: "memory");
 }
+template <int Rate>
 __global__ void Projection(const DeviceMatrix *matrices, int layer, int part, const int *groups,
                            const Tile *tiles, const int *tileCount, const __half *input,
                            unsigned short *output, int tokens, int *bad) {
@@ -136,7 +138,7 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int part, co
     return;
   }
   const auto matrix = matrices[(layer * 64 + tile.expert) * 3 + part];
-  if (matrix.format != 3) {
+  if (matrix.format != (Rate == 4 ? 3 : 5)) {
     if (!threadIdx.x)
       atomicExch(bad, 1);
     return;
@@ -175,14 +177,26 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int part, co
     for (int k = 0; k < 32; k += 16) {
       const std::uint64_t tileIndex =
           std::uint64_t((kBase + k) / 16) * std::uint64_t(matrix.rows / 16) + nBase / 16 + warp;
-      const unsigned word = reinterpret_cast<const unsigned *>(matrix.data + tileIndex * 128)[lane];
       unsigned fragment[2][2];
+      if constexpr (Rate == 6) {
+        const auto word = exl3_lane_codec::Load<6>(matrix.data + tileIndex * 192, lane);
+        unsigned decoded[4];
+        exl3_lane_codec::Four<6>(word, decoded);
 #pragma unroll
-      for (int n = 0; n < 2; ++n) {
+        for (int n = 0; n < 2; ++n)
 #pragma unroll
-        for (int j = 0; j < 2; ++j)
-          fragment[n][j] =
-              exl3_dot_codec::Bits(exl3_dot_codec::Pair(word, tid * 2 + j * 8, group + n * 8));
+          for (int j = 0; j < 2; ++j)
+            fragment[n][j] = decoded[n + 2 * j];
+      } else {
+        const unsigned word =
+            reinterpret_cast<const unsigned *>(matrix.data + tileIndex * 128)[lane];
+#pragma unroll
+        for (int n = 0; n < 2; ++n) {
+#pragma unroll
+          for (int j = 0; j < 2; ++j)
+            fragment[n][j] =
+                exl3_dot_codec::Bits(exl3_dot_codec::Pair(word, tid * 2 + j * 8, group + n * 8));
+        }
       }
 #pragma unroll
       for (int m = 0; m < 2; ++m) {
@@ -238,7 +252,7 @@ inline void Launch(const DeviceMatrix *matrices, int layer, int part, const int 
                    const float *input, unsigned short *output, const unsigned short *gate,
                    const unsigned short *up, const unsigned short *table, __half *transformed,
                    int tokens, int *bad, cudaStream_t stream, unsigned *stats = nullptr,
-                   bool wideInput = false) {
+                   bool wideInput = false, int rate = 4) {
   const int cols = part == 2 ? 896 : 2304, rows = part == 2 ? 2304 : 896, pairs = tokens * 8;
   if (tokens < 4 || part < 0 || part > 2)
     throw std::runtime_error("packed BF16 prefill part requires declared T>=4");
@@ -251,7 +265,11 @@ inline void Launch(const DeviceMatrix *matrices, int layer, int part, const int 
   else
     exl3_warp_input::Input<<<(pairs * (cols / 128) + 3) / 4, 128, 0, stream>>>(
         matrices, layer, part, ids, input, transformed, pairs, bad, stats);
-  Projection<<<dim3(rows / 128, Capacity(tokens)), 256, 0, stream>>>(
-      matrices, layer, part, groups, tiles, tileCount, transformed, output, tokens, bad);
+  if (rate == 6)
+    Projection<6><<<dim3(rows / 128, Capacity(tokens)), 256, 0, stream>>>(
+        matrices, layer, part, groups, tiles, tileCount, transformed, output, tokens, bad);
+  else
+    Projection<4><<<dim3(rows / 128, Capacity(tokens)), 256, 0, stream>>>(
+        matrices, layer, part, groups, tiles, tileCount, transformed, output, tokens, bad);
 }
 } // namespace exl3_packed_activations

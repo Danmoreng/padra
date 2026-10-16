@@ -1,7 +1,13 @@
 #include "runtime/model_runtime.h"
+#include "runtime/native_artifacts.h"
+#include "compiler/sha256.h"
+#include <fstream>
+#include <stdexcept>
 namespace mellum16 {
 InferenceOptions SelectedServerOptions(const std::filesystem::path &path,
-                                       const std::string &tokenizer) {
+                                       const std::string &tokenizer, int expert_rate) {
+  if (expert_rate != 4 && expert_rate != 6)
+    throw std::invalid_argument("selected server supports EXL3 K4 or K6");
   InferenceOptions o;
   o.artifact = path;
   o.tokenizer_sha256 = tokenizer;
@@ -14,7 +20,7 @@ InferenceOptions SelectedServerOptions(const std::filesystem::path &path,
   o.block_expert_prefill = o.ordinary_prefill_silu = o.gqa8_decode_attention = o.fused_attention_o =
       o.fused_residual_norm = true;
   o.exl3_experts = true;
-  o.exl3_rate = 4;
+  o.exl3_rate = expert_rate;
   o.exl3_prefill_fp16 = o.exl3_prefill_masked = o.exl3_prefill_register = o.exl3_prefill_dot =
       o.exl3_prefill_warp = true;
   o.exl3_decode_mma = o.exl3_decode_dot = o.exl3_decode_fused = o.exl3_decode_lane =
@@ -53,8 +59,9 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
   if (!admitted.ok())
     return admitted.status();
   if (capacity != NativeContextCapacity::C8192 && !controlled_chunks)
-    return Status(StatusCode::kUnsupported,
-                  "long context requires the explicit selected K4 controlled-chunk BF16 profile");
+    return Status(
+        StatusCode::kUnsupported,
+        "long context requires the explicit selected K4/K6 controlled-chunk BF16 profile");
   if (kv_format != KVCacheFormat::BF16 && kv_format != KVCacheFormat::Q8TokenHead128F32ScaleV1)
     return Status(StatusCode::kUnsupported, "unsupported KV format");
   if (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1 &&
@@ -62,7 +69,26 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
     return Status(
         StatusCode::kUnsupported,
         "Q8 integrated research currently requires controlled8192; long qualification pending");
-  auto profile = SelectedServerOptions(path, tokenizer);
+  const auto manifestPath = path / "manifest.json";
+  std::error_code error;
+  const auto fileType = std::filesystem::symlink_status(manifestPath, error);
+  if (error || !std::filesystem::is_regular_file(fileType) || std::filesystem::is_symlink(fileType))
+    return Status(StatusCode::kDataLoss, "selected manifest must be a bounded regular file");
+  const auto size = std::filesystem::file_size(manifestPath, error);
+  if (error || size > 4 * 1024 * 1024)
+    return Status(StatusCode::kDataLoss, "selected manifest must be a bounded regular file");
+  std::ifstream source(manifestPath, std::ios::binary);
+  if (!source)
+    return Status(StatusCode::kIoError, "cannot open selected manifest");
+  std::string manifest(static_cast<std::size_t>(size), '\0');
+  source.read(manifest.data(), static_cast<std::streamsize>(manifest.size()));
+  if (source.gcount() != static_cast<std::streamsize>(size) || source.bad() ||
+      source.peek() != std::char_traits<char>::eof())
+    return Status(StatusCode::kDataLoss, "selected manifest read failed or changed");
+  const auto *identity = FindNativeArtifact(compiler::Sha256Hex(manifest.data(), manifest.size()));
+  if (!identity)
+    return Status(StatusCode::kDataLoss, "persistent runtime manifest identity mismatch");
+  auto profile = SelectedServerOptions(path, tokenizer, identity->expert_rate);
   profile.capacity = static_cast<int>(capacity);
   profile.controlled_chunk_graphs = controlled_chunks;
   profile.kv_cache_format = kv_format;

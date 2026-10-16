@@ -115,9 +115,10 @@ int main(int argc, char **argv) {
     std::cout << "{\"listener\":" << mellum16::json::Quote("127.0.0.1:" + std::to_string(port))
               << ",\"admin_listener\":"
               << mellum16::json::Quote("127.0.0.1:" + std::to_string(http.AdminPort()))
-              << ",\"server_config\":" << config.Json(port, http.AdminPort())
-              << ",\"model\":\"mellum21-exl3-k4-research\",\"quality_status\":\"unqualified\"}"
-              << std::endl;
+              << ",\"server_config\":" << config.Json(port, http.AdminPort()) << ",\"model\":"
+              << mellum16::json::Quote(
+                     mellum16::server::ModelIdForRate(coordinator.RuntimeMetrics().expert_rate))
+              << ",\"quality_status\":\"unqualified\"}" << std::endl;
     const bool listened = http.Listen();
     finished.store(true);
     shutdown.join();

@@ -1,5 +1,6 @@
 // Experimental fully resident Mellum forward with explicit activation/dispatch profiles.
 #include "runtime/inference.h"
+#include "runtime/native_artifacts.h"
 #include "runtime/server_memory.h"
 #include "runtime/chunk_graph_contract.h"
 #include "compiler/sha256.h"
@@ -788,14 +789,15 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                     "trace/snapshot or unqualified long mode");
     const int contextMaximum =
         worker && o.controlled_chunk_graphs ? o.capacity : kW4A8FContextCapacity;
+    const NativeArtifactIdentity *selectedArtifact = nullptr;
     if (worker) {
       const auto manifestPath = o.artifact / "manifest.json";
       if (std::filesystem::file_size(manifestPath) > 16 * 1024 * 1024)
         return Status(StatusCode::kDataLoss, "persistent manifest size unsupported");
       std::ifstream source(manifestPath, std::ios::binary);
       std::string manifest{std::istreambuf_iterator<char>(source), {}};
-      if (compiler::Sha256Hex(manifest.data(), manifest.size()) !=
-          "0f30d4ead6ae3d0683ec1eb9ad7af1adfebe343d804e3313e8c01d6c31f76f0b")
+      selectedArtifact = FindNativeArtifact(compiler::Sha256Hex(manifest.data(), manifest.size()));
+      if (!selectedArtifact)
         return Status(StatusCode::kDataLoss, "persistent runtime manifest identity mismatch");
     }
     auto loaded = internal::LoadCompiledModel(o.artifact);
@@ -806,9 +808,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         (!o.controlled_chunk_graphs || o.capacity > 131072 || o.tc_prefill_attention ||
          o.capture_trace || o.snapshot_layer >= 0 || o.fp8_kv_cache || !o.wide_attention_merge ||
          !o.padded_bf16_prefill_attention))
-      return Status(StatusCode::kUnsupported,
-                    "long-context profile requires selected K4/BF16 online attention; materialized "
-                    "scores/traces/old cache/profile paths unsupported");
+      return Status(
+          StatusCode::kUnsupported,
+          "long-context profile requires selected K4/K6/BF16 online attention; materialized "
+          "scores/traces/old cache/profile paths unsupported");
     if (o.controlled_chunk_graphs && !worker)
       return Status(StatusCode::kUnsupported,
                     "controlled chunk graphs require the persistent selected runtime");
@@ -823,39 +826,39 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_decode_dual && !o.exl3_decode_lane)
       return Status(StatusCode::kInvalidArgument, "paired gate/up requires lane decoder parent");
     if (o.wide_rms_dataflow &&
-        (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode || !o.exact_fp8_encoding ||
-         !o.exl3_bf16_postnorm || o.ordinary_rms_norm))
+        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
+         !o.exact_fp8_encoding || !o.exl3_bf16_postnorm || o.ordinary_rms_norm))
       return Status(StatusCode::kUnsupported,
-                    "wide RMS requires native K4/exact E4/BF16-postnorm/compensated profile");
+                    "wide RMS requires native K4/K6/exact E4/BF16-postnorm/compensated profile");
     if (o.wide_attention_merge && (!o.exact_fp8_encoding || !o.attention_fragment_validation))
       return Status(StatusCode::kUnsupported, "wide merge requires exact BF16 fragment profile");
-    if (o.paired_attention_o && (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode ||
-                                 !o.ordinary_fp8_simt || o.attention_fp8_mma))
+    if (o.paired_attention_o && (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
+                                 !o.native_decode || !o.ordinary_fp8_simt || o.attention_fp8_mma))
       return Status(StatusCode::kUnsupported,
-                    "paired O requires native K4 ordinary-SIMT attention control");
-    if (o.exact_router_rank &&
-        (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode || !o.fast_w4a8))
+                    "paired O requires native K4/K6 ordinary-SIMT attention control");
+    if (o.exact_router_rank && (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
+                                !o.native_decode || !o.fast_w4a8))
       return Status(StatusCode::kUnsupported,
-                    "exact router rank requires native K4 W4A8F decode control");
+                    "exact router rank requires native K4/K6 W4A8F decode control");
     if (o.attention_fragment_validation && !o.exact_fp8_encoding)
       return Status(StatusCode::kUnsupported,
-                    "fragment validation requires exact K4/N3a BF16 encoding profile");
+                    "fragment validation requires exact K4/K6 BF16 encoding profile");
     if (o.exact_fp8_encoding &&
-        (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode || !o.fused_attention_o ||
-         o.ordinary_rms_norm || o.reciprocal_fused_quantization || !o.diagnostic_attention.empty()))
+        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
+         !o.fused_attention_o || o.ordinary_rms_norm || o.reciprocal_fused_quantization ||
+         !o.diagnostic_attention.empty()))
       return Status(StatusCode::kUnsupported,
-                    "exact E4 codes requires K4/native/compensated input norm/N4a BF16 O "
+                    "exact E4 codes requires K4/K6/native/compensated input norm/N4a BF16 O "
                     "control,no older reciprocal/X0 override");
     if (o.exl3_decode_lane && !o.exl3_decode_fused)
       return Status(StatusCode::kInvalidArgument, "lane decoder requires fused-M1 parent");
     if (o.exl3_prefill_warp && !o.exl3_prefill_dot)
       return Status(StatusCode::kInvalidArgument, "warp input requires dot-prefill parent");
     if ((o.exl3_silu_table || o.exl3_bf16_postnorm) &&
-        (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode ||
+        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
          o.reciprocal_fused_quantization || o.capture_quantization_rows || !o.fused_residual_norm))
-      return Status(
-          StatusCode::kUnsupported,
-          "exact table/postnorm research requires K4/native/N4b direct-div and no FP8 capture");
+      return Status(StatusCode::kUnsupported,
+                    "exact table/postnorm requires K4/K6/native/direct-div and no FP8 capture");
     if (o.attention_fp8_mma && (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode ||
                                 !o.ordinary_fp8_simt || !o.diagnostic_attention.empty()))
       return Status(StatusCode::kUnsupported,
@@ -867,9 +870,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       return Status(StatusCode::kInvalidArgument,
                     "dot/fused decode requires explicit M1-FP16-MMA parent");
     if (o.exl3_decode_mma &&
-        (o.exl3_decode_selected || o.exl3_decode_n32 || !o.exl3_experts || o.exl3_rate != 4 ||
-         !o.native_decode || !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 ||
-         o.diagnostic_routes))
+        (o.exl3_decode_selected || o.exl3_decode_n32 || !o.exl3_experts ||
+         (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
+         !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 || o.diagnostic_routes))
       return Status(StatusCode::kUnsupported, "M1 FP16-MMA requires K4,native decode,no X2/N32/X0 "
                                               "overrides;explicit BF16-to-FP16 input rounding");
     if (o.exl3_prefill_register && (!o.exl3_prefill_fp16 || !o.exl3_prefill_masked))
@@ -887,10 +890,15 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_prefill_masked && !o.exl3_prefill_fp16)
       return Status(StatusCode::kInvalidArgument, "masked prefill requires FP16 prefill");
     if (o.exl3_prefill_fp16 &&
-        (!o.exl3_experts || o.exl3_rate != 4 || !o.compact_experts || o.prefill_chunk < 2 ||
-         !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 || o.diagnostic_routes))
+        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.compact_experts ||
+         o.prefill_chunk < 2 || !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 ||
+         o.diagnostic_routes))
       return Status(StatusCode::kUnsupported,
                     "X1 FP16 M32 requires K4,compact grouping,chunk>=2,no X0 overrides");
+    if (o.exl3_rate == 6 && ((o.exl3_decode_mma && !o.exl3_decode_dual) ||
+                             (o.exl3_prefill_fp16 && !o.exl3_packed_activations)))
+      return Status(StatusCode::kUnsupported,
+                    "K6 MMA requires paired decode and packed BF16 prefill kernels");
     const bool x0 =
         !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 || o.diagnostic_routes;
     if (x0 && (!o.exl3_experts || o.generate != 0 || o.input_ids.size() > 512 ||
@@ -904,10 +912,13 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       if (!status.ok())
         return status;
     }
-    if (worker && (model.weights_sha256 !=
-                       "e614375f2eb26c17321365d4bd8ee7aa4b716f6badee171bb2040b85b754804c" ||
-                   model.weights.size() != 7092933120ULL))
-      return Status(StatusCode::kDataLoss, "persistent runtime requires pinned K4 checkpoint");
+    if (worker &&
+        (!selectedArtifact || model.manifest_sha256 != selectedArtifact->manifest_sha256 ||
+         model.weights_sha256 != selectedArtifact->weights_sha256 ||
+         model.weights.size() != selectedArtifact->weights_bytes ||
+         model.exl3_rate != selectedArtifact->expert_rate))
+      return Status(StatusCode::kDataLoss,
+                    "persistent runtime requires an admitted native checkpoint");
     if (model.exl3_experts != o.exl3_experts || model.exl3_rate != o.exl3_rate)
       return Status(StatusCode::kInvalidArgument,
                     "EXL3 artifact and explicit expert-weight-format must match");
@@ -1143,7 +1154,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_decode_fused)
       Check(cudaFuncGetAttributes(&attributes, exl3_mma_fused::Projection));
     if (o.exl3_decode_dual)
-      Check(cudaFuncGetAttributes(&attributes, exl3_mma_dual::Projection));
+      Check(cudaFuncGetAttributes(&attributes, o.exl3_rate == 6 ? exl3_mma_dual::Projection<6>
+                                                                : exl3_mma_dual::Projection<4>));
     if (o.wide_rms_dataflow)
       for (const auto kernel : {reinterpret_cast<const void *>(NormFP8WideExact),
                                 reinterpret_cast<const void *>(ResidualPostNormWideExact)})
@@ -1190,7 +1202,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       Check(cudaFuncGetAttributes(&attributes, exl3_input_wide_vector::Input));
     if (o.exl3_packed_activations)
       for (const auto kernel :
-           {reinterpret_cast<const void *>(exl3_packed_activations::Projection),
+           {(o.exl3_rate == 6
+                 ? reinterpret_cast<const void *>(exl3_packed_activations::Projection<6>)
+                 : reinterpret_cast<const void *>(exl3_packed_activations::Projection<4>)),
             reinterpret_cast<const void *>(exl3_packed_activations::InputActivated),
             reinterpret_cast<const void *>(exl3_packed_activations::Combine)})
         Check(cudaFuncGetAttributes(&attributes, kernel));
@@ -1997,9 +2011,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     static_assert(sizeof(DeviceMatrix) == 56 && sizeof(Control) == 8 &&
                   sizeof(SelectionCandidate) == 8);
     if (worker) {
-      const auto plan =
-          PlanServerMemory(weightsbytes, o.capacity, o.capacity, o.prefill_chunk, true,
-                           samplerTempBytes, o.kv_cache_format, o.server_kv_checkpoint);
+      const auto plan = PlanServerMemory(weightsbytes, o.capacity, o.capacity, o.prefill_chunk,
+                                         true, samplerTempBytes, o.kv_cache_format,
+                                         o.server_kv_checkpoint, o.exl3_rate);
       if (admission::Sum({plan.resident, prefillCommand.bytes}) != result.resident_buffer_bytes)
         throw std::runtime_error("persistent memory inventory mismatch");
       worker->RecordLoad(result.resident_buffer_bytes);
@@ -2024,7 +2038,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           ";fixed-teacher-decode-token=" + std::to_string(o.diagnostic_decode_token) +
           ";diagnostic-only/no-append/no-sampling";
 #if PADRA_EXL3_PREFILL_ASYNC64
-    if (o.exl3_packed_activations)
+    if (o.exl3_packed_activations && o.exl3_rate == 4)
       result.kernel_profile +=
           "+research-asyncAB-M32N128K64-weightsA-shared-overlay-Tge4-v2;Tlt4-originalSIMT";
 #endif
@@ -2137,7 +2151,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           Gemv<<<m.rows, 128, 0, stream.s>>>(m, input, output, bad.As<int>());
       };
       if (o.exl3_experts) {
-        result.kernel_profile += o.exl3_rate == 8    ? "+exl3-k8-h128-bf16-input-simt-v1"
+        result.kernel_profile += o.exl3_rate == 6
+                                     ? (o.exl3_decode_mma ? "+exl3-k6-h128-explicit-f16-mma-v1"
+                                                          : "+exl3-k6-h128-bf16-input-simt-v1")
+                                 : o.exl3_rate == 8  ? "+exl3-k8-h128-bf16-input-simt-v1"
                                  : o.exl3_decode_mma ? "+exl3-k4-h128-explicit-f16-mma-v1"
                                                      : "+exl3-k4-h128-bf16-input-simt-v1";
         result.math_profile +=
@@ -2353,6 +2370,17 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         result.actual_expert_dispatch +=
             ";decode=selected-N128/eight-warps/ordinary-FP32-FMA-X2;prefill-contract-unchanged";
       }
+      if (o.exl3_rate == 6) {
+        // Shared MMA geometry has rate-specific packed-weight decoding.
+        const auto labelRate = [](std::string &profile) {
+          for (const auto *label : {"K4", "k4"})
+            for (std::size_t at = 0; (at = profile.find(label, at)) != std::string::npos; at += 2)
+              profile.replace(at, 2, label[0] == 'K' ? "K6" : "k6");
+        };
+        labelRate(result.kernel_profile);
+        labelRate(result.math_profile);
+        labelRate(result.actual_expert_dispatch);
+      }
       result.diagnostic_attention_sha256 = model.diagnostic_attention_sha256;
       const auto trellisProject = [&](int layer, int part, const float *input, float *output,
                                       int tokens) {
@@ -2371,7 +2399,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         if (o.exl3_experts && o.exl3_decode_dual) {
           exl3_mma_dual::Launch(descriptors.As<DeviceMatrix>(), layer, part, ids.As<int>(), input,
                                 output, exl3Input, 8, bad.As<int>(), stream.s, nullptr,
-                                part == 0 ? up : nullptr);
+                                part == 0 ? up : nullptr, o.exl3_rate);
           if (part == 0)
             activateExl3(output, up, 1);
           return;
@@ -3303,16 +3331,23 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                                                   : part == 1 ? bu
                                                                               : bd);
 #if PADRA_EXL3_PREFILL_ASYNC64
-                exl3_transport_async64::Launch(
-#else
-                exl3_packed_activations::Launch(
+                if (o.exl3_rate == 4)
+                  exl3_transport_async64::Launch(
+                      descriptors.As<DeviceMatrix>(), l, part, ids.As<int>(), groups, counts,
+                      maskedTiles, exl3TileCount, bn, target,
+                      reinterpret_cast<const unsigned short *>(bg),
+                      reinterpret_cast<const unsigned short *>(bu), exl3SiLU.As<unsigned short>(),
+                      exl3Workspace.As<__half>(), ffnTokens, bad.As<int>(), stream.s, nullptr,
+                      o.exl3_wide_input);
+                else
 #endif
-                    descriptors.As<DeviceMatrix>(), l, part, ids.As<int>(), groups, counts,
-                    maskedTiles, exl3TileCount, bn, target,
-                    reinterpret_cast<const unsigned short *>(bg),
-                    reinterpret_cast<const unsigned short *>(bu), exl3SiLU.As<unsigned short>(),
-                    exl3Workspace.As<__half>(), ffnTokens, bad.As<int>(), stream.s, nullptr,
-                    o.exl3_wide_input);
+                  exl3_packed_activations::Launch(
+                      descriptors.As<DeviceMatrix>(), l, part, ids.As<int>(), groups, counts,
+                      maskedTiles, exl3TileCount, bn, target,
+                      reinterpret_cast<const unsigned short *>(bg),
+                      reinterpret_cast<const unsigned short *>(bu), exl3SiLU.As<unsigned short>(),
+                      exl3Workspace.As<__half>(), ffnTokens, bad.As<int>(), stream.s, nullptr,
+                      o.exl3_wide_input, o.exl3_rate);
               }
               exl3_packed_activations::Combine<<<dim3(18, ffnTokens), 128, 0, stream.s>>>(
                   ffnX, reinterpret_cast<const unsigned short *>(bd), routing.As<float>(),

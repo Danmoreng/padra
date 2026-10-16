@@ -22,6 +22,7 @@ public:
   explicit CudaModelWorker(InferenceOptions profile)
       : options(std::move(profile)), state(options.capacity), prefix(options.capacity) {
     stats.capacity = options.capacity;
+    stats.expert_rate = options.exl3_rate;
     stats.prefill_chunk = options.prefill_chunk;
     stats.device_budget_gib = options.server_device_budget_gib;
     stats.kv_format = options.kv_cache_format;

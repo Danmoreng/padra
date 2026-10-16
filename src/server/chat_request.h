@@ -4,16 +4,25 @@
 #include "server/tool_protocol.h"
 #include "text/tokenizer.h"
 #include <chrono>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 namespace mellum16::server {
 inline constexpr const char *kModelId = "mellum21-exl3-k4-research";
+inline constexpr const char *kK6ModelId = "mellum21-exl3-k6-research";
+inline std::string_view ModelIdForRate(int rate) {
+  if (rate == 4)
+    return kModelId;
+  if (rate == 6)
+    return kK6ModelId;
+  throw std::invalid_argument("unsupported server expert rate");
+}
 inline std::size_t RequestBodyLimit(int capacity) {
   return capacity <= 8192 ? 512 * 1024 : 2 * 1024 * 1024;
 }
 struct ChatRequest {
-  std::string body, id, session_id, session_owner;
+  std::string body, id, session_id, session_owner, model = kModelId;
   std::vector<int> input_ids;
   std::vector<std::string> stops;
   int checkpoint_anchor = 0;
@@ -26,7 +35,7 @@ struct ChatRequest {
   double tokenize_seconds = 0;
 };
 Result<ChatRequest> ParseChatRequest(std::string_view, const text::Tokenizer &, int capacity,
-                                     std::string id);
+                                     std::string id, std::string_view selected_model = kModelId);
 // Attach a retained root after request validation and response-store admission.
 Status AttachSession(ChatRequest &, const text::Tokenizer &, const std::string &);
 std::string ErrorJson(std::string_view message, std::string_view code = "invalid_request_error",

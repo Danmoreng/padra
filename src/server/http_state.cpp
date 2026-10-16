@@ -59,7 +59,7 @@ void HttpServer::Session(const httplib::Request &request, httplib::Response &res
       return;
     }
     auto *model = body.value().find("model");
-    if (!model || !model->is_string() || model->as_string() != kModelId ||
+    if (!model || !model->is_string() || model->as_string() != model_id_ ||
         body.value().as_object().size() != 1) {
       Error(response, 400, "session creation supports exactly the selected model field");
       return;
@@ -76,7 +76,7 @@ void HttpServer::Session(const httplib::Request &request, httplib::Response &res
   response.set_header("Cache-Control", "no-store");
   response.set_content(
       "{\"id\":" + json::Quote(s.id) + ",\"object\":\"mellum.session\",\"model\":" +
-          json::Quote(kModelId) + ",\"ttl_seconds\":" + std::to_string(store.ttl_seconds()) +
+          json::Quote(model_id_) + ",\"ttl_seconds\":" + std::to_string(store.ttl_seconds()) +
           ",\"active\":" + (s.active ? "true" : "false") +
           ",\"stored_history_bytes\":" + std::to_string(s.bytes) + ",\"kv_cache_available\":" +
           (coordinator_.SessionCacheAvailable(s.id, owner.value()) ? "true" : "false") +

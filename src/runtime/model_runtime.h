@@ -13,8 +13,9 @@ inline constexpr const char *kServerChunkProfile = "exl3-k4-chunk-graph-eager-ta
 inline std::string ServerExecutionProfile(int capacity, bool chunks,
                                           KVCacheFormat kv_format = KVCacheFormat::BF16,
                                           int chunk = 2048, int budget_gib = 0,
-                                          bool checkpoint = false) {
-  return std::string(chunks ? "exl3-k4-chunk-graph-eager-tail-" : "exl3-k4-all-rows-wide-vector-") +
+                                          bool checkpoint = false, int expert_rate = 4) {
+  return std::string("exl3-k") + std::to_string(expert_rate) +
+         (chunks ? "-chunk-graph-eager-tail-" : "-all-rows-wide-vector-") +
          std::to_string(capacity) + "-v1" +
          (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1 ? "-q8-token-head128-f32scale-v1"
                                                                : "") +
@@ -23,7 +24,7 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
          (checkpoint ? "-local-checkpoint-bf16-v1" : "");
 }
 struct RuntimeStats {
-  int capacity = 8192, prefill_chunk = 2048, device_budget_gib = 0;
+  int capacity = 8192, prefill_chunk = 2048, device_budget_gib = 0, expert_rate = 4;
   std::uint64_t device_total_bytes = 0, device_free_before_bytes = 0, admission_available_bytes = 0,
                 required_bytes = 0, post_graph_available_bytes = 0;
   KVCacheFormat kv_format = KVCacheFormat::BF16;
@@ -111,5 +112,6 @@ public:
 private:
   std::unique_ptr<RuntimeBackend> backend_;
 };
-InferenceOptions SelectedServerOptions(const std::filesystem::path &, const std::string &);
+InferenceOptions SelectedServerOptions(const std::filesystem::path &, const std::string &,
+                                       int expert_rate = 4);
 } // namespace mellum16

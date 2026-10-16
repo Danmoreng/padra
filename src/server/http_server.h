@@ -47,6 +47,7 @@ private:
   Coordinator &coordinator_;
   const text::Tokenizer &tokenizer_;
   int port_, capacity_;
+  const std::string model_id_;
   bool bound_ = false;
   HttpListener http_, admin_;
   int admin_port_ = -1;

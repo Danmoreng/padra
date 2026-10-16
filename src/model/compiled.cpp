@@ -99,19 +99,22 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
     const auto &v = parsed.value();
     Require(Number(Field(v, "schema_version")) == 1, "unsupported manifest schema");
     const auto profile = Text(Field(v, "profile"));
-    const bool exl3 = profile == kExl3Profile || profile == kExl3K8Profile;
-    const int exl3Rate = profile == kExl3K8Profile ? 8 : exl3 ? 4 : 0;
+    const bool exl3 =
+        profile == kExl3Profile || profile == kExl3K6Profile || profile == kExl3K8Profile;
+    const int exl3Rate = profile == kExl3K8Profile   ? 8
+                         : profile == kExl3K6Profile ? 6
+                         : exl3                      ? 4
+                                                     : 0;
     Require(profile == kHybridProfile || exl3, "unsupported precision/math profile");
     Require(Text(Field(v, "model_revision")) == kModelRevision, "wrong Mellum model revision");
-    Require(
-        Text(Field(v, "activation_arithmetic")) ==
-            (exl3 ? (exl3Rate == 8 ? "EXL3 K8 mul1; FP16 sidecars; FP32 H128 rounded BF16 input; "
-                                     "compensated FP32 dot; FP32 H128 rounded BF16 output"
-                                   : "EXL3 K4 mul1; FP16 sidecars; FP32 H128 rounded BF16 input; "
-                                     "compensated FP32 dot; FP32 H128 rounded BF16 output")
-                  : "BF16 activations; dequantized weights rounded BF16 in registers; FP32 SIMT "
-                    "accumulation"),
-        "unsupported activation arithmetic");
+    const auto expectedArithmetic =
+        exl3 ? std::string("EXL3 K") + std::to_string(exl3Rate) +
+                   " mul1; FP16 sidecars; FP32 H128 rounded BF16 input; "
+                   "compensated FP32 dot; FP32 H128 rounded BF16 output"
+             : "BF16 activations; dequantized weights rounded BF16 in registers; FP32 SIMT "
+               "accumulation";
+    Require(Text(Field(v, "activation_arithmetic")) == expectedArithmetic,
+            "unsupported activation arithmetic");
     Require(Text(Field(v, "kv_dtype")) == "BF16", "unsupported cache precision");
     Require(Text(Field(v, "weights_file")) == "weights.bin", "unsafe weights path");
     const auto bytes = Number(Field(v, "weights_bytes"));
@@ -151,13 +154,18 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
       const bool expert = name.find(".experts.") != std::string::npos;
       const bool projection = name.find(".self_attn.") != std::string::npos &&
                               name.find("_proj.weight") != std::string::npos;
-      const auto format = expert       ? (exl3 ? (exl3Rate == 8 ? "EXL3_K8" : "EXL3_K4") : "NVFP4")
+      const auto format = expert       ? (exl3 ? (exl3Rate == 8   ? "EXL3_K8"
+                                                  : exl3Rate == 6 ? "EXL3_K6"
+                                                                  : "EXL3_K4")
+                                               : "NVFP4")
                           : projection ? "FP8"
                                        : "BF16";
       Require(Text(Field(t, "format")) == format,
               "tensor precision does not match selected hybrid");
-      matrix.format = expert ? (exl3 ? (exl3Rate == 8 ? WeightFormat::Exl3K8 : WeightFormat::Exl3K4)
-                                     : WeightFormat::Nvfp4)
+      matrix.format = expert       ? (exl3 ? (exl3Rate == 8   ? WeightFormat::Exl3K8
+                                              : exl3Rate == 6 ? WeightFormat::Exl3K6
+                                                              : WeightFormat::Exl3K4)
+                                           : WeightFormat::Nvfp4)
                       : projection ? WeightFormat::Fp8
                                    : WeightFormat::Bf16;
       std::map<std::string, std::uint64_t, std::less<>> sizes;
