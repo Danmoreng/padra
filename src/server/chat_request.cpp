@@ -18,6 +18,64 @@ Result<int> Budget(const json::Value *value, int fallback) {
     return Invalid("completion budget must be integer1..131072");
   return static_cast<int>(value->as_integer());
 }
+// Normalize API text forms at the HTTP boundary. Keep the original tool/schema
+// bytes: their declaration order is part of the model's rendered prompt.
+Result<std::string> CanonicalBody(std::string_view body, const json::Value &root,
+                                  const json::Value::Array &messages) {
+  json::Value::Array canonical;
+  bool changed = false;
+  for (const auto &message : messages) {
+    if (!message.is_object())
+      return Invalid("message must be object");
+    auto object = message.as_object();
+    if (auto *role = message.find("role");
+        role && role->is_string() && role->as_string() == "developer") {
+      object.insert_or_assign("role", json::Value(std::string("system")));
+      changed = true;
+    }
+    if (auto *content = message.find("content"); content && content->is_array()) {
+      std::string text;
+      for (const auto &part : content->as_array()) {
+        if (!part.is_object() || part.as_object().size() != 2 || !part.find("type") ||
+            !part.find("type")->is_string() || part.find("type")->as_string() != "text" ||
+            !part.find("text") || !part.find("text")->is_string())
+          return Status(StatusCode::kUnsupported, "Chat content parts require type=text and text");
+        text += part.find("text")->as_string();
+      }
+      object.insert_or_assign("content", json::Value(std::move(text)));
+      changed = true;
+    }
+    canonical.emplace_back(std::move(object));
+  }
+  auto history = ValidateToolHistory(canonical);
+  if (!history.ok())
+    return history;
+  std::string result(body);
+  if (changed) {
+    auto span = FindJsonField(body, "messages");
+    if (!span.ok())
+      return span.status();
+    result.replace(span.value().value_begin, span.value().value_end - span.value().value_begin,
+                   json::Stringify(json::Value(std::move(canonical))));
+  }
+  if (auto *effort = root.find("reasoning_effort"); effort && !effort->is_null()) {
+    if (!effort->is_string())
+      return Invalid("reasoning_effort must be string or null");
+    const auto &value = effort->as_string();
+    if (value != "none" && value != "minimal" && value != "low" && value != "medium" &&
+        value != "high" && value != "xhigh" && value != "max")
+      return Invalid("unsupported reasoning_effort");
+    // Mellum has a binary thinking switch, not separate per-effort budgets.
+    const bool thinking = value != "none";
+    if (auto *explicit_thinking = root.find("enable_thinking")) {
+      if (!explicit_thinking->is_bool() || explicit_thinking->as_bool() != thinking)
+        return Invalid("reasoning_effort conflicts with enable_thinking");
+    } else
+      result.insert(result.find_last_not_of(" \t\r\n"),
+                    std::string(",\"enable_thinking\":") + (thinking ? "true" : "false"));
+  }
+  return result;
+}
 } // namespace
 std::string ErrorJson(std::string_view message, std::string_view code, std::string_view type) {
   return "{\"error\":{\"message\":" + json::Quote(message) + ",\"type\":" + json::Quote(type) +
@@ -51,6 +109,8 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
                                                           "n",
                                                           "stop",
                                                           "enable_thinking",
+                                                          "reasoning_effort",
+                                                          "store",
                                                           "session_id",
                                                           "tools",
                                                           "tool_choice",
@@ -67,9 +127,15 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
   if (!messages || !messages->is_array() || messages->as_array().empty() ||
       messages->as_array().size() > 256)
     return Invalid("messages must contain1..256 entries");
-  auto history_status = ValidateToolHistory(messages->as_array());
-  if (!history_status.ok())
-    return history_status;
+  if (auto *store = root.find("store"); store && !store->is_null()) {
+    if (!store->is_bool())
+      return Invalid("store must be boolean or null");
+    if (store->as_bool())
+      return Status(StatusCode::kUnsupported, "Chat completion storage is not implemented");
+  }
+  auto canonical = CanonicalBody(body, root, messages->as_array());
+  if (!canonical.ok())
+    return canonical.status();
   auto tool_config = ValidateTools(root);
   if (!tool_config.ok())
     return tool_config.status();
@@ -136,7 +202,7 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
   result.outputs = budget.value();
   result.sampling = sampling;
   result.id = std::move(id);
-  result.body = body;
+  result.body = std::move(canonical).value();
   result.tools = std::move(tool_config).value();
   if (auto *session = root.find("session_id"); session && !session->is_null()) {
     if (!session->is_string() || session->as_string().size() != 37 ||
@@ -183,12 +249,12 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
   const auto begin = std::chrono::steady_clock::now();
   std::string render_body;
   if (!result.tools.parse && root.find("tools")) {
-    auto omitted = OmitJsonField(body, "tools");
+    auto omitted = OmitJsonField(result.body, "tools");
     if (!omitted.ok())
       return omitted.status();
     render_body = std::move(omitted).value();
   } else
-    render_body = body;
+    render_body = result.body;
   auto rendered = text::RenderChat(render_body);
   if (!rendered.ok())
     return rendered.status();

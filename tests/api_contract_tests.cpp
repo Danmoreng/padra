@@ -2,6 +2,42 @@
 #include <fstream>
 #include <iterator>
 namespace {
+void TextNormalization(text::Tokenizer &tokenizer) {
+  const auto plain =
+      R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"system","content":"Follow instructions"},{"role":"user","content":"hello €"}],"max_tokens":8,"enable_thinking":false})";
+  const auto parts =
+      R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"developer","content":[{"type":"text","text":"Follow "},{"type":"text","text":"instructions"}]},{"role":"user","content":[{"type":"text","text":"hello "},{"type":"text","text":"€"}]}],"max_tokens":8,"reasoning_effort":"none","store":false})";
+  auto reference = ParseChatRequest(plain, tokenizer, 8192, "normalization");
+  auto normalized = ParseChatRequest(parts, tokenizer, 8192, "normalization");
+  Require(reference.ok() && normalized.ok(), "OpenAI text forms failed admission");
+  Require(reference.value().input_ids == normalized.value().input_ids,
+          "text part concatenation or developer instructions changed prompt bytes");
+  Require(!json::Parse(normalized.value().body).value().find("enable_thinking")->as_bool(),
+          "reasoning_effort=none did not disable model thinking");
+  for (const auto *effort : {"minimal", "low", "medium", "high", "xhigh", "max"}) {
+    auto body = json::Parse(plain).value().as_object();
+    body.erase("enable_thinking");
+    body.emplace("reasoning_effort", json::Value(std::string(effort)));
+    auto enabled = ParseChatRequest(json::Stringify(json::Value(body)), tokenizer, 8192, "effort");
+    Require(enabled.ok() &&
+                json::Parse(enabled.value().body).value().find("enable_thinking")->as_bool(),
+            "nonzero reasoning effort did not enable model thinking");
+  }
+  auto attached_reference =
+      AttachSession(reference.value(), tokenizer, "sess-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  auto attached_parts =
+      AttachSession(normalized.value(), tokenizer, "sess-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  Require(attached_reference.ok() && attached_parts.ok() &&
+              reference.value().checkpoint_anchor == normalized.value().checkpoint_anchor,
+          "session checkpoint did not use canonical text history");
+  const auto schema =
+      R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"number"}}}}}]})";
+  auto ordered = ParseChatRequest(schema, tokenizer, 8192, "schema-order");
+  Require(ordered.ok() && ordered.value().body.find(
+                              R"("properties":{"z":{"type":"string"},"a":{"type":"number"}})") !=
+                              std::string::npos,
+          "content normalization reordered original function schema bytes");
+}
 void SamplingForwarding(text::Tokenizer &tokenizer) {
   auto state = std::make_shared<MockState>();
   state->tokens = {0, 28};
@@ -79,6 +115,7 @@ int main(int argc, char **argv) {
       Require(reply && reply->status == 404, "unsupported endpoint silently accepted");
     }
     SamplingForwarding(*tokenizer.value());
+    TextNormalization(*tokenizer.value());
     std::cout
         << checked
         << " normative API field cases, unsupported endpoints and both sampling adapters passed\n";

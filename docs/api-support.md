@@ -35,7 +35,7 @@ listing endpoints are not implemented.
 | Streaming | `stream`; optional `stream_options.include_usage` | `stream`; usage in terminal response |
 | Sampling and repetition control | `temperature`, `top_p`, `top_k`, `seed`, `repetition_penalty`, `frequency_penalty`, `presence_penalty` | Same |
 | Stop strings | `stop`: one string or up to four strings | Same |
-| Thinking control | Padra `enable_thinking` | Padra `enable_thinking`; no effort/summary control |
+| Thinking control | `reasoning_effort` or Padra `enable_thinking` | Padra `enable_thinking`; no effort/summary control |
 | Function definitions | Nested `tools[].function` | Flat `tools[]` with `type: "function"` |
 | Tool selection | `tool_choice: "auto"` or `"none"` | Same |
 | Multiple function calls | `parallel_tool_calls`; up to eight returned calls | Same |
@@ -43,6 +43,7 @@ listing endpoints are not implemented.
 | Manual item replay | Chat message/tool history | Supported message, function and plaintext-reasoning items |
 | Metadata | Not accepted | Up to 16 string pairs; key ≤64 bytes, value ≤512 bytes |
 | Multiple choices | Only `n: 1` | One response |
+| Completion storage | `store: false` or null; no retained Chat completion objects | Bounded `store`/`previous_response_id` |
 
 All fields in the sampling row are supported by Padra on both endpoints. They
 control decoding: temperature scales logits, top-k/top-p restrict candidate tokens,
@@ -70,6 +71,12 @@ Sampling ranges are `temperature: 0` (greedy) or 0.0001–2, `top_p: (0, 1]`,
 `frequency_penalty`/`presence_penalty: -2–2`, and `repetition_penalty: 0.01–100`.
 Null sampling fields select defaults. These are input/forwarding contracts;
 synthetic client tests do not qualify stochastic model quality.
+
+Chat `reasoning_effort: "none"` disables thinking. `minimal`, `low`, `medium`,
+`high`, `xhigh` and `max` enable thinking. Mellum provides one thinking mode, so
+these nonzero efforts do not select distinct token budgets or guarantee different
+amounts of reasoning. Omission/null retains the default enabled thinking mode.
+An explicit `enable_thinking` must agree with a non-null `reasoning_effort`.
 
 ## Accepted restricted values
 
@@ -106,16 +113,19 @@ The server uses loopback HTTP and local credential namespaces. Public
 authentication/TLS, durable conversation storage, hosted built-in tools and
 multi-sequence GPU scheduling are not provided.
 
-Chat message `content` is a string, or null for an assistant with function calls.
-Responses additionally accepts the text-part/item forms described above. Chat
-content-part arrays and developer roles are unsupported. Unknown/non-owned previous
+Chat message `content` accepts a string or an array of `{type: "text", text: "..."}`
+parts, concatenated without adding separators, or null for an assistant with
+function calls. Chat `developer` instructions use Mellum's `system` template role;
+the template has no separate developer priority level. Images and other nontext
+parts are rejected. Responses accepts the text-part/item forms described above;
+its developer role remains unsupported. Unknown/non-owned previous
 response strings return `404/response_not_found`; nonstring IDs are invalid input.
 
 ## Contract verification
 
 | Contract | Verification |
 | --- | --- |
-| Accepted/rejected fields, sampling ranges, restricted values, input forms, tool declaration/history limits | 247 HTTP cases in [the versioned field matrix](../tests/contracts/api-fields.json); both adapters' sampling values are also observed at the runtime interface |
+| Accepted/rejected fields, sampling ranges, restricted values, input forms, tool declaration/history limits | 277 HTTP cases in [the versioned field matrix](../tests/contracts/api-fields.json); both adapters' sampling values are also observed at the runtime interface |
 | Unsupported endpoints and request/error IDs | `api-field-contract`, admission/error tests, SDK unsupported-option tests |
 | Events, usage, output indices, raw argument bytes, terminal/GET equality | 32 exact wire goldens, output-order/partial-tool tests, SDK stream helpers |
 | Retention, continuation, partial tools, deletion | Admission/partial-tool tests and SDK retention/GET/delete tests |

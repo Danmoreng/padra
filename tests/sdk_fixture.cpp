@@ -51,6 +51,11 @@ public:
     pause_after_ = 0;
     delay_ = std::chrono::milliseconds(0);
     std::string output = "hello";
+    // Real Pi CLI exercises its read tool and returns the result in a follow-up
+    // request. This remains synthetic inference with production HTTP parsing.
+    if (text.value().find("pi-read-fixture") != std::string::npos &&
+        text.value().find("\"role\":\"tool\"") == std::string::npos)
+      output = R"(<tool_call>{"name":"read","arguments":{"path":"probe.txt"}}</tool_call>)";
     if (text.value().find("tool-valid") != std::string::npos ||
         text.value().find("tool-slow") != std::string::npos ||
         text.value().find("tool-mixed") != std::string::npos) {

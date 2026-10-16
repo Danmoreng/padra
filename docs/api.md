@@ -21,6 +21,48 @@ Use `stream: true` for SSE deltas. Chat streams can include a final usage chunk
 with `stream_options: {"include_usage": true}`. Reasoning appears separately as
 `reasoning_content`.
 
+Text-only content-part arrays and `developer` instructions are accepted. Chat
+`store: false` requests no completion storage. Use `reasoning_effort: "none"` to
+disable thinking; the other accepted effort names all select Mellum's enabled
+thinking mode, without separate effort budgets. See [API support](api-support.md).
+
+### Pi Coding Agent
+
+Pi can connect using its built-in `openai-completions` API. Merge this provider
+into `~/.pi/agent/models.json`, using the server's actual port and model ID:
+
+```json
+{
+  "providers": {
+    "padra": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "local-padra",
+      "models": [{
+        "id": "mellum21-exl3-k4-research",
+        "name": "Padra Mellum K4",
+        "reasoning": true,
+        "thinkingLevelMap": {"off": "none"},
+        "input": ["text"],
+        "contextWindow": 131072,
+        "maxTokens": 16384
+      }]
+    }
+  }
+}
+```
+
+```sh
+pi --model padra/mellum21-exl3-k4-research
+```
+
+No provider extension, request adapter or proxy is required. The context window
+must match the server capacity; input plus output budget must fit within it. Pi's
+thinking levels share Mellum's single enabled mode, while `off` sends `none`.
+Use Chat Completions for Pi: Padra's Responses subset does not accept Pi's default
+prompt-cache and encrypted-reasoning options. See [client qualification](../tests/client-contract.md)
+for the optional real Pi CLI smoke test.
+
 ## Responses
 
 ```sh

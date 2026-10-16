@@ -1,7 +1,7 @@
 # Client contract qualification
 
 The public support matrix is [API support](../docs/api-support.md). The versioned
-normative request matrix is `contracts/api-fields.json`, version 1. Its 247 cases
+normative request matrix is `contracts/api-fields.json`, version 1. Its 277 cases
 exercise the production HTTP adapters, accepting supported values and rejecting
 unsupported fields, ranges, content forms, strict/forced tools and excess tool
 limits. Error status/code and request identity are checked. Unsupported endpoints
@@ -45,6 +45,17 @@ The suite writes actual SDK/Python version, engine source fingerprint, resolved
 server settings, explicit client settings, passed group names, success and fixture
 exit code to `sdk-compatibility.json` in CTest's build directory. Failed runs retain
 the current group name. The pinned CI job uploads this and CTest output.
+
+## Pi CLI smoke
+
+With Pi 1.3 installed, `pi_client_smoke.py --fixture /path/to/padra-sdk-fixture
+--report /path/to/pi-report.json` runs the unmodified CLI against production Chat
+Completions parsing and streaming with synthetic inference. It checks text,
+plaintext reasoning and a real local `read` tool followed by another model turn.
+It uses a temporary `models.json`, dummy local credentials and no extensions,
+request hooks, proxies, MCP servers or user configuration. The report records the
+actual Pi version and passed cases. This optional test is separate from CTest and
+does not qualify model quality or native GPU inference.
 
 ## Update canary
 

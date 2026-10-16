@@ -3417,8 +3417,7 @@
           }
         ]
       },
-      "status": 400,
-      "code": "invalid_request_error"
+      "status": 200
     },
     {
       "route": "chat",
@@ -5553,6 +5552,402 @@
       },
       "status": 400,
       "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "store/False",
+      "patch": {
+        "store": false
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "store/None",
+      "patch": {
+        "store": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "store/rejected/True",
+      "patch": {
+        "store": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "store/rejected/0",
+      "patch": {
+        "store": 0
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "store/rejected/false",
+      "patch": {
+        "store": "false"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/None",
+      "patch": {
+        "reasoning_effort": null
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/none",
+      "patch": {
+        "reasoning_effort": "none"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/minimal",
+      "patch": {
+        "reasoning_effort": "minimal"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/low",
+      "patch": {
+        "reasoning_effort": "low"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/medium",
+      "patch": {
+        "reasoning_effort": "medium"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/high",
+      "patch": {
+        "reasoning_effort": "high"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/xhigh",
+      "patch": {
+        "reasoning_effort": "xhigh"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/max",
+      "patch": {
+        "reasoning_effort": "max"
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/rejected/True",
+      "patch": {
+        "reasoning_effort": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/rejected/2",
+      "patch": {
+        "reasoning_effort": 2
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/rejected/extreme",
+      "patch": {
+        "reasoning_effort": "extreme"
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "reasoning_effort/rejected/{}",
+      "patch": {
+        "reasoning_effort": {}
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "reasoning/conflicting-switch",
+      "patch": {
+        "reasoning_effort": "none",
+        "enable_thinking": true
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "reasoning/matching-switch",
+      "patch": {
+        "reasoning_effort": "none",
+        "enable_thinking": false
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "messages/text-parts/system",
+      "patch": {
+        "messages": [
+          {
+            "role": "system",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "text",
+                "text": "€"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "messages/text-parts/developer",
+      "patch": {
+        "messages": [
+          {
+            "role": "developer",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "text",
+                "text": "€"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "messages/text-parts/user",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "text",
+                "text": "€"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "messages/text-parts/assistant",
+      "patch": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "text",
+                "text": "€"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 200
+    },
+    {
+      "route": "chat",
+      "name": "messages/unsupported-parts/0",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "https://invalid"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/unsupported-parts/1",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/unsupported-parts/2",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": null
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/unsupported-parts/3",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello",
+                "unknown": 1
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/unsupported-parts/4",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              "hello"
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/unsupported-parts/5",
+      "patch": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "refusal",
+                "refusal": "no"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 400,
+      "code": "invalid_request_error"
+    },
+    {
+      "route": "chat",
+      "name": "messages/tool-text-parts",
+      "patch": {
+        "messages": [
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                  "name": "read",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": [
+              {
+                "type": "text",
+                "text": "result"
+              }
+            ]
+          }
+        ]
+      },
+      "status": 200
     }
   ]
 }
