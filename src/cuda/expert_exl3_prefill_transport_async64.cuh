@@ -1,7 +1,7 @@
 // Double-buffered M32/N128/K64 transport for native EXL3 K4 prefill.
 // Exact FP16 codebook values, sequential K16 MMA order and BF16 boundaries.
 // The A/B staging arena is reused for output exchange after the final wait.
-// Requests below 128 tokens retain the existing K32 projection geometry.
+// Requests below four tokens retain the caller's existing SIMT path.
 #pragma once
 #include "expert_exl3_prefill_packed_activations.cuh"
 #include "expert_exl3_lane_codec.cuh"

@@ -65,6 +65,9 @@ and cache/toolchain options.
   EXL3 K4 prefill, compensated register-row decode postnorm, per-head attention
   merge, and fused Q/K normalization, RoPE and BF16 KV storage.
 
+Global attention, native Q8 chunk transport and EXL3 prefill transport have
+independent build selections; see [prefill profiles](docs/attention-benchmark.md).
+
 The compatible `PADRA_EXL3_PREFILL_ASYNC64=ON` alias selects `exact-fusions-v1`
 when `PADRA_KERNEL_PROFILE` is empty. Unsupported profiles and `baseline-v1`
 combined with that alias set to `ON` fail configuration. `/v1/models` exposes the

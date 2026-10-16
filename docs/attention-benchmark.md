@@ -106,3 +106,14 @@ rounding and materialized-prefix contract. `materialized-v1` retains the explici
 BF16-to-float-to-BF16 chunk control. The selection is independent of attention
 partitioning and decode kernels, requires no additional device memory, and is
 included in build and graph identity.
+
+## Independent EXL3 prefill transport
+
+`PADRA_EXL3_PREFILL_TRANSPORT=async64-v1` selects the double-buffered K64 transport
+for EXL3 K4 prefill at four or more tokens. It preserves sequential K16 MMA order
+and BF16 boundaries. K3/K6 and smaller requests retain their existing codec
+paths. Gate and up inputs retain their separate matrix-specific transforms.
+The default `baseline-v1` retains the packed-activation transport control.
+This selection changes no decode fusion flags and allocates no additional
+persistent workspace. `PADRA_KERNEL_PROFILE` continues to select decode fusions
+independently. Build and graph identity include the prefill transport selection.

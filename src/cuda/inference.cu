@@ -228,7 +228,7 @@ __global__ void Rope(float *q, float *k, const float *table, int position) {
 #include "expert_exl3_prefill_dot.cuh"
 #include "expert_exl3_prefill_warp.cuh"
 #include "expert_exl3_prefill_packed_activations.cuh"
-#if PADRA_EXL3_PREFILL_ASYNC64
+#if PADRA_EXL3_PREFILL_ASYNC64 || PADRA_EXL3_INDEPENDENT_PREFILL
 #include "expert_exl3_prefill_transport_async64.cuh"
 #endif
 #include "expert_exl3_selected.cuh"
@@ -1243,8 +1243,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         Check(cudaFuncGetAttributes(&attributes, kernel));
     if (o.exl3_silu_table)
       Check(cudaFuncGetAttributes(&attributes, exl3_silu_lut::Activate));
-#if PADRA_EXL3_PREFILL_ASYNC64
-    if (o.exl3_packed_activations)
+#if PADRA_EXL3_PREFILL_ASYNC64 || PADRA_EXL3_INDEPENDENT_PREFILL
+    if (o.exl3_packed_activations && o.exl3_rate == 4)
       Check(cudaFuncGetAttributes(&attributes, exl3_transport_async64::Projection));
 #endif
     if (o.exl3_bf16_postnorm)
@@ -2035,6 +2035,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     }
     if (q8Native && PADRA_Q8_PREFILL_PACKED)
       result.kernel_profile += "+q8-prefill-packed-current-chunk-v1";
+#if PADRA_EXL3_INDEPENDENT_PREFILL && !PADRA_EXL3_PREFILL_ASYNC64
+    if (o.exl3_packed_activations && o.exl3_rate == 4) {
+      result.kernel_profile += "+exl3-K4-prefill-async64-v1";
+      result.math_profile += ";EXL3-prefill-transport=async64/sequential-K16-MMA/BF16-boundaries";
+    }
+#endif
     result.resident_buffer_bytes = admission::Sum({checkpointBuffer.bytes,
                                                    prefillPartials.bytes,
                                                    q8NativePrefix.bytes,
@@ -3480,7 +3486,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                 auto *target = reinterpret_cast<unsigned short *>(part == 0   ? bg
                                                                   : part == 1 ? bu
                                                                               : bd);
-#if PADRA_EXL3_PREFILL_ASYNC64
+#if PADRA_EXL3_PREFILL_ASYNC64 || PADRA_EXL3_INDEPENDENT_PREFILL
                 if (o.exl3_rate == 4)
                   exl3_transport_async64::Launch(
                       descriptors.As<DeviceMatrix>(), l, part, ids.As<int>(), groups, counts,
@@ -3550,7 +3556,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                   model.weights_sha256,
                   compiler::Sha256Hex(result.math_profile.data(), result.math_profile.size()),
                   std::string(kPadraBuildSourceSha256) + "/" + kPadraBuildKernelProfile + "/" +
-                      kPadraBuildPrefillProfile + "/" + kPadraBuildQ8PrefillProfile + "/SM120",
+                      kPadraBuildPrefillProfile + "/" + kPadraBuildQ8PrefillProfile + "/" +
+                      kPadraBuildExl3PrefillTransport + "/SM120",
                   KVCacheLayout::Make(o.kv_cache_format, 1).name(),
                   o.capacity,
                   batch,

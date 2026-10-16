@@ -32,3 +32,11 @@ check_profile(prefill-split global-matrix-split-v1 -DPADRA_PREFILL_PROFILE=globa
 
 check_profile(q8-packed packed-chunk-v1 -DPADRA_Q8_PREFILL_PROFILE=packed-chunk-v1)
 check_profile(q8-unknown reject -DPADRA_Q8_PREFILL_PROFILE=unknown)
+
+check_profile(exl3-independent async64-v1 -DPADRA_EXL3_PREFILL_TRANSPORT=async64-v1 -DPADRA_KERNEL_PROFILE=baseline-v1)
+check_profile(exl3-transport-unknown reject -DPADRA_EXL3_PREFILL_TRANSPORT=unknown)
+
+file(READ "${PADRA_TEST_BINARY}/exl3-independent/generated/runtime/build_identity.h" independent_identity)
+if(NOT independent_identity MATCHES "kPadraBuildKernelProfile\\[\\]=\"baseline-v1\"")
+  message(FATAL_ERROR "independent EXL3 prefill transport changed the decode profile")
+endif()
