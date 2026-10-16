@@ -90,3 +90,19 @@ query/head. Empty partitions use `(-infinity,0,zero)`. The final stable merge
 applies output rounding once. Prefix selection reads `PrefillState` on replay;
 no capture-time prefix length determines the partitioning. Source, build profile
 and arithmetic identity distinguish the graph cache entries.
+
+## Native Q8 fixtures and packed current chunk
+
+`--q8` generates native block32 Q8 rows with FP16 scales and derives their BF16
+materialization using the production rounding boundary. The deterministic
+fixture is already in the rotated K128/V64 storage domain; the harness introduces
+no query quantization. Fixture export includes the native rows and their BF16
+images. Timed attention consumes the BF16 materialization, as the server does.
+The reported workspace includes the independent frozen-control buffers.
+
+`PADRA_Q8_PREFILL_PROFILE=packed-chunk-v1` dequantizes the current Q8 chunk directly
+into its packed BF16 workspace. It preserves the existing rotations, BF16
+rounding and materialized-prefix contract. `materialized-v1` retains the explicit
+BF16-to-float-to-BF16 chunk control. The selection is independent of attention
+partitioning and decode kernels, requires no additional device memory, and is
+included in build and graph identity.

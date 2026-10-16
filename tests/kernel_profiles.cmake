@@ -29,3 +29,6 @@ check_profile(prefill-unknown reject -DPADRA_PREFILL_PROFILE=unknown)
 
 check_profile(prefill-matrix global-matrix-v1 -DPADRA_PREFILL_PROFILE=global-matrix-v1)
 check_profile(prefill-split global-matrix-split-v1 -DPADRA_PREFILL_PROFILE=global-matrix-split-v1)
+
+check_profile(q8-packed packed-chunk-v1 -DPADRA_Q8_PREFILL_PROFILE=packed-chunk-v1)
+check_profile(q8-unknown reject -DPADRA_Q8_PREFILL_PROFILE=unknown)

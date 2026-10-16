@@ -127,6 +127,7 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << ",\"build_source_sha256\":" << json::Quote(kPadraBuildSourceSha256)
         << ",\"build_kernel_profile\":" << json::Quote(kPadraBuildKernelProfile)
         << ",\"build_prefill_profile\":" << json::Quote(kPadraBuildPrefillProfile)
+        << ",\"build_q8_prefill_profile\":" << json::Quote(kPadraBuildQ8PrefillProfile)
         << ",\"kernel_profile\":" << json::Quote(r.kernel_profile)
         << ",\"math_profile\":" << json::Quote(r.math_profile)
         << ",\"test_backend\":" << (r.model_loads == 0 ? "true" : "false") << "}]}";

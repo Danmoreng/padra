@@ -7,6 +7,9 @@
 #ifndef PADRA_PREFILL_MATRIX_LOAD
 #define PADRA_PREFILL_MATRIX_LOAD 0
 #endif
+#ifndef PADRA_Q8_PREFILL_PACKED
+#define PADRA_Q8_PREFILL_PACKED 0
+#endif
 namespace mellum16 {
 inline constexpr int kPrefillSplitThreshold = 8192;
 inline constexpr std::size_t PrefillPartialBytes(std::size_t chunk) {

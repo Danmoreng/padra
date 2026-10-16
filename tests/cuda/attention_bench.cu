@@ -27,6 +27,7 @@ __device__ void Finite(float x, int *bad) {
     atomicExch(bad, 1);
 }
 #include "cuda/attention_mma.cuh"
+#include "cuda/kv_q8_layout.cuh"
 #include "cuda/attention_prefill_padded_single.cuh"
 #include "attention_prefill_frozen.cuh"
 // Validate the transport primitive independently of the floating-point MMA.
@@ -106,7 +107,7 @@ struct Graph {
 };
 struct Options {
   int base = 1024, tokens = 8, capacity = 131072, repeats = 7, warmup = 3, capture_base = -1;
-  bool local = false, round = false, graph = false, poison = false, host_base = false;
+  bool local = false, round = false, graph = false, poison = false, host_base = false, q8 = false;
   std::string fixture, dump, variant = "baseline";
 };
 Options Parse(int argc, char **argv) {
@@ -120,7 +121,9 @@ Options Parse(int argc, char **argv) {
   };
   for (int i = 1; i < argc; ++i) {
     const std::string key = argv[i];
-    if (key == "--host-base")
+    if (key == "--q8")
+      o.q8 = true;
+    else if (key == "--host-base")
       o.host_base = true;
     else if (key == "--local")
       o.local = true;
@@ -243,6 +246,41 @@ float Value(std::size_t i, unsigned seed) {
   x ^= x >> 16;
   return (static_cast<int>(x & 2047) - 1024) / 4096.f;
 }
+// Deterministic native rows in the rotated storage domain. CPU widening obeys
+// the same BF16(code * FP16-scale) boundary as the GPU materialized control.
+void NativeFixture(std::vector<q8_native::CacheRow> &rows, std::vector<__nv_bfloat16> &wide,
+                   unsigned seed) {
+  for (std::size_t row = 0; row < rows.size(); ++row) {
+    for (int block = 0; block < 16; ++block)
+      rows[row].d[block] = __float2half_rn(float(1 + (row * 11 + block * 7 + seed) % 23) * .00097f);
+    for (int d = 0; d < 512; ++d) {
+      unsigned x = unsigned(row * 512 + d) * 1315423911u ^ seed;
+      x ^= x >> 17;
+      const int code = int(x % 255) - 127;
+      rows[row].qs[d] = static_cast<signed char>(code);
+      wide[row * 512 + d] = __float2bfloat16_rn(float(code) * __half2float(rows[row].d[d / 32]));
+    }
+  }
+}
+void ValidateNative(const std::vector<q8_native::CacheRow> &rows,
+                    const std::vector<__nv_bfloat16> &wide, int base, bool local, bool current) {
+  std::vector<bool> visible(rows.size(), current);
+  if (!current)
+    for (int key = local ? std::max(0, base - 1023) : 0; key < base; ++key)
+      visible[key % rows.size()] = true;
+  for (std::size_t row = 0; row < rows.size(); ++row) {
+    if (!visible[row])
+      continue;
+    for (int d = 0; d < 512; ++d) {
+      const float scale = __half2float(rows[row].d[d / 32]);
+      const int code = rows[row].qs[d];
+      if (!std::isfinite(scale) || scale < 0 || code == -128 ||
+          __bfloat16_as_ushort(__float2bfloat16_rn(float(code) * scale)) !=
+              __bfloat16_as_ushort(wide[row * 512 + d]))
+        throw std::runtime_error("native Q8 fixture and BF16 image disagree");
+    }
+  }
+}
 // FP64 scalar oracle on small fixtures. It isolates indexing/masks/GQA errors;
 // BF16 intermediate probability rounding makes this a tolerance comparison.
 double Oracle(const Options &o, int cap, const std::vector<float> &q,
@@ -318,23 +356,50 @@ int main(int argc, char **argv) {
       ck[i] = __float2bfloat16_rn(Value(i, 101));
       cv[i] = __float2bfloat16_rn(Value(i, 202));
     }
+    std::vector<q8_native::CacheRow> qk(o.q8 ? cap : 0), qv(o.q8 ? cap : 0),
+        qck(o.q8 ? o.tokens : 0), qcv(o.q8 ? o.tokens : 0);
+    if (o.q8) {
+      NativeFixture(qk, k, 456);
+      NativeFixture(qv, v, 789);
+      NativeFixture(qck, ck, 101);
+      NativeFixture(qcv, cv, 202);
+    }
     if (o.poison) {
       std::vector<bool> visible(cap, false);
       for (int key = o.local ? std::max(0, o.base - 1023) : 0; key < o.base; ++key)
         visible[key % cap] = true;
       for (int key = 0; key < cap; ++key)
-        if (!visible[key])
+        if (!visible[key]) {
           for (int d = 0; d < 512; ++d)
             k[key * 512 + d] = v[key * 512 + d] = __float2bfloat16_rn(NAN);
+          if (o.q8) {
+            for (int d = 0; d < 16; ++d)
+              qk[key].d[d] = qv[key].d[d] = __float2half_rn(NAN);
+            for (int d = 0; d < 512; ++d)
+              qk[key].qs[d] = qv[key].qs[d] = -128;
+          }
+        }
     }
     mellum16::compiler::Sha256 hash;
-    for (int value : {o.base, o.tokens, o.capacity, int(o.local), int(o.round)})
+    for (int value : {o.base, o.tokens, o.capacity, int(o.local), int(o.round), int(o.q8)})
       hash.Update(&value, sizeof(value));
     Fixture(q, o.fixture, o.dump, "q.f32", hash);
     Fixture(k, o.fixture, o.dump, "k.bf16", hash);
     Fixture(v, o.fixture, o.dump, "v.bf16", hash);
     Fixture(ck, o.fixture, o.dump, "chunk-k.bf16", hash);
     Fixture(cv, o.fixture, o.dump, "chunk-v.bf16", hash);
+    if (o.q8) {
+      Fixture(qk, o.fixture, o.dump, "k.q8_0", hash);
+      Fixture(qv, o.fixture, o.dump, "v.q8_0", hash);
+      Fixture(qck, o.fixture, o.dump, "chunk-k.q8_0", hash);
+      Fixture(qcv, o.fixture, o.dump, "chunk-v.q8_0", hash);
+    }
+    if (o.q8) {
+      ValidateNative(qk, k, o.base, o.local, false);
+      ValidateNative(qv, v, o.base, o.local, false);
+      ValidateNative(qck, ck, o.base, o.local, true);
+      ValidateNative(qcv, cv, o.base, o.local, true);
+    }
     Buffer dq(nq * 4), dk(nk * 2), dv(nk * 2), dck(nc * 2), dcv(nc * 2), dout(nq * 4), bad(4),
         state(sizeof(PrefillState)), partials(std::max(std::size_t(1), partial_bytes));
     Stream stream;
@@ -519,7 +584,9 @@ int main(int argc, char **argv) {
               << ",\"local\":" << (o.local ? "true" : "false")
               << ",\"device_control\":" << (o.host_base ? "false" : "true")
               << ",\"graph\":" << (o.graph ? "true" : "false")
-              << ",\"round_output\":" << (o.round ? "true" : "false")
+              << ",\"round_output\":" << (o.round ? "true" : "false") << ",\"kv_format\":"
+              << mellum16::json::Quote(o.q8 ? "q8_0-block32-f16scale-rotated-domain" : "bf16")
+              << ",\"candidate_prefix_workspace_bytes\":" << (nk * 4)
               << ",\"operand\":\"bf16\",\"accumulator\":\"fp32\",\"probability\":\"bf16\",\"q_"
                  "scaling\":\"post_qk_fp32\",\"tile\":["
               << shape_rows << "," << shape_keys << ",128],\"transport_rows\":" << transport_rows

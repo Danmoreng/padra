@@ -1127,7 +1127,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             reinterpret_cast<const void *>(q8_native::Split<true>),
             reinterpret_cast<const void *>(q8_native::Merge<false, float>),
             reinterpret_cast<const void *>(q8_native::Merge<true, float>),
-            reinterpret_cast<const void *>(q8_native::Dequantize<float>),
+            (PADRA_Q8_PREFILL_PACKED
+                 ? reinterpret_cast<const void *>(q8_native::Dequantize<__nv_bfloat16>)
+                 : reinterpret_cast<const void *>(q8_native::Dequantize<float>)),
             reinterpret_cast<const void *>(q8_native::DequantizePrefix<PrefillState>),
             reinterpret_cast<const void *>(q8_native::Commit<PrefillState>),
             reinterpret_cast<const void *>(q8_native::RotateRows<false>),
@@ -2031,6 +2033,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           "old-and-current-same-codec/no-BF16-shadowprefix/"
           "selected-BF16-MMA-softmax-order;encoding-inclusive";
     }
+    if (q8Native && PADRA_Q8_PREFILL_PACKED)
+      result.kernel_profile += "+q8-prefill-packed-current-chunk-v1";
     result.resident_buffer_bytes = admission::Sum({checkpointBuffer.bytes,
                                                    prefillPartials.bytes,
                                                    q8NativePrefix.bytes,
@@ -3279,16 +3283,29 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                   static_cast<const q8_native::CacheRow *>(a.q8.k),
                   static_cast<const q8_native::CacheRow *>(a.q8.v), q8PrefixK, q8PrefixV, prefill,
                   n, a.cap, bad.As<int>(), contextMaximum);
-              q8_native::Dequantize<float>
-                  <<<std::min(512, (n * 512 + 255) / 256), 256, 0, stream.s>>>(
-                      static_cast<const q8_native::CacheRow *>(q8Chunk.k),
-                      static_cast<const q8_native::CacheRow *>(q8Chunk.v), bk, bv, n,
-                      bad.As<int>());
+              if constexpr (PADRA_Q8_PREFILL_PACKED)
+                q8_native::Dequantize<__nv_bfloat16>
+                    <<<std::min(512, (n * 512 + 255) / 256), 256, 0, stream.s>>>(
+                        static_cast<const q8_native::CacheRow *>(q8Chunk.k),
+                        static_cast<const q8_native::CacheRow *>(q8Chunk.v), packedChunkK,
+                        packedChunkV, n, bad.As<int>());
+              else
+                q8_native::Dequantize<float>
+                    <<<std::min(512, (n * 512 + 255) / 256), 256, 0, stream.s>>>(
+                        static_cast<const q8_native::CacheRow *>(q8Chunk.k),
+                        static_cast<const q8_native::CacheRow *>(q8Chunk.v), bk, bv, n,
+                        bad.As<int>());
               q8_native::RotateRows<false><<<n * 8, 128, 0, stream.s>>>(bq, n, bad.As<int>());
-              padded_single_prefill_attention::Launch<false>(
-                  bq, q8PrefixK, q8PrefixV, bk, bv, ba, base, n, a.cap, l % 4 != 3, bad.As<int>(),
-                  stream.s, packedChunkK, packedChunkV, prefill, contextMaximum,
-                  prefillPartials.As<float>());
+              if constexpr (PADRA_Q8_PREFILL_PACKED)
+                padded_single_prefill_attention::LaunchPacked<false>(
+                    bq, q8PrefixK, q8PrefixV, packedChunkK, packedChunkV, ba, base, n, a.cap,
+                    l % 4 != 3, bad.As<int>(), stream.s, prefill, contextMaximum,
+                    prefillPartials.As<float>());
+              else
+                padded_single_prefill_attention::Launch<false>(
+                    bq, q8PrefixK, q8PrefixV, bk, bv, ba, base, n, a.cap, l % 4 != 3, bad.As<int>(),
+                    stream.s, packedChunkK, packedChunkV, prefill, contextMaximum,
+                    prefillPartials.As<float>());
               q8_native::RotateRows<true><<<n * 8, 128, 0, stream.s>>>(ba, n, bad.As<int>());
             } else if (q8Cache) {
               kv_q8::Encode<false><<<n, 128, 0, stream.s>>>(
@@ -3533,7 +3550,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                   model.weights_sha256,
                   compiler::Sha256Hex(result.math_profile.data(), result.math_profile.size()),
                   std::string(kPadraBuildSourceSha256) + "/" + kPadraBuildKernelProfile + "/" +
-                      kPadraBuildPrefillProfile + "/SM120",
+                      kPadraBuildPrefillProfile + "/" + kPadraBuildQ8PrefillProfile + "/SM120",
                   KVCacheLayout::Make(o.kv_cache_format, 1).name(),
                   o.capacity,
                   batch,

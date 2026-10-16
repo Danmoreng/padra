@@ -332,19 +332,15 @@ template <bool RoundOutput> std::vector<const void *> SelectedKernels() {
   return kernels;
 }
 template <bool RoundOutput = true>
-void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, const float *chunkK,
-            const float *chunkV, float *output, int base, int tokens, int cap, bool local, int *bad,
-            cudaStream_t stream, __nv_bfloat16 *packedK, __nv_bfloat16 *packedV,
-            const PrefillState *prefill = nullptr, int context_limit = kW4A8FContextCapacity,
-            float *partials = nullptr) {
-  if (!q || !kc || !vc || !chunkK || !chunkV || !output || !bad || base < 0 || tokens < 1 ||
+void LaunchPacked(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc,
+                  const __nv_bfloat16 *packedK, const __nv_bfloat16 *packedV, float *output,
+                  int base, int tokens, int cap, bool local, int *bad, cudaStream_t stream,
+                  const PrefillState *prefill = nullptr, int context_limit = kW4A8FContextCapacity,
+                  float *partials = nullptr) {
+  if (!q || !kc || !vc || !packedK || !packedV || !output || !bad || base < 0 || tokens < 1 ||
       tokens > kW4A8FMaxPrefillChunk || base > context_limit - tokens || cap < 1 ||
       cap > context_limit || (local ? cap < std::min(1024, base + tokens) : cap < base + tokens))
-    throw std::runtime_error("G3 pipeline BF16 prefill attention shape/binding unsupported");
-  if (!packedK || !packedV)
-    throw std::runtime_error("packed BF16 chunk workspace missing");
-  EncodeChunk<<<(tokens * 512 + 255) / 256, 256, 0, stream>>>(chunkK, chunkV, packedK, packedV,
-                                                              tokens);
+    throw std::runtime_error("packed prefill attention shape/binding unsupported");
   const dim3 grid((tokens + kRows - 1) / kRows, 4);
   if (local)
     PipelineBF16<true, RoundOutput><<<grid, kThreads, 0, stream>>>(
@@ -364,5 +360,22 @@ void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, co
                  PADRA_PREFILL_GLOBAL_DATAFLOW != 0, PADRA_PREFILL_MATRIX_LOAD != 0>
         <<<grid, kThreads, 0, stream>>>(q, kc, vc, packedK, packedV, output, base, tokens, cap, bad,
                                         prefill, context_limit);
+}
+template <bool RoundOutput = true>
+void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, const float *chunkK,
+            const float *chunkV, float *output, int base, int tokens, int cap, bool local, int *bad,
+            cudaStream_t stream, __nv_bfloat16 *packedK, __nv_bfloat16 *packedV,
+            const PrefillState *prefill = nullptr, int context_limit = kW4A8FContextCapacity,
+            float *partials = nullptr) {
+  if (!q || !kc || !vc || !chunkK || !chunkV || !output || !bad || base < 0 || tokens < 1 ||
+      tokens > kW4A8FMaxPrefillChunk || base > context_limit - tokens || cap < 1 ||
+      cap > context_limit || (local ? cap < std::min(1024, base + tokens) : cap < base + tokens))
+    throw std::runtime_error("G3 pipeline BF16 prefill attention shape/binding unsupported");
+  if (!packedK || !packedV)
+    throw std::runtime_error("packed BF16 chunk workspace missing");
+  EncodeChunk<<<(tokens * 512 + 255) / 256, 256, 0, stream>>>(chunkK, chunkV, packedK, packedV,
+                                                              tokens);
+  LaunchPacked<RoundOutput>(q, kc, vc, packedK, packedV, output, base, tokens, cap, local, bad,
+                            stream, prefill, context_limit, partials);
 }
 } // namespace padded_single_prefill_attention

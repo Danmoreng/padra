@@ -3,19 +3,8 @@
 // 10a60cf303566e10d6a7a2774c17d2085503d87b (MIT), ggml/src/ggml-cuda/fattn-common.cuh and
 // fattn-vec.cuh. Native Padra implementation: four query heads share aligned, staged KV rows.
 #include "context_admission.cuh"
+#include "kv_q8_layout.cuh"
 namespace q8_native {
-// One token:16 FP16 scales followed by512 codes; each head starts on a
-// 32-byte boundary. Logical32-element block coefficients are unchanged.
-struct alignas(16) CacheRow {
-  __half d[16];
-  signed char qs[512];
-};
-struct QueryBlock {
-  float d;
-  int qs[8];
-};
-static_assert(sizeof(CacheRow) == 544 && alignof(CacheRow) == 16);
-static_assert(sizeof(QueryBlock) == 36 && alignof(QueryBlock) == 4);
 constexpr int Features = 512, Heads = 32, Dim = 128, Threads = 128, Tile = 128;
 
 __device__ __forceinline__ float WarpMax(float v) {
