@@ -35,7 +35,7 @@ __global__ void InputActivated(const DeviceMatrix *matrices, int layer, const in
   if (pair >= pairs)
     return;
   const auto m = exl3_expert::Matrix(matrices, layer, 2, ids, pair, bad);
-  if ((m.format != 3 && m.format != 5) || m.cols != 896 || blockDim.x != 128) {
+  if ((m.format != 3 && m.format != 5 && m.format != 6) || m.cols != 896 || blockDim.x != 128) {
     if (!lane)
       atomicExch(bad, 1);
     return;
@@ -138,7 +138,7 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int part, co
     return;
   }
   const auto matrix = matrices[(layer * 64 + tile.expert) * 3 + part];
-  if (matrix.format != (Rate == 4 ? 3 : 5)) {
+  if (matrix.format != (Rate == 3 ? 6 : Rate == 4 ? 3 : 5)) {
     if (!threadIdx.x)
       atomicExch(bad, 1);
     return;
@@ -178,10 +178,10 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int part, co
       const std::uint64_t tileIndex =
           std::uint64_t((kBase + k) / 16) * std::uint64_t(matrix.rows / 16) + nBase / 16 + warp;
       unsigned fragment[2][2];
-      if constexpr (Rate == 6) {
-        const auto word = exl3_lane_codec::Load<6>(matrix.data + tileIndex * 192, lane);
+      if constexpr (Rate != 4) {
+        const auto word = exl3_lane_codec::Load<Rate>(matrix.data + tileIndex * (32 * Rate), lane);
         unsigned decoded[4];
-        exl3_lane_codec::Four<6>(word, decoded);
+        exl3_lane_codec::Four<Rate>(word, decoded);
 #pragma unroll
         for (int n = 0; n < 2; ++n)
 #pragma unroll
@@ -265,7 +265,10 @@ inline void Launch(const DeviceMatrix *matrices, int layer, int part, const int 
   else
     exl3_warp_input::Input<<<(pairs * (cols / 128) + 3) / 4, 128, 0, stream>>>(
         matrices, layer, part, ids, input, transformed, pairs, bad, stats);
-  if (rate == 6)
+  if (rate == 3)
+    Projection<3><<<dim3(rows / 128, Capacity(tokens)), 256, 0, stream>>>(
+        matrices, layer, part, groups, tiles, tileCount, transformed, output, tokens, bad);
+  else if (rate == 6)
     Projection<6><<<dim3(rows / 128, Capacity(tokens)), 256, 0, stream>>>(
         matrices, layer, part, groups, tiles, tileCount, transformed, output, tokens, bad);
   else

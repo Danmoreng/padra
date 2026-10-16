@@ -17,7 +17,7 @@ struct ServerMemoryPlan {
     return required() <= free;
   }
 };
-// Selected all-row K4/K6 profiles; exact native cudaMalloc inventory, not a
+// Selected all-row K3/K4/K6 profiles; exact native cudaMalloc inventory, not a
 // generic estimator. These ABI widths are independently asserted by CUDA.
 inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int prompt, int chunk,
                                          bool persistent = false,
@@ -25,7 +25,7 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
                                          KVCacheFormat kv_format = KVCacheFormat::BF16,
                                          bool checkpoint = false, int expert_rate = 4) {
   if (capacity < 1 || capacity > 131072 || prompt < 1 || prompt > capacity || chunk < 2 ||
-      chunk > 2048 || (expert_rate != 4 && expert_rate != 6))
+      chunk > 2048 || (expert_rate != 3 && expert_rate != 4 && expert_rate != 6))
     throw std::invalid_argument("invalid selected-profile memory shape");
   const std::size_t batch = persistent ? chunk : std::min(chunk, prompt);
   ServerMemoryPlan plan;
@@ -57,9 +57,17 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
       admission::Bytes(std::min((capacity + 31) / 32, 32), 32 * (128 + 1) * 4));
   const auto compact = std::min((batch * 8 + 15) / 16 + 63, 64 * ((batch + 15) / 16));
   add("compact", admission::Sum({admission::Bytes(compact, 8), 4}));
-  add("packed_chunk", kv_format == KVCacheFormat::BF16 ? admission::Bytes(batch, 2048) : 0);
+  add("packed_chunk", (kv_format == KVCacheFormat::BF16 ||
+                       kv_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2)
+                          ? admission::Bytes(batch, 2048)
+                          : 0);
   if (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1) {
     add("encoded_q8_chunk", admission::Bytes(batch, 1056));
+  }
+  if (kv_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2) {
+    add("encoded_q8_0_chunk", admission::Bytes(batch, 1088));
+    add("q8_0_prefix_workspace", admission::Bytes(capacity, 2048));
+    add("q8_0_query", 128 * 36);
   }
   add("expert_schedule", exl3_masked_schedule::Bytes(static_cast<int>(batch)));
   add("silu", 65536 * 2);

@@ -5,7 +5,7 @@
 # Padra
 
 A standalone C++20/CUDA inference server for
-**JetBrains/Mellum2.1-12B-A2.5B-Thinking**, using native EXL3 K4 or K6 checkpoints.
+**JetBrains/Mellum2.1-12B-A2.5B-Thinking**, using admitted native EXL3 K3, K4 or K6 checkpoints.
 Padra is inspired by Padparadscha; its name is independent of GPU memory size.
 
 The server includes native tokenization, the original model chat/thinking template,
@@ -15,15 +15,15 @@ GPU-resident. Default context is 131,072 tokens with BF16 KV. 8/12 GiB memory ce
 are explicit profiles. Other checkpoint precisions and physical 8/12 GB GPUs are
 not qualified.
 
-K4 and K6 use FP16 MMA expert kernels with rate-specific packed-weight decoders
-and BF16 activation boundaries. Both retain FP8 attention projections and BF16
+K3, K4 and K6 use FP16 MMA expert kernels with rate-specific packed-weight decoders
+and BF16 activation boundaries. All retain FP8 attention projections and BF16
 routers, embeddings and output weights. K6 requires more VRAM for its larger
 expert weights.
 
 This repository contains serving source, build files, server regression tests and
 required licenses. A prepared native artifact is required; weights and conversion
 outputs are not distributed here. The runtime uses the `mellum16` namespace and
-the pinned native K4/K6 artifact identities.
+the pinned native K3/K4/K6 artifact identities.
 
 ## Build
 
@@ -81,15 +81,17 @@ Arguments:
 
 ```text
 ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT
-[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] [DEVICE_BUDGET_GIB]
+[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] [DEVICE_BUDGET_GIB] [KV_FORMAT]
 ```
 
 Defaults: 600000 ms, 131072 tokens, chunk 2048, actual-free-memory admission.
 Explicit chunks 512/256 and ceilings 8/12 GiB are supported. Admission includes a
-700 MiB reserve and 42 MiB session snapshot. Unsupported or oversized configurations
+700 MiB reserve and, with BF16 KV, a 42 MiB session snapshot. `KV_FORMAT` defaults
+to `bf16`; opt-in `q8` and `q8_0` reduce cache memory with lossy KV storage. See the
+[KV cache contract](docs/kv-cache.md). Unsupported or oversized configurations
 fail explicitly; no silent context/precision/chunk/CPU-offload fallback.
 
-Use an admitted native K4 or K6 artifact and the matching original
+Use an admitted native K3, K4 or K6 artifact and the matching original
 source tokenizer. Source revision: 92ddae9fc7665e9f801d141d2e5a6b2caf2460c4.
 Tokenizer SHA256: 58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a.
 

@@ -18,7 +18,9 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
          (chunks ? "-chunk-graph-eager-tail-" : "-all-rows-wide-vector-") +
          std::to_string(capacity) + "-v1" +
          (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1 ? "-q8-token-head128-f32scale-v1"
-                                                               : "") +
+          : kv_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2
+              ? "-q8_0-token512-block32-f16scale-rot-k128-v64-v2"
+              : "") +
          (chunk == 2048 ? "" : "-chunk" + std::to_string(chunk)) +
          (budget_gib ? "-budget" + std::to_string(budget_gib) + "GiB" : "") +
          (checkpoint ? "-local-checkpoint-bf16-v1" : "");

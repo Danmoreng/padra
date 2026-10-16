@@ -47,7 +47,7 @@ __device__ __forceinline__ void Stage(__nv_bfloat16 *target, const __nv_bfloat16
 __device__ __forceinline__ void Wait() {
   asm volatile("cp.async.wait_group 0;" ::: "memory");
 }
-template <bool Local>
+template <bool Local, bool RoundOutput = true>
 __launch_bounds__(kThreads, 2) __global__
     void PipelineBF16(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc,
                       const __nv_bfloat16 *chunkK, const __nv_bfloat16 *chunkV, float *output,
@@ -186,7 +186,8 @@ __launch_bounds__(kThreads, 2) __global__
     for (int j = 0; j < 4; ++j) {
       const int row = j / 2 ? row1 : row0;
       if (row < tokens) {
-        const float v = B(accum[tile][j] / denominator[j / 2]);
+        const float v = RoundOutput ? B(accum[tile][j] / denominator[j / 2])
+                                    : accum[tile][j] / denominator[j / 2];
         output[(row * 32 + head) * kDim + tile * 8 + tid * 2 + j % 2] = v;
         Finite(v, bad);
       }
@@ -201,6 +202,7 @@ __global__ void EncodeChunk(const float *k, const float *v, __nv_bfloat16 *packe
     packedV[i] = __float2bfloat16_rn(v[i]);
   }
 }
+template <bool RoundOutput = true>
 void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, const float *chunkK,
             const float *chunkV, float *output, int base, int tokens, int cap, bool local, int *bad,
             cudaStream_t stream, __nv_bfloat16 *packedK, __nv_bfloat16 *packedV,
@@ -215,10 +217,10 @@ void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, co
                                                               tokens);
   const dim3 grid((tokens + kRows - 1) / kRows, 4);
   if (local)
-    PipelineBF16<true><<<grid, kThreads, 0, stream>>>(q, kc, vc, packedK, packedV, output, base,
-                                                      tokens, cap, bad, prefill, context_limit);
+    PipelineBF16<true, RoundOutput><<<grid, kThreads, 0, stream>>>(
+        q, kc, vc, packedK, packedV, output, base, tokens, cap, bad, prefill, context_limit);
   else
-    PipelineBF16<false><<<grid, kThreads, 0, stream>>>(q, kc, vc, packedK, packedV, output, base,
-                                                       tokens, cap, bad, prefill, context_limit);
+    PipelineBF16<false, RoundOutput><<<grid, kThreads, 0, stream>>>(
+        q, kc, vc, packedK, packedV, output, base, tokens, cap, bad, prefill, context_limit);
 }
 } // namespace padded_single_prefill_attention

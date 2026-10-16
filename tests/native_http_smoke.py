@@ -10,6 +10,10 @@ parser.add_argument("--tokenizer", type=pathlib.Path, required=True)
 parser.add_argument("--tokenizer-sha256", required=True)
 parser.add_argument("--port", type=int, default=18463)
 parser.add_argument("--server-config", type=pathlib.Path)
+parser.add_argument("--capacity", type=int, default=8192)
+parser.add_argument("--prefill-chunk", type=int, default=2048)
+parser.add_argument("--device-budget-gib", type=int, default=0)
+parser.add_argument("--kv-format", choices=("bf16", "q8", "q8_0"), default="bf16")
 parser.add_argument("--output-dir", type=pathlib.Path, required=True)
 args = parser.parse_args()
 artifact = args.artifact.resolve()
@@ -46,9 +50,10 @@ with log.open("w") as output:
             sha,
             str(port),
             "30000",
-            "8192",
-            "2048",
-            "0",
+            str(args.capacity),
+            str(args.prefill_chunk),
+            str(args.device_budget_gib),
+            args.kv_format,
         ] + (["--config", str(args.server_config.resolve())] if args.server_config else []),
         stdout=output,
         stderr=output,
@@ -69,7 +74,7 @@ with log.open("w") as output:
             raise RuntimeError("server readiness timeout")
         identity = fetch("/v1/models")["data"][0]
         model = identity["id"]
-        assert model in ("mellum21-exl3-k4-research", "mellum21-exl3-k6-research")
+        assert model in ("mellum21-exl3-k3-research", "mellum21-exl3-k4-research", "mellum21-exl3-k6-research")
         manifest = json.loads((artifact / "manifest.json").read_text())
         assert identity["checkpoint_sha256"] == manifest["weights_sha256"]
         assert (
@@ -81,6 +86,14 @@ with log.open("w") as output:
             and len(identity["build_source_sha256"]) == 64
         )
         assert not identity["test_backend"]
+        assert identity["kv_format"] == (
+            {"bf16": "bf16", "q8": "q8_token_head128_f32scale_v1", "q8_0": "q8_0_token512_block32_f16scale_rot_k128_v64_v2"}[args.kv_format]
+        )
+        assert identity["context_capacity"] == args.capacity
+        assert identity["prefill_chunk"] == args.prefill_chunk
+        assert identity["device_budget_gib"] == args.device_budget_gib
+        assert identity["native_kv_reuse"] == (args.kv_format == "bf16")
+        assert (identity["checkpoint_snapshot_bytes"] > 0) == (args.kv_format == "bf16")
         assert identity["build_kernel_profile"] in ("baseline-v1", "exact-fusions-v1")
         resolved = identity["server_config"]
         admin_base = f"http://127.0.0.1:{resolved['admin_port']}"
@@ -216,6 +229,10 @@ with log.open("w") as output:
         assert "mellum_job_lifetime_seconds_bucket" in metrics
         result = {
             "actual_cuda_model": True,
+            "kv_format": identity["kv_format"],
+            "capacity": args.capacity,
+            "prefill_chunk": args.prefill_chunk,
+            "device_budget_gib": args.device_budget_gib,
             "artifact_identity_verified": True,
             "admin_listener_verified": True,
             "server_config": resolved,

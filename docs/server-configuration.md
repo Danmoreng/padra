@@ -4,7 +4,7 @@ The positional server CLI remains:
 
 ```sh
 padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT \
-  [GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] [DEVICE_BUDGET_GIB] \
+  [GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] [DEVICE_BUDGET_GIB] [KV_FORMAT] \
   [--config server.json]
 ```
 
@@ -14,6 +14,10 @@ model, tokenizer, context or numerical execution profile. Invalid types, unknown
 fields, unsupported values, duplicate keys and files above 64 KiB are rejected
 before loading the model. Configuration is validated once and immutable while
 running. Change it by restarting the process; there is no live reload endpoint.
+
+`KV_FORMAT` is `bf16` (default), `q8` or `q8_0`. It selects runtime KV storage independently
+of the model's expert quantization. See the [KV cache contract](kv-cache.md) for
+precision, context, memory admission and prefix-reuse restrictions.
 
 Example:
 

@@ -5,11 +5,12 @@
 namespace fast_attention {
 // Explicit diagnostic fixture input only; actual model routes and both GPU
 // output heads remain free. Never called by ordinary generation/benchmarks.
-__global__ void ForceDiagnosticDecodeToken(DecodeState *state, int token, int *bad) {
+__global__ void ForceDiagnosticDecodeToken(DecodeState *state, int token, int *bad,
+                                           int maximum = kW4A8FContextCapacity) {
   if (threadIdx.x || blockIdx.x)
     return;
   if (!state || token < 0 || token >= 98304 || state->remaining != 1 || state->capacity < 1 ||
-      state->capacity > kW4A8FContextCapacity || state->position < 0 ||
+      maximum < 1 || maximum > 131072 || state->capacity > maximum || state->position < 0 ||
       state->position >= state->capacity || state->global_valid != state->position ||
       state->local_valid != min(state->position, 1024) || *bad) {
     atomicExch(bad, 1);

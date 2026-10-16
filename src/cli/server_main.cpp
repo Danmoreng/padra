@@ -2,6 +2,7 @@
 #include "server/http_server.h"
 #include "text/tokenizer.h"
 #include "util/json.h"
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <csignal>
@@ -31,10 +32,10 @@ int main(int argc, char **argv) {
       if (config_body.empty())
         throw std::runtime_error("server configuration is empty");
     }
-    if (positional_argc < 5 || positional_argc > 9)
+    if (positional_argc < 5 || positional_argc > 10)
       throw std::runtime_error("usage: padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT "
                                "[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] "
-                               "[DEVICE_BUDGET_GIB] [--config JSON]");
+                               "[DEVICE_BUDGET_GIB] [KV_FORMAT=bf16|q8|q8_0] [--config JSON]");
     int port = 0;
     auto [end, error] =
         std::from_chars(argv[4], argv[4] + std::char_traits<char>::length(argv[4]), port);
@@ -59,7 +60,7 @@ int main(int argc, char **argv) {
         throw std::runtime_error("invalid context capacity integer");
     }
     int chunk = 2048, budget = 0;
-    for (int argument = 7; argument < positional_argc; ++argument) {
+    for (int argument = 7; argument < std::min(positional_argc, 9); ++argument) {
       int &value = argument == 7 ? chunk : budget;
       auto [stop, code] = std::from_chars(
           argv[argument], argv[argument] + std::char_traits<char>::length(argv[argument]), value);
@@ -68,6 +69,16 @@ int main(int argc, char **argv) {
     }
     if (!mellum16::ValidServerChunk(chunk) || !mellum16::ValidServerBudget(budget))
       throw std::runtime_error("server requires chunk2048/512/256 and budget0/8/12GiB");
+    auto kv_format = mellum16::KVCacheFormat::BF16;
+    if (positional_argc > 9) {
+      const std::string_view format = argv[9];
+      if (format == "q8")
+        kv_format = mellum16::KVCacheFormat::Q8TokenHead128F32ScaleV1;
+      else if (format == "q8_0")
+        kv_format = mellum16::KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
+      else if (format != "bf16")
+        throw std::runtime_error("KV_FORMAT must be bf16, q8 or q8_0");
+    }
     auto context = mellum16::AdmitNativeContext(capacity);
     if (!context.ok())
       throw std::runtime_error(context.status().message());
@@ -86,8 +97,8 @@ int main(int argc, char **argv) {
     auto tokenizer = std::move(text).value();
     std::unique_ptr<mellum16::ModelRuntime> runtime;
     auto loaded =
-        mellum16::ModelRuntime::Load(argv[1], tokenizer->sha256(), true, context.value(),
-                                     mellum16::KVCacheFormat::BF16, -1, chunk, budget, true);
+        mellum16::ModelRuntime::Load(argv[1], tokenizer->sha256(), true, context.value(), kv_format,
+                                     -1, chunk, budget, kv_format == mellum16::KVCacheFormat::BF16);
     if (!loaded.ok())
       throw std::runtime_error(loaded.status().message());
     runtime = std::move(loaded).value();

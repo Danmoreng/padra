@@ -35,7 +35,7 @@ loopback fixture and SSE reader; no test includes another test's `.cpp`/`main`.
 
 Covered regressions include:
 
-- K4/K6 artifact selection, expert workspace admission, device sidecar binding,
+- K3/K4/K6 artifact selection, expert workspace admission, device sidecar binding,
   selected model IDs in both JSON/SSE APIs and refusal of mismatched model IDs.
 - Full SSE ring followed by stop, EOS, length, optional usage, or a tool call;
   ordered completion frames and explicit errors on delta/tool backpressure.
@@ -85,7 +85,7 @@ suite below covers its explicitly supported loopback API subset.
 An optional Python standard-library runner starts the real CUDA/Rust server,
 checks loaded artifact hashes, session follow-ups, both streaming APIs, forty
 independent stored Responses and deletion with retained children, then stops and
-joins the server. It uses the loaded K4/K6 model ID from `/v1/models`. Use an unused
+joins the server. It uses the loaded K3/K4/K6 model ID from `/v1/models`. Use an unused
 loopback port and an admitted artifact:
 
 ```sh

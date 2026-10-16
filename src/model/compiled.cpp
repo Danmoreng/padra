@@ -99,9 +99,10 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
     const auto &v = parsed.value();
     Require(Number(Field(v, "schema_version")) == 1, "unsupported manifest schema");
     const auto profile = Text(Field(v, "profile"));
-    const bool exl3 =
-        profile == kExl3Profile || profile == kExl3K6Profile || profile == kExl3K8Profile;
-    const int exl3Rate = profile == kExl3K8Profile   ? 8
+    const bool exl3 = profile == kExl3K3Profile || profile == kExl3Profile ||
+                      profile == kExl3K6Profile || profile == kExl3K8Profile;
+    const int exl3Rate = profile == kExl3K3Profile   ? 3
+                         : profile == kExl3K8Profile ? 8
                          : profile == kExl3K6Profile ? 6
                          : exl3                      ? 4
                                                      : 0;
@@ -154,7 +155,8 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
       const bool expert = name.find(".experts.") != std::string::npos;
       const bool projection = name.find(".self_attn.") != std::string::npos &&
                               name.find("_proj.weight") != std::string::npos;
-      const auto format = expert       ? (exl3 ? (exl3Rate == 8   ? "EXL3_K8"
+      const auto format = expert       ? (exl3 ? (exl3Rate == 3   ? "EXL3_K3"
+                                                  : exl3Rate == 8 ? "EXL3_K8"
                                                   : exl3Rate == 6 ? "EXL3_K6"
                                                                   : "EXL3_K4")
                                                : "NVFP4")
@@ -162,7 +164,8 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
                                        : "BF16";
       Require(Text(Field(t, "format")) == format,
               "tensor precision does not match selected hybrid");
-      matrix.format = expert       ? (exl3 ? (exl3Rate == 8   ? WeightFormat::Exl3K8
+      matrix.format = expert       ? (exl3 ? (exl3Rate == 3   ? WeightFormat::Exl3K3
+                                              : exl3Rate == 8 ? WeightFormat::Exl3K8
                                               : exl3Rate == 6 ? WeightFormat::Exl3K6
                                                               : WeightFormat::Exl3K4)
                                            : WeightFormat::Nvfp4)

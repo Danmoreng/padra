@@ -718,6 +718,7 @@ struct Pinned {
 #include "attention_perhead_exact.cuh"
 #include "kv_fp8.cuh"
 #include "kv_q8.cuh"
+#include "kv_q8_native.cuh"
 #include "attention_gqa8_q8.cuh"
 #include "attention_prefill_q8.cuh"
 #include "attention_gqa8_fp8.cuh"
@@ -773,7 +774,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                                     CudaModelWorker *worker = nullptr) {
   const auto begin = std::chrono::steady_clock::now();
   try {
-    const bool q8Cache = o.kv_cache_format == KVCacheFormat::Q8TokenHead128F32ScaleV1;
+    const bool q8Native = o.kv_cache_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
+    const bool q8Cache = q8Native || o.kv_cache_format == KVCacheFormat::Q8TokenHead128F32ScaleV1;
     if (o.server_kv_checkpoint &&
         (!worker || !o.controlled_chunk_graphs || q8Cache || o.fp8_kv_cache ||
          !o.padded_bf16_prefill_attention || !o.packed_bf16_prefill_attention || o.capacity < 1024))
@@ -781,12 +783,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                     "checkpoint requires explicit selected controlled BF16/packed current chunk");
     if (o.kv_cache_format != KVCacheFormat::BF16 && !q8Cache)
       return Status(StatusCode::kUnsupported, "unknown typed KV format");
-    if (q8Cache && (!worker || !o.controlled_chunk_graphs || o.capacity != 8192 || o.fp8_kv_cache ||
-                    !o.padded_bf16_prefill_attention || !o.wide_attention_merge ||
+    if (q8Cache && (!worker || !o.controlled_chunk_graphs || !AdmitNativeContext(o.capacity).ok() ||
+                    o.fp8_kv_cache || !o.padded_bf16_prefill_attention || !o.wide_attention_merge ||
                     o.capture_trace || o.snapshot_layer >= 0))
       return Status(StatusCode::kUnsupported,
-                    "Q8 requires explicit controlled8192 selected runtime; no FP8 alias, "
-                    "trace/snapshot or unqualified long mode");
+                    "Q8 requires an explicit selected controlled context; no FP8 alias or "
+                    "trace/snapshot");
     const int contextMaximum =
         worker && o.controlled_chunk_graphs ? o.capacity : kW4A8FContextCapacity;
     const NativeArtifactIdentity *selectedArtifact = nullptr;
@@ -810,7 +812,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
          !o.padded_bf16_prefill_attention))
       return Status(
           StatusCode::kUnsupported,
-          "long-context profile requires selected K4/K6/BF16 online attention; materialized "
+          "long-context profile requires selected K3/K4/K6/BF16 online attention; materialized "
           "scores/traces/old cache/profile paths unsupported");
     if (o.controlled_chunk_graphs && !worker)
       return Status(StatusCode::kUnsupported,
@@ -826,39 +828,42 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_decode_dual && !o.exl3_decode_lane)
       return Status(StatusCode::kInvalidArgument, "paired gate/up requires lane decoder parent");
     if (o.wide_rms_dataflow &&
-        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
-         !o.exact_fp8_encoding || !o.exl3_bf16_postnorm || o.ordinary_rms_norm))
+        (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+         !o.native_decode || !o.exact_fp8_encoding || !o.exl3_bf16_postnorm || o.ordinary_rms_norm))
       return Status(StatusCode::kUnsupported,
-                    "wide RMS requires native K4/K6/exact E4/BF16-postnorm/compensated profile");
+                    "wide RMS requires native K3/K4/K6/exact E4/BF16-postnorm/compensated profile");
     if (o.wide_attention_merge && (!o.exact_fp8_encoding || !o.attention_fragment_validation))
       return Status(StatusCode::kUnsupported, "wide merge requires exact BF16 fragment profile");
-    if (o.paired_attention_o && (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
-                                 !o.native_decode || !o.ordinary_fp8_simt || o.attention_fp8_mma))
+    if (o.paired_attention_o &&
+        (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+         !o.native_decode || !o.ordinary_fp8_simt || o.attention_fp8_mma))
       return Status(StatusCode::kUnsupported,
-                    "paired O requires native K4/K6 ordinary-SIMT attention control");
-    if (o.exact_router_rank && (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
-                                !o.native_decode || !o.fast_w4a8))
+                    "paired O requires native K3/K4/K6 ordinary-SIMT attention control");
+    if (o.exact_router_rank &&
+        (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+         !o.native_decode || !o.fast_w4a8))
       return Status(StatusCode::kUnsupported,
-                    "exact router rank requires native K4/K6 W4A8F decode control");
+                    "exact router rank requires native K3/K4/K6 W4A8F decode control");
     if (o.attention_fragment_validation && !o.exact_fp8_encoding)
       return Status(StatusCode::kUnsupported,
-                    "fragment validation requires exact K4/K6 BF16 encoding profile");
+                    "fragment validation requires exact K3/K4/K6 BF16 encoding profile");
     if (o.exact_fp8_encoding &&
-        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
-         !o.fused_attention_o || o.ordinary_rms_norm || o.reciprocal_fused_quantization ||
-         !o.diagnostic_attention.empty()))
+        (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+         !o.native_decode || !o.fused_attention_o || o.ordinary_rms_norm ||
+         o.reciprocal_fused_quantization || !o.diagnostic_attention.empty()))
       return Status(StatusCode::kUnsupported,
-                    "exact E4 codes requires K4/K6/native/compensated input norm/N4a BF16 O "
+                    "exact E4 codes requires K3/K4/K6/native/compensated input norm/N4a BF16 O "
                     "control,no older reciprocal/X0 override");
     if (o.exl3_decode_lane && !o.exl3_decode_fused)
       return Status(StatusCode::kInvalidArgument, "lane decoder requires fused-M1 parent");
     if (o.exl3_prefill_warp && !o.exl3_prefill_dot)
       return Status(StatusCode::kInvalidArgument, "warp input requires dot-prefill parent");
     if ((o.exl3_silu_table || o.exl3_bf16_postnorm) &&
-        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
-         o.reciprocal_fused_quantization || o.capture_quantization_rows || !o.fused_residual_norm))
+        (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+         !o.native_decode || o.reciprocal_fused_quantization || o.capture_quantization_rows ||
+         !o.fused_residual_norm))
       return Status(StatusCode::kUnsupported,
-                    "exact table/postnorm requires K4/K6/native/direct-div and no FP8 capture");
+                    "exact table/postnorm requires K3/K4/K6/native/direct-div and no FP8 capture");
     if (o.attention_fp8_mma && (!o.exl3_experts || o.exl3_rate != 4 || !o.native_decode ||
                                 !o.ordinary_fp8_simt || !o.diagnostic_attention.empty()))
       return Status(StatusCode::kUnsupported,
@@ -871,7 +876,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                     "dot/fused decode requires explicit M1-FP16-MMA parent");
     if (o.exl3_decode_mma &&
         (o.exl3_decode_selected || o.exl3_decode_n32 || !o.exl3_experts ||
-         (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
+         (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) || !o.native_decode ||
          !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 || o.diagnostic_routes))
       return Status(StatusCode::kUnsupported, "M1 FP16-MMA requires K4,native decode,no X2/N32/X0 "
                                               "overrides;explicit BF16-to-FP16 input rounding");
@@ -890,15 +895,16 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_prefill_masked && !o.exl3_prefill_fp16)
       return Status(StatusCode::kInvalidArgument, "masked prefill requires FP16 prefill");
     if (o.exl3_prefill_fp16 &&
-        (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.compact_experts ||
-         o.prefill_chunk < 2 || !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 ||
-         o.diagnostic_routes))
+        (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+         !o.compact_experts || o.prefill_chunk < 2 || !o.diagnostic_attention.empty() ||
+         o.diagnostic_h128_fp32 || o.diagnostic_routes))
       return Status(StatusCode::kUnsupported,
                     "X1 FP16 M32 requires K4,compact grouping,chunk>=2,no X0 overrides");
-    if (o.exl3_rate == 6 && ((o.exl3_decode_mma && !o.exl3_decode_dual) ||
-                             (o.exl3_prefill_fp16 && !o.exl3_packed_activations)))
+    if ((o.exl3_rate == 3 || o.exl3_rate == 6) &&
+        ((o.exl3_decode_mma && !o.exl3_decode_dual) ||
+         (o.exl3_prefill_fp16 && !o.exl3_packed_activations)))
       return Status(StatusCode::kUnsupported,
-                    "K6 MMA requires paired decode and packed BF16 prefill kernels");
+                    "K3/K6 MMA requires paired decode and packed BF16 prefill kernels");
     const bool x0 =
         !o.diagnostic_attention.empty() || o.diagnostic_h128_fp32 || o.diagnostic_routes;
     if (x0 && (!o.exl3_experts || o.generate != 0 || o.input_ids.size() > 512 ||
@@ -939,7 +945,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     for (int l = 0; l < 28; ++l)
       kvbytes = admission::Sum(
           {kvbytes, admission::Bytes(l % 4 == 3 ? o.capacity : std::min(1024, o.capacity),
-                                     q8Cache          ? 1056
+                                     q8Cache ? KVCacheLayout::Make(o.kv_cache_format, 1).bytes
                                      : o.fp8_kv_cache ? 512 * 2 + 4 * sizeof(kv_fp8::Scales)
                                                       : 512 * 2 * 2)});
     // Admit/load every compiled kernel before the token loop (CUDA lazy loading).
@@ -1114,6 +1120,31 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             reinterpret_cast<const void *>(q8_prefill_attention::PipelineBF16<true>),
             reinterpret_cast<const void *>(q8_prefill_attention::PipelineBF16<false>)})
         Check(cudaFuncGetAttributes(&attributes, kernel));
+    if (q8Native)
+      for (const auto kernel :
+           {reinterpret_cast<const void *>(q8_native::EncodeKV<false>),
+            reinterpret_cast<const void *>(q8_native::EncodeKV<true>),
+            reinterpret_cast<const void *>(q8_native::EncodeQuery),
+            reinterpret_cast<const void *>(q8_native::Split<false>),
+            reinterpret_cast<const void *>(q8_native::Split<true>),
+            reinterpret_cast<const void *>(q8_native::Merge<false, float>),
+            reinterpret_cast<const void *>(q8_native::Merge<true, float>),
+            reinterpret_cast<const void *>(q8_native::Dequantize<float>),
+            reinterpret_cast<const void *>(q8_native::DequantizePrefix<PrefillState>),
+            reinterpret_cast<const void *>(q8_native::Commit<PrefillState>),
+            reinterpret_cast<const void *>(q8_native::RotateRows<false>),
+            reinterpret_cast<const void *>(q8_native::RotateRows<true>),
+            reinterpret_cast<const void *>(
+                padded_single_prefill_attention::PipelineBF16<false, false>),
+            reinterpret_cast<const void *>(
+                padded_single_prefill_attention::PipelineBF16<true, false>)})
+        Check(cudaFuncGetAttributes(&attributes, kernel));
+    if (q8Native) {
+      Check(cudaFuncSetAttribute(q8_native::Split<false>,
+                                 cudaFuncAttributePreferredSharedMemoryCarveout, 100));
+      Check(cudaFuncSetAttribute(q8_native::Split<true>,
+                                 cudaFuncAttributePreferredSharedMemoryCarveout, 100));
+    }
     if (o.fp8_kv_cache)
       for (const auto kernel :
            {reinterpret_cast<const void *>(kv_fp8::Encode<false>),
@@ -1154,8 +1185,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.exl3_decode_fused)
       Check(cudaFuncGetAttributes(&attributes, exl3_mma_fused::Projection));
     if (o.exl3_decode_dual)
-      Check(cudaFuncGetAttributes(&attributes, o.exl3_rate == 6 ? exl3_mma_dual::Projection<6>
-                                                                : exl3_mma_dual::Projection<4>));
+      Check(cudaFuncGetAttributes(&attributes, o.exl3_rate == 3   ? exl3_mma_dual::Projection<3>
+                                               : o.exl3_rate == 6 ? exl3_mma_dual::Projection<6>
+                                                                  : exl3_mma_dual::Projection<4>));
     if (o.wide_rms_dataflow)
       for (const auto kernel : {reinterpret_cast<const void *>(NormFP8WideExact),
                                 reinterpret_cast<const void *>(ResidualPostNormWideExact)})
@@ -1202,7 +1234,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       Check(cudaFuncGetAttributes(&attributes, exl3_input_wide_vector::Input));
     if (o.exl3_packed_activations)
       for (const auto kernel :
-           {(o.exl3_rate == 6
+           {(o.exl3_rate == 3
+                 ? reinterpret_cast<const void *>(exl3_packed_activations::Projection<3>)
+             : o.exl3_rate == 6
                  ? reinterpret_cast<const void *>(exl3_packed_activations::Projection<6>)
                  : reinterpret_cast<const void *>(exl3_packed_activations::Projection<4>)),
             reinterpret_cast<const void *>(exl3_packed_activations::InputActivated),
@@ -1321,12 +1355,16 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     const std::size_t scratchBytes =
         (2304 * 3 + 4096 * 2 + 512 * 2 + 64 + 8 * 896 * 2 + 8 * 2304 + 98304) * sizeof(float);
     const std::size_t encodedChunkBytes =
-        (o.fp8_kv_cache || q8Cache) ? admission::Bytes(batch, 512 * 2 + 4 * sizeof(kv_fp8::Scales))
-                                    : 0;
+        q8Native ? admission::Bytes(batch, 1088)
+        : (o.fp8_kv_cache || q8Cache)
+            ? admission::Bytes(batch, 512 * 2 + 4 * sizeof(kv_fp8::Scales))
+            : 0;
     const std::size_t packedChunkBytes =
-        o.packed_bf16_prefill_attention && !q8Cache
+        o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
             ? admission::Bytes(batch, 512 * 2 * sizeof(__nv_bfloat16))
             : 0;
+    const auto q8NativePrefixBytes = q8Native ? admission::Bytes(o.capacity, 2048) : 0;
+    const auto q8NativeQueryBytes = q8Native ? 128 * sizeof(q8_native::QueryBlock) : 0;
     const std::size_t checkpointBytes =
         o.server_kv_checkpoint ? KVCheckpointLedger::kLocalSnapshotBytes : 0;
     const std::size_t quantCaptureBytes =
@@ -1347,6 +1385,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         o.exl3_experts ? admission::Bytes(batch, 8 * 2304 * (o.exl3_prefill_fp16 ? 6 : 8)) : 0;
     const auto plannedResident =
         admission::Sum({checkpointBytes,
+                        q8NativePrefixBytes,
+                        q8NativeQueryBytes,
                         packedChunkBytes,
                         exl3SiLUBytes,
                         exl3ScheduleBytes,
@@ -1408,8 +1448,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             r.bytes, cudaMemcpyHostToDevice, stream.s));
     Buffer packedChunk(packedChunkBytes);
     auto *packedChunkK = packedChunk.As<__nv_bfloat16>();
-    auto *packedChunkV =
-        o.packed_bf16_prefill_attention && !q8Cache ? packedChunkK + batch * 512 : nullptr;
+    auto *packedChunkV = o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
+                             ? packedChunkK + batch * 512
+                             : nullptr;
     Buffer checkpointBuffer(checkpointBytes);
     if (o.server_kv_checkpoint)
       Check(cudaFuncGetAttributes(&attributes,
@@ -1566,6 +1607,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.capture_quantization_rows)
       Check(cudaMemsetAsync(quantCapture.p, 0, quantCapture.bytes, stream.s));
     Buffer encodedChunk(encodedChunkBytes);
+    Buffer q8NativePrefix(q8NativePrefixBytes), q8NativeQuery(q8NativeQueryBytes);
+    auto *q8PrefixK = q8NativePrefix.As<__nv_bfloat16>();
+    auto *q8PrefixV = q8Native ? q8PrefixK + o.capacity * 512 : nullptr;
     auto *chunkEK = encodedChunk.As<unsigned char>();
     auto *chunkEV = o.fp8_kv_cache ? chunkEK + batch * 512 : nullptr;
     auto *chunkSF =
@@ -1954,7 +1998,15 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       result.kernel_profile +=
           "+n3b-encoded-old-current-chunk-kv-async-inplace-tile-suffix-commit-v1";
     }
-    if (q8Cache) {
+    if (q8Native) {
+      result.kernel_profile += "+q8_0-row512-aligned-gqa4-async32-exact-warp-slices-v2";
+      result.math_profile +=
+          ";KV-override=q8_0_token512_block32_f16scale_rot_k128_v64_v2/"
+          "K-Hadamard128,V-Hadamard64,FP16-amax127-block32-RNA-codes/"
+          "decode-Q-FP32scale-Q8,DP4A-QK,FP32-softmax-PV,inverseV64-BF16-output/"
+          "prefill-reused-layer-BF16-prefix-workspace,MMA-BF16-P,FP32-output-inverseV64-BF16/"
+          "encoding-inclusive";
+    } else if (q8Cache) {
       result.kernel_profile += "+s6-q8-tokenhead128-f32scale-tile-v1";
       result.math_profile +=
           ";KV-override=q8_token_head128_f32scale_v1/K-after-BF16-QK-RoPE,V-BF16/"
@@ -1963,6 +2015,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           "selected-BF16-MMA-softmax-order;encoding-inclusive";
     }
     result.resident_buffer_bytes = admission::Sum({checkpointBuffer.bytes,
+                                                   q8NativePrefix.bytes,
+                                                   q8NativeQuery.bytes,
                                                    packedChunk.bytes,
                                                    exl3SiLU.bytes,
                                                    exl3Schedule.bytes,
@@ -2370,12 +2424,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         result.actual_expert_dispatch +=
             ";decode=selected-N128/eight-warps/ordinary-FP32-FMA-X2;prefill-contract-unchanged";
       }
-      if (o.exl3_rate == 6) {
+      if (o.exl3_rate == 3 || o.exl3_rate == 6) {
         // Shared MMA geometry has rate-specific packed-weight decoding.
-        const auto labelRate = [](std::string &profile) {
+        const auto labelRate = [&](std::string &profile) {
           for (const auto *label : {"K4", "k4"})
             for (std::size_t at = 0; (at = profile.find(label, at)) != std::string::npos; at += 2)
-              profile.replace(at, 2, label[0] == 'K' ? "K6" : "k6");
+              profile.replace(at, 2, std::string(1, label[0]) + std::to_string(o.exl3_rate));
         };
         labelRate(result.kernel_profile);
         labelRate(result.math_profile);
@@ -2634,7 +2688,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       const auto decodeBody = [&](int position) {
         if (o.diagnostic_decode_token >= 0)
           fast_attention::ForceDiagnosticDecodeToken<<<1, 1, 0, stream.s>>>(
-              deviceState.As<DecodeState>(), o.diagnostic_decode_token, bad.As<int>());
+              deviceState.As<DecodeState>(), o.diagnostic_decode_token, bad.As<int>(),
+              contextMaximum);
         if (o.device_decode)
           EmbedControlled<<<1, 128, 0, stream.s>>>(embed, deviceState.As<DecodeState>(), x,
                                                    bad.As<int>(), contextMaximum);
@@ -2704,7 +2759,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                 selected ? bindings.find("k_norm")->second.pointer : nullptr);
           capture("q_rope", q, selected);
           capture("k_rope", k, selected);
-          if (q8Cache)
+          if (q8Native)
+            q8_native::EncodeKV<true><<<1, 128, 0, stream.s>>>(
+                k, v, static_cast<q8_native::CacheRow *>(a.q8.k),
+                static_cast<q8_native::CacheRow *>(a.q8.v), 1, bad.As<int>(),
+                deviceState.As<DecodeState>(), a.cap, contextMaximum);
+          else if (q8Cache)
             kv_q8::Encode<true><<<1, 128, 0, stream.s>>>(
                 k, v, static_cast<signed char *>(a.q8.k), static_cast<signed char *>(a.q8.v),
                 static_cast<kv_q8::Scales *>(a.q8.scales), 1, bad.As<int>(),
@@ -2724,7 +2784,35 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             CaptureKV<<<(visible * 512 + 127) / 128, 128, 0, stream.s>>>(
                 r.pointer, a.kc, a.vc, position, a.cap, l % 4 != 3);
           }
-          if (q8Cache) {
+          if (q8Native) {
+            q8_native::EncodeQuery<<<8, 128, 0, stream.s>>>(
+                q, q8NativeQuery.As<q8_native::QueryBlock>(), bad.As<int>());
+            const bool local = l % 4 != 3;
+            const int splits = local ? 16 : 32;
+            auto *partial = fastAttentionScratch.As<float>();
+            auto *lse = partial + splits * 32 * 128;
+            auto *output = attn;
+            if (local) {
+              q8_native::Split<true><<<dim3(8, splits), 128, 0, stream.s>>>(
+                  q8NativeQuery.As<q8_native::QueryBlock>(),
+                  static_cast<const q8_native::CacheRow *>(a.q8.k),
+                  static_cast<const q8_native::CacheRow *>(a.q8.v), partial, lse,
+                  deviceState.As<DecodeState>(), a.cap, splits, bad.As<int>(), contextMaximum);
+              q8_native::Merge<true, float>
+                  <<<8, 128, 0, stream.s>>>(partial, lse, output, deviceState.As<DecodeState>(),
+                                            splits, bad.As<int>(), contextMaximum);
+            } else {
+              q8_native::Split<false><<<dim3(8, splits), 128, 0, stream.s>>>(
+                  q8NativeQuery.As<q8_native::QueryBlock>(),
+                  static_cast<const q8_native::CacheRow *>(a.q8.k),
+                  static_cast<const q8_native::CacheRow *>(a.q8.v), partial, lse,
+                  deviceState.As<DecodeState>(), a.cap, splits, bad.As<int>(), contextMaximum);
+              q8_native::Merge<false, float>
+                  <<<8, 128, 0, stream.s>>>(partial, lse, output, deviceState.As<DecodeState>(),
+                                            splits, bad.As<int>(), contextMaximum);
+            }
+            QuantizeFP8<<<1, 128, 0, stream.s>>>(output, fp8Input, fp8Scales, 4096, bad.As<int>());
+          } else if (q8Cache) {
             gqa8_q8_attention::Launch(
                 q, a.q8, attn, fp8Input, fp8Scales, deviceState.As<DecodeState>(), l % 4 != 3,
                 fastAttentionScratch.As<float>(), bad.As<int>(), stream.s, contextMaximum);
@@ -3165,7 +3253,25 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             capture("k_rope", bk, selected);
             // Read old cache and current chunk separately. Commit only after all
             // chunk queries have finished, preventing premature local-ring overwrite.
-            if (q8Cache) {
+            if (q8Native) {
+              q8_native::EncodeKV<false><<<n, 128, 0, stream.s>>>(
+                  bk, bv, static_cast<q8_native::CacheRow *>(q8Chunk.k),
+                  static_cast<q8_native::CacheRow *>(q8Chunk.v), n, bad.As<int>());
+              q8_native::DequantizePrefix<PrefillState><<<512, 256, 0, stream.s>>>(
+                  static_cast<const q8_native::CacheRow *>(a.q8.k),
+                  static_cast<const q8_native::CacheRow *>(a.q8.v), q8PrefixK, q8PrefixV, prefill,
+                  n, a.cap, bad.As<int>(), contextMaximum);
+              q8_native::Dequantize<float>
+                  <<<std::min(512, (n * 512 + 255) / 256), 256, 0, stream.s>>>(
+                      static_cast<const q8_native::CacheRow *>(q8Chunk.k),
+                      static_cast<const q8_native::CacheRow *>(q8Chunk.v), bk, bv, n,
+                      bad.As<int>());
+              q8_native::RotateRows<false><<<n * 8, 128, 0, stream.s>>>(bq, n, bad.As<int>());
+              padded_single_prefill_attention::Launch<false>(
+                  bq, q8PrefixK, q8PrefixV, bk, bv, ba, base, n, a.cap, l % 4 != 3, bad.As<int>(),
+                  stream.s, packedChunkK, packedChunkV, prefill, contextMaximum);
+              q8_native::RotateRows<true><<<n * 8, 128, 0, stream.s>>>(ba, n, bad.As<int>());
+            } else if (q8Cache) {
               kv_q8::Encode<false><<<n, 128, 0, stream.s>>>(
                   bk, bv, static_cast<signed char *>(q8Chunk.k),
                   static_cast<signed char *>(q8Chunk.v),
@@ -3248,7 +3354,15 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                       saved + 1024 * 512, prefill, n, checkpoint_anchor, bad.As<int>(),
                       contextMaximum);
             }
-            if (q8Cache) {
+            if (q8Native) {
+              const int first = l % 4 != 3 ? std::max(0, n - a.cap) : 0;
+              q8_native::Commit<PrefillState><<<n - first, 128, 0, stream.s>>>(
+                  static_cast<const q8_native::CacheRow *>(q8Chunk.k),
+                  static_cast<const q8_native::CacheRow *>(q8Chunk.v),
+                  static_cast<q8_native::CacheRow *>(a.q8.k),
+                  static_cast<q8_native::CacheRow *>(a.q8.v), prefill, n, a.cap, first,
+                  bad.As<int>(), contextMaximum);
+            } else if (q8Cache) {
               const int first = l % 4 != 3 ? std::max(0, n - a.cap) : 0;
               kv_q8::Commit<<<n - first, 128, 0, stream.s>>>(
                   static_cast<const signed char *>(q8Chunk.k),
@@ -3400,7 +3514,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                   model.weights_sha256,
                   compiler::Sha256Hex(result.math_profile.data(), result.math_profile.size()),
                   __DATE__ " " __TIME__ "/SM120",
-                  q8Cache ? "q8_token_head128_f32scale_v1" : "bf16",
+                  KVCacheLayout::Make(o.kv_cache_format, 1).name(),
                   o.capacity,
                   batch,
                   active,

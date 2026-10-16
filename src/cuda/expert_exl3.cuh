@@ -6,7 +6,7 @@ __device__ unsigned Index(unsigned row, unsigned col) {
          (row & 1);
 }
 __device__ float Weight(DeviceMatrix m, int input, int output) {
-  const int rate = m.format == 4 ? 8 : m.format == 5 ? 6 : 4;
+  const int rate = m.format == 6 ? 3 : m.format == 4 ? 8 : m.format == 5 ? 6 : 4;
   const auto *tile = reinterpret_cast<const unsigned *>(
       m.data + ((input / 16) * (m.rows / 16) + output / 16) * (32 * rate));
   const unsigned p = Index(input & 15, output & 15);
@@ -36,7 +36,7 @@ __global__ void InputHad(const DeviceMatrix *matrices, int layer, int part, cons
   if (pair >= pairs)
     return;
   const auto m = Matrix(matrices, layer, part, ids, pair, bad);
-  if ((m.format != 3 && m.format != 4 && m.format != 5) || i >= m.cols) {
+  if ((m.format != 3 && m.format != 4 && m.format != 5 && m.format != 6) || i >= m.cols) {
     atomicExch(bad, 1);
     return;
   }
@@ -63,7 +63,7 @@ __global__ void Dot(const DeviceMatrix *matrices, int layer, int part, const int
   if (pair >= pairs)
     return;
   const auto m = Matrix(matrices, layer, part, ids, pair, bad);
-  if ((m.format != 3 && m.format != 4 && m.format != 5) || row >= m.rows) {
+  if ((m.format != 3 && m.format != 4 && m.format != 5 && m.format != 6) || row >= m.rows) {
     atomicExch(bad, 1);
     return;
   }
@@ -91,7 +91,7 @@ __global__ void OutputHad(const DeviceMatrix *matrices, int layer, int part, con
   if (pair >= pairs)
     return;
   const auto m = Matrix(matrices, layer, part, ids, pair, bad);
-  if ((m.format != 3 && m.format != 4 && m.format != 5) || i >= m.rows) {
+  if ((m.format != 3 && m.format != 4 && m.format != 5 && m.format != 6) || i >= m.rows) {
     atomicExch(bad, 1);
     return;
   }

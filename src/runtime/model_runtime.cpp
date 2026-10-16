@@ -6,8 +6,8 @@
 namespace mellum16 {
 InferenceOptions SelectedServerOptions(const std::filesystem::path &path,
                                        const std::string &tokenizer, int expert_rate) {
-  if (expert_rate != 4 && expert_rate != 6)
-    throw std::invalid_argument("selected server supports EXL3 K4 or K6");
+  if (expert_rate != 3 && expert_rate != 4 && expert_rate != 6)
+    throw std::invalid_argument("selected server supports EXL3 K3, K4 or K6");
   InferenceOptions o;
   o.artifact = path;
   o.tokenizer_sha256 = tokenizer;
@@ -46,10 +46,9 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
   if (!ValidServerChunk(prefill_chunk) || !ValidServerBudget(device_budget_gib))
     return Status(StatusCode::kInvalidArgument,
                   "server requires explicit chunk2048/512/256 and budget0/8/12GiB");
-  if ((prefill_chunk != 2048 || device_budget_gib) &&
-      (!controlled_chunks || kv_format != KVCacheFormat::BF16))
+  if ((prefill_chunk != 2048 || device_budget_gib) && !controlled_chunks)
     return Status(StatusCode::kUnsupported,
-                  "low-memory profiles require selected controlled BF16; Q8 quality stop retained");
+                  "low-memory profiles require the selected controlled-chunk runtime");
   if (diagnostic_decode_token < -1 || diagnostic_decode_token >= 98304)
     return Status(StatusCode::kInvalidArgument, "invalid fixed diagnostic decode token");
   if (enable_checkpoint && (!controlled_chunks || kv_format != KVCacheFormat::BF16))
@@ -59,16 +58,14 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
   if (!admitted.ok())
     return admitted.status();
   if (capacity != NativeContextCapacity::C8192 && !controlled_chunks)
-    return Status(
-        StatusCode::kUnsupported,
-        "long context requires the explicit selected K4/K6 controlled-chunk BF16 profile");
-  if (kv_format != KVCacheFormat::BF16 && kv_format != KVCacheFormat::Q8TokenHead128F32ScaleV1)
+    return Status(StatusCode::kUnsupported,
+                  "long context requires the explicit selected K3/K4/K6 controlled-chunk profile");
+  if (kv_format != KVCacheFormat::BF16 && kv_format != KVCacheFormat::Q8TokenHead128F32ScaleV1 &&
+      kv_format != KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2)
     return Status(StatusCode::kUnsupported, "unsupported KV format");
-  if (kv_format == KVCacheFormat::Q8TokenHead128F32ScaleV1 &&
-      (!controlled_chunks || capacity != NativeContextCapacity::C8192))
-    return Status(
-        StatusCode::kUnsupported,
-        "Q8 integrated research currently requires controlled8192; long qualification pending");
+  if (kv_format != KVCacheFormat::BF16 && !controlled_chunks)
+    return Status(StatusCode::kUnsupported,
+                  "Q8 requires the explicit selected controlled-chunk runtime");
   const auto manifestPath = path / "manifest.json";
   std::error_code error;
   const auto fileType = std::filesystem::symlink_status(manifestPath, error);

@@ -15,6 +15,11 @@ routers, norms, embeddings and output weights. The native manifest and weight
 identities are checked before inference; the loaded package selects its K4 or K6
 decoder automatically.
 
+The loader also admits the pinned native K3 identity in
+`src/runtime/native_artifacts.h`, using its own packed expert decoder and API
+model ID `mellum21-exl3-k3-research`. The download instructions below describe
+the K4 and K6 packages linked above.
+
 ## Download and launch
 
 With the Hugging Face `hf` CLI installed, download the K6 package into a directory

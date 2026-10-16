@@ -82,40 +82,44 @@ Result<InferenceResult> RunInference(const InferenceOptions &o) {
     return Status(StatusCode::kUnsupported,
                   "last-logit FFN pruning requires selected G3 normal token-ID inference without "
                   "all-row/teacher diagnostics; explicitly choose all-rows for diagnostics");
-  if (o.exact_norm_prefill &&
-      (!o.exact_fp8_encoding || !o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
-       o.prefill_chunk < 2 || o.ordinary_rms_norm))
-    return Status(
-        StatusCode::kUnsupported,
-        "exact batch FP8 norm requires explicit K4/K6/corrected encoder/compensated batch profile");
-  if (o.pair64_qknorm_prefill && (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
-                                  !o.fast_w4a8 || o.prefill_chunk < 2 || o.ordinary_rms_norm))
+  if (o.exact_norm_prefill && (!o.exact_fp8_encoding || !o.exl3_experts ||
+                               (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+                               o.prefill_chunk < 2 || o.ordinary_rms_norm))
+    return Status(StatusCode::kUnsupported, "exact batch FP8 norm requires explicit "
+                                            "K3/K4/K6/corrected encoder/compensated batch profile");
+  if (o.pair64_qknorm_prefill &&
+      (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+       !o.fast_w4a8 || o.prefill_chunk < 2 || o.ordinary_rms_norm))
     return Status(StatusCode::kUnsupported,
-                  "pair64 QK prefill requires explicit K4/K6/W4A8F/compensated batch");
-  if (o.quad_router_prefill && (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) ||
-                                !o.fast_w4a8 || o.prefill_chunk < 2 || o.ordinary_rms_norm))
-    return Status(
-        StatusCode::kUnsupported,
-        "quad router prefill requires explicit native K4/K6/W4A8F/compensated normalization/batch");
-  if (o.exl3_wide_input && (!o.exl3_packed_activations || !o.exl3_experts ||
-                            (o.exl3_rate != 4 && o.exl3_rate != 6) || o.prefill_chunk < 2))
-    return Status(StatusCode::kUnsupported, "wide-vector H128 requires explicit K4/K6/BF16-storage "
-                                            "batch profile; T<4 unchanged declared SIMT");
+                  "pair64 QK prefill requires explicit K3/K4/K6/W4A8F/compensated batch");
+  if (o.quad_router_prefill &&
+      (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+       !o.fast_w4a8 || o.prefill_chunk < 2 || o.ordinary_rms_norm))
+    return Status(StatusCode::kUnsupported, "quad router prefill requires explicit native "
+                                            "K3/K4/K6/W4A8F/compensated normalization/batch");
+  if (o.exl3_wide_input &&
+      (!o.exl3_packed_activations || !o.exl3_experts ||
+       (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) || o.prefill_chunk < 2))
+    return Status(StatusCode::kUnsupported,
+                  "wide-vector H128 requires explicit K3/K4/K6/BF16-storage "
+                  "batch profile; T<4 unchanged declared SIMT");
   if (o.exl3_packed_activations &&
-      (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.exl3_prefill_warp ||
-       !o.exl3_silu_table || o.capture_trace || o.snapshot_layer >= 0 ||
+      (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+       !o.exl3_prefill_warp || !o.exl3_silu_table || o.capture_trace || o.snapshot_layer >= 0 ||
        o.diagnostic_exl3_layer >= 0 || o.diagnostic_routes || o.capture_quantization_rows))
     return Status(
         StatusCode::kUnsupported,
-        "BF16 expert storage requires K4/K6/warp-M32/exact table; no trace/operator/route "
+        "BF16 expert storage requires K3/K4/K6/warp-M32/exact table; no trace/operator/route "
         "captures; T<4 keeps declared widened SIMT");
   if (o.padded_bf16_prefill_attention && !o.packed_bf16_prefill_attention)
     return Status(StatusCode::kUnsupported,
                   "padded single-K requires explicit packed BF16 prefill");
-  if (o.packed_bf16_prefill_attention && (!o.gqa8_prefill_attention || !o.exl3_experts ||
-                                          (o.exl3_rate != 4 && o.exl3_rate != 6) || o.fp8_kv_cache))
-    return Status(StatusCode::kUnsupported,
-                  "packed BF16 chunk requires explicit native K4/K6/BF16-cache research profile");
+  if (o.packed_bf16_prefill_attention &&
+      (!o.gqa8_prefill_attention || !o.exl3_experts ||
+       (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) || o.fp8_kv_cache))
+    return Status(
+        StatusCode::kUnsupported,
+        "packed BF16 chunk requires explicit native K3/K4/K6/BF16-cache research profile");
   if (o.gqa8_prefill_attention &&
       (!o.fast_w4a8 || !o.staged_experts || o.staged_mma_decode || !o.block_expert_prefill ||
        !o.ordinary_prefill_silu || !o.ordinary_fp8_simt || !o.online_prefill_attention ||
@@ -207,11 +211,11 @@ Result<InferenceResult> RunInference(const InferenceOptions &o) {
     return Status(StatusCode::kUnsupported, "BF16 TC prefill attention requires corrected native "
                                             "A4/A8, chunk > 1, no operator snapshots");
   if (o.prefill_graphs &&
-      (!o.exl3_experts || (o.exl3_rate != 4 && o.exl3_rate != 6) || !o.full_decode_graph ||
-       o.prefill_chunk < 2 || o.capture_trace || o.snapshot_layer >= 0 ||
+      (!o.exl3_experts || (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) ||
+       !o.full_decode_graph || o.prefill_chunk < 2 || o.capture_trace || o.snapshot_layer >= 0 ||
        o.diagnostic_exl3_layer >= 0 || o.diagnostic_routes || o.capture_quantization_rows))
     return Status(StatusCode::kUnsupported,
-                  "whole-prefill graph requires explicit K4/K6/full decode "
+                  "whole-prefill graph requires explicit K3/K4/K6/full decode "
                   "graph/batch without operator captures; no fallback");
   if (o.full_decode_graph && (!o.decode_graphs || !o.fast_w4a8))
     return Status(StatusCode::kUnsupported,

@@ -52,8 +52,10 @@ __global__ void Projection(const DeviceMatrix *matrices, int layer, int requeste
   }
   const auto m = exl3_expert::Matrix(matrices, layer, part, ids, pair, bad);
   const int base = blockIdx.x * 128, group = lane / 4, ki = (lane % 4) * 2;
-  if (m.format != (Rate == 4 ? 3 : 5) || base + 128 > m.rows || m.cols < 128 || m.cols % 128 ||
-      m.cols > 2304 || blockDim.x != 256) {
+  if (m.format != (Rate == 3   ? 6
+                   : Rate == 4 ? 3
+                               : 5) ||
+      base + 128 > m.rows || m.cols < 128 || m.cols % 128 || m.cols > 2304 || blockDim.x != 256) {
     if (!threadIdx.x)
       atomicExch(bad, 1);
     return;
@@ -132,7 +134,10 @@ inline void Launch(const DeviceMatrix *matrices, int layer, int part, const int 
                    cudaStream_t stream, unsigned *ranges = nullptr, float *otherOutput = nullptr,
                    int rate = 4) {
   const int rows = part == 2 ? 2304 : 896;
-  if (rate == 6)
+  if (rate == 3)
+    Projection<3><<<dim3(rows / 128, pairs, part == 0 ? 2 : 1), 256, 0, stream>>>(
+        matrices, layer, part, ids, input, output, otherOutput, pairs, bad, ranges);
+  else if (rate == 6)
     Projection<6><<<dim3(rows / 128, pairs, part == 0 ? 2 : 1), 256, 0, stream>>>(
         matrices, layer, part, ids, input, output, otherOutput, pairs, bad, ranges);
   else

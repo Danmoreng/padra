@@ -23,3 +23,9 @@ The local transport adaptation preserves bodyless framing/read-ahead and close
 semantics. Source-file copyright notices and license headers are retained.
 Exact vendored file hashes and donor provenance are recorded in
 third_party/cpp-httplib/SOURCE_LOCK.json. See DEPENDENCIES.md for build integration.
+
+KV-cache block32 storage, normalized Hadamard rotations and integer-QK attention
+are informed by ggml-org/llama.cpp (MIT), revision
+10a60cf303566e10d6a7a2774c17d2085503d87b. Attention staging mechanisms also
+adapt its CUDA attention scheduling. The upstream license is retained in
+licenses/LLAMA-CPP-MIT.txt.

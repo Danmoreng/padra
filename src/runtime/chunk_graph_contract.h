@@ -24,7 +24,8 @@ public:
     if (key.active_tokens < 1 || key.active_tokens > key.workspace_chunk ||
         key.workspace_chunk > 2048 || key.capacity < 1 || key.capacity > 131072 ||
         key.binding_epoch == 0 ||
-        (key.kv_format != "bf16" && key.kv_format != "q8_token_head128_f32scale_v1") ||
+        (key.kv_format != "bf16" && key.kv_format != "q8_token_head128_f32scale_v1" &&
+         key.kv_format != "q8_0_token512_block32_f16scale_rot_k128_v64_v2") ||
         key.checkpoint_sha256.empty() || key.execution_sha256.empty() || key.build_identity.empty())
       return {StatusCode::kInvalidArgument, "invalid chunk graph identity"};
     if (Find(key))

@@ -10,8 +10,11 @@
 #include <vector>
 namespace mellum16::server {
 inline constexpr const char *kModelId = "mellum21-exl3-k4-research";
+inline constexpr const char *kK3ModelId = "mellum21-exl3-k3-research";
 inline constexpr const char *kK6ModelId = "mellum21-exl3-k6-research";
 inline std::string_view ModelIdForRate(int rate) {
+  if (rate == 3)
+    return kK3ModelId;
   if (rate == 4)
     return kModelId;
   if (rate == 6)
