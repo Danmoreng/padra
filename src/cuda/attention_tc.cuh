@@ -1,16 +1,7 @@
 // BF16 fragment/MMA mechanism adapted from gem16 c01789a2 (Apache-2.0).
 // Explicit Mellum experiment: K16 partial dots, compensated partial merge;
 // original BF16 score/probability boundaries and RNExp softmax retained.
-__device__ __forceinline__ unsigned AttentionPackBF16(float a, float b) {
-  return static_cast<unsigned>(__bfloat16_as_ushort(__float2bfloat16_rn(a))) |
-         (static_cast<unsigned>(__bfloat16_as_ushort(__float2bfloat16_rn(b))) << 16);
-}
-__device__ __forceinline__ void AttentionMmaBF16(const unsigned *a, const unsigned *b, float *c) {
-  asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
-               "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
-               : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
-               : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
-}
+#include "attention_mma.cuh"
 __device__ __forceinline__ bool AttentionTCShape(int base, int tokens, int cap, bool local,
                                                  int pitch) {
   if (base < 0 || tokens < 1 || tokens > 512 || cap < 1 || cap > 4096 || base > 4096 - tokens)
