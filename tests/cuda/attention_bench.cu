@@ -163,8 +163,8 @@ Options Parse(int argc, char **argv) {
       o.base > o.capacity - o.tokens || o.repeats < 1 || o.repeats > 100 || o.warmup < 1 ||
       o.warmup > 100)
     throw std::runtime_error("inadmissible attention shape/repetitions");
-  const std::vector<std::string> variants = {"baseline", "address", "alpha",  "address-alpha",
-                                             "ldmatrix", "split2",  "split4", "matrix-adaptive"};
+  const std::vector<std::string> variants = {"baseline", "address", "alpha", "address-alpha",
+                                             "ldmatrix"};
   if (std::find(variants.begin(), variants.end(), o.variant) == variants.end())
     throw std::runtime_error("unknown attention variant");
   if (o.local && o.variant != "baseline" && o.variant != "address" && o.variant != "alpha" &&
@@ -179,30 +179,18 @@ template <class Action> void VisitVariant(const Options &o, Action action) {
   const auto visit = [&]<bool Local, bool Round>() {
     if constexpr (!Local) {
       if (o.variant == "ldmatrix") {
-        action.template operator()<Local, Round, true, true, true, 1, 0>();
-        return;
-      }
-      if (o.variant == "split2") {
-        action.template operator()<Local, Round, true, true, true, 2, 0>();
-        return;
-      }
-      if (o.variant == "split4") {
-        action.template operator()<Local, Round, true, true, true, 4, 0>();
-        return;
-      }
-      if (o.variant == "matrix-adaptive") {
-        action.template operator()<Local, Round, true, true, true, 4, 8192>();
+        action.template operator()<Local, Round, true, true, true>();
         return;
       }
     }
     if (o.variant == "address")
-      action.template operator()<Local, Round, true, false, false, 1, 0>();
+      action.template operator()<Local, Round, true, false, false>();
     else if (o.variant == "alpha")
-      action.template operator()<Local, Round, false, true, false, 1, 0>();
+      action.template operator()<Local, Round, false, true, false>();
     else if (o.variant == "address-alpha")
-      action.template operator()<Local, Round, true, true, false, 1, 0>();
+      action.template operator()<Local, Round, true, true, false>();
     else
-      action.template operator()<Local, Round, false, false, false, 1, 0>();
+      action.template operator()<Local, Round, false, false, false>();
   };
   if (o.local) {
     if (o.round)
@@ -332,14 +320,8 @@ int main(int argc, char **argv) {
     const int cap = o.local ? std::min(1024, o.capacity) : o.capacity;
     const std::size_t nq = std::size_t(o.tokens) * 4096, nk = std::size_t(cap) * 512,
                       nc = std::size_t(o.tokens) * 512;
-    const int splits = o.variant == "split2"                                       ? 2
-                       : (o.variant == "split4" || o.variant == "matrix-adaptive") ? 4
-                                                                                   : 1;
-    const std::size_t partial_bytes =
-        splits > 1 ? std::size_t(o.tokens) * 32 * splits * 130 * 4 : 0;
     const auto required = (2 * nq) * sizeof(float) + (2 * nk + 2 * nc) * sizeof(__nv_bfloat16) +
-                          sizeof(int) + sizeof(PrefillState) +
-                          std::max(std::size_t(1), partial_bytes);
+                          sizeof(int) + sizeof(PrefillState);
     std::size_t free = 0, total = 0;
     Check(cudaMemGetInfo(&free, &total));
     if (free < required + 700ULL * 1024 * 1024)
@@ -401,7 +383,7 @@ int main(int argc, char **argv) {
       ValidateNative(qcv, cv, o.base, o.local, true);
     }
     Buffer dq(nq * 4), dk(nk * 2), dv(nk * 2), dck(nc * 2), dcv(nc * 2), dout(nq * 4), bad(4),
-        state(sizeof(PrefillState)), partials(std::max(std::size_t(1), partial_bytes));
+        state(sizeof(PrefillState));
     Stream stream;
     for (auto entry : {std::pair{dq.pointer, static_cast<const void *>(q.data())},
                        {dk.pointer, k.data()},
@@ -420,28 +402,19 @@ int main(int argc, char **argv) {
     CheckFragments<<<1, 128, 0, stream.value>>>(bad.As<int>());
     const dim3 grid((o.tokens + 7) / 8, 4);
     auto launch = [&](bool frozen) {
-      const auto run = [&]<bool Local, bool Round, bool Direct, bool Skip, bool MatrixLoad,
-                           int Splits, int Threshold>() {
+      const auto run = [&]<bool Local, bool Round, bool Direct, bool Skip, bool MatrixLoad>() {
         if (frozen)
           frozen_prefill_attention::PipelineBF16<Local, Round><<<grid, 128, 0, stream.value>>>(
               dq.As<float>(), dk.As<__nv_bfloat16>(), dv.As<__nv_bfloat16>(),
               dck.As<__nv_bfloat16>(), dcv.As<__nv_bfloat16>(), dout.As<float>(), o.base, o.tokens,
               cap, bad.As<int>(), (o.host_base ? nullptr : state.As<PrefillState>()), o.capacity);
         else
-          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip, MatrixLoad,
-                                                        Splits, Threshold>
-              <<<dim3((o.tokens + 7) / 8, 4, Splits), 128, 0, stream.value>>>(
+          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip, MatrixLoad>
+              <<<grid, 128, 0, stream.value>>>(
                   dq.As<float>(), dk.As<__nv_bfloat16>(), dv.As<__nv_bfloat16>(),
                   dck.As<__nv_bfloat16>(), dcv.As<__nv_bfloat16>(), dout.As<float>(), o.base,
                   o.tokens, cap, bad.As<int>(), (o.host_base ? nullptr : state.As<PrefillState>()),
-                  o.capacity, partials.As<float>());
-        if (!frozen) {
-          if constexpr (Splits > 1)
-            padded_single_prefill_attention::Merge<Splits, Round, Threshold>
-                <<<(nq + 255) / 256, 256, 0, stream.value>>>(
-                    partials.As<float>(), dout.As<float>(), o.tokens, bad.As<int>(),
-                    (o.host_base ? nullptr : state.As<PrefillState>()), o.capacity, o.base);
-        }
+                  o.capacity);
       };
       VisitVariant(o, run);
       Check(cudaGetLastError());
@@ -486,9 +459,6 @@ int main(int argc, char **argv) {
         if (!std::isfinite(actual[i]) ||
             std::abs(actual[i] - earlier[i]) > .002 + .02 * std::abs(earlier[i]))
           throw std::runtime_error("earlier-prefix graph replay mismatch");
-      if (o.variant == "matrix-adaptive" && o.capture_base < 8192 &&
-          std::memcmp(earlier.data(), actual.data(), nq * 4))
-        throw std::runtime_error("adaptive unsplit graph is not bitwise identical");
       command.base = command.committed = o.base;
       Check(cudaMemcpy(state.pointer, &command, sizeof(command), cudaMemcpyHostToDevice));
     }
@@ -523,8 +493,6 @@ int main(int argc, char **argv) {
     int failed = 0;
     Check(cudaMemcpy(&failed, bad.pointer, 4, cudaMemcpyDeviceToHost));
     const bool bitwise = !std::memcmp(ref.data(), actual.data(), nq * 4);
-    if (o.variant == "matrix-adaptive" && o.base < 8192 && !bitwise)
-      throw std::runtime_error("adaptive early prefix is not bitwise identical");
     double max_abs = 0, sum_sq = 0;
     std::uint64_t max_ulp = 0;
     const auto ordered_bits = [](float v) {
@@ -537,10 +505,10 @@ int main(int argc, char **argv) {
       max_ulp = std::max(max_ulp, std::uint64_t(a > b ? a - b : b - a));
       max_abs = std::max(max_abs, error);
       sum_sq += error * error;
-      if (!std::isfinite(actual[i]) || ((splits > 1) && error > .002 + .02 * std::abs(ref[i])))
+      if (!std::isfinite(actual[i]))
         throw std::runtime_error("arithmetic attention tolerance exceeded");
     }
-    if (failed || (splits == 1 && !bitwise))
+    if (failed || !bitwise)
       throw std::runtime_error("frozen operator mismatch/nonfinite result");
     const double oracle = Oracle(o, cap, q, k, v, ck, cv, actual);
     cudaDeviceProp gpu{};
@@ -550,19 +518,16 @@ int main(int argc, char **argv) {
     Check(cudaRuntimeGetVersion(&runtime));
     cudaFuncAttributes attributes{};
     int active_blocks = 0, shape_rows = 0, shape_keys = 0, transport_rows = 0;
-    const auto resources = [&]<bool Local, bool Round, bool Direct, bool Skip, bool MatrixLoad,
-                               int Splits, int Threshold>() {
+    const auto resources = [&]<bool Local, bool Round, bool Direct, bool Skip, bool MatrixLoad>() {
       shape_rows = 8;
       shape_keys = 32;
       transport_rows = 32;
       Check(cudaFuncGetAttributes(
           &attributes,
-          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip, MatrixLoad,
-                                                        Splits, Threshold>));
+          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip, MatrixLoad>));
       Check(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
           &active_blocks,
-          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip, MatrixLoad,
-                                                        Splits, Threshold>,
+          padded_single_prefill_attention::PipelineBF16<Local, Round, Direct, Skip, MatrixLoad>,
           128, 0));
     };
     VisitVariant(o, resources);
@@ -590,7 +555,7 @@ int main(int argc, char **argv) {
               << ",\"operand\":\"bf16\",\"accumulator\":\"fp32\",\"probability\":\"bf16\",\"q_"
                  "scaling\":\"post_qk_fp32\",\"tile\":["
               << shape_rows << "," << shape_keys << ",128],\"transport_rows\":" << transport_rows
-              << ",\"splits\":" << splits << ",\"workspace_bytes\":" << required
+              << ",\"splits\":1" << ",\"workspace_bytes\":" << required
               << ",\"frozen_bitwise_equal\":" << (bitwise ? "true" : "false")
               << ",\"fragment_bits_equal\":true,\"frozen_max_ulp_error\":" << max_ulp
               << ",\"frozen_max_abs_error\":" << max_abs

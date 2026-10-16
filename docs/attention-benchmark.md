@@ -9,8 +9,7 @@ Fresh server builds select `PADRA_PREFILL_PROFILE=global-matrix-v1`,
 `PADRA_Q8_PREFILL_PROFILE=packed-chunk-v1` and
 `PADRA_EXL3_PREFILL_TRANSPORT=async64-v1`. These preserve the existing arithmetic
 and leave `PADRA_KERNEL_PROFILE=baseline-v1` as the decode profile. Existing CMake
-caches retain their configured selections. Split-KV requires an explicit
-`global-matrix-split-v1` selection because it changes probability rounding.
+caches retain their configured selections.
 
 ```sh
 python tools/attention_bench.py --binary BUILD/padra-attention-bench \
@@ -68,35 +67,19 @@ order and reports both raw arrays (`control_milliseconds`, `milliseconds`).
 Compare representative shapes and downstream model results before changing a
 runtime default; an isolated-kernel result is not an application speed claim.
 
-## Tile and partition controls
+## Exact matrix loads
 
-The operator harness additionally supports `ldmatrix`, `split2`, `split4` and
-`matrix-adaptive`. Split variants change the partition maximum and BF16
-probability rounding. They require finite
-outputs within `0.002 + 0.02*abs(frozen)` and the small-shape FP64 oracle bound.
-ULP and RMS differences are reported as diagnostics. Exact address, unit-alpha
-and K32 `ldmatrix` controls require bitwise equality. A separate fragment test
-compares every QK/PV fragment bit before any timing. These operator bounds do not
-replace downstream logit, routing or task-quality qualification.
+The operator harness additionally supports `--variant ldmatrix`. It retains K32
+arithmetic and requires bitwise equality with the frozen control. A separate
+fragment test compares every QK/PV fragment bit before timing.
 
 `--capture-base 0 --base 129024 --graph` replays the same captured graph at both
-prefixes, with independently computed controls. The capacity and active query
-count stay fixed. This exercises device-driven prefix and partition selection.
+prefixes, with independently computed controls. Capacity and query count stay
+fixed; prefix selection reads `PrefillState` at replay time.
 
-The server build profile `global-matrix-v1` retains K32 arithmetic with exact
-fragment loads. `global-matrix-split-v1` also selects four partitions for global
-chunks of at most 512 queries once the device prefix reaches 8192. Earlier
-prefixes and larger chunks retain unsplit K32 arithmetic. Local attention and
-native Q8 decode retain their existing kernels. This split profile has a distinct
-arithmetic identity; it is an explicit selection, not the default.
-
-Split workspace is admitted and allocated before execution: at most
-`min(chunk,512) * 32 * 4 * 130 * sizeof(float)`, or 32.5 MiB. Each partition stores
-128 unnormalized FP32 values plus one complete maximum and denominator per
-query/head. Empty partitions use `(-infinity,0,zero)`. The final stable merge
-applies output rounding once. Prefix selection reads `PrefillState` on replay;
-no capture-time prefix length determines the partitioning. Source, build profile
-and arithmetic identity distinguish the graph cache entries.
+The server profile `global-matrix-v1` uses exact matrix fragment loads. Local
+attention and native Q8 decode retain their existing kernels. No additional
+persistent workspace is allocated.
 
 ## Native Q8 fixtures and packed current chunk
 

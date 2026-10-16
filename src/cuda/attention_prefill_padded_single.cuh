@@ -71,16 +71,13 @@ __device__ __forceinline__ void Wait() {
   asm volatile("cp.async.wait_group 0;" ::: "memory");
 }
 template <bool Local, bool RoundOutput = true, bool DirectGlobalAddress = false,
-          bool SkipUnitAlpha = false, bool MatrixLoad = false, int Splits = 1,
-          int SplitThreshold = 0>
+          bool SkipUnitAlpha = false, bool MatrixLoad = false>
 __launch_bounds__(kThreads, 2) __global__
     void PipelineBF16(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc,
                       const __nv_bfloat16 *chunkK, const __nv_bfloat16 *chunkV, float *output,
                       int base, int tokens, int cap, int *bad,
                       const PrefillState *prefill = nullptr,
-                      int context_limit = kW4A8FContextCapacity, float *partials = nullptr) {
-  static_assert(Splits == 1 || Splits == 2 || Splits == 4);
-  static_assert(Splits == 1 || !Local);
+                      int context_limit = kW4A8FContextCapacity) {
   constexpr int ScoreTiles = kKeys / 8, PVSteps = kKeys / 16;
   if (prefill) {
     if (!ValidPrefillState(*prefill, tokens, prefill->capacity, 1, context_limit) ||
@@ -96,16 +93,11 @@ __launch_bounds__(kThreads, 2) __global__
       cap > context_limit || (Local ? cap < min(1024, base + tokens) : cap < base + tokens) ||
       blockDim.x != kThreads || blockDim.y != 1 || blockDim.z != 1 ||
       blockIdx.x >= static_cast<unsigned>((tokens + kRows - 1) / kRows) || blockIdx.y >= 4 ||
-      blockIdx.z >= Splits || (Splits > 1 && !partials)) {
+      blockIdx.z != 0) {
     if (threadIdx.x == 0 && bad)
       atomicExch(bad, 1);
     return;
   }
-  if constexpr (Splits > 1) {
-    if (base < SplitThreshold && blockIdx.z != 0)
-      return;
-  }
-  const bool doSplit = Splits > 1 && base >= SplitThreshold;
   // One K stage and one V stage, padded BF16. Q fragments stay in registers.
   __shared__ __align__(16) __nv_bfloat16 keys[1][kKeys * kStride];
   __shared__ __align__(16) __nv_bfloat16 values[kKeys * kStride];
@@ -127,12 +119,6 @@ __launch_bounds__(kThreads, 2) __global__
     }
   }
   int initial = (first / kKeys) * kKeys;
-  if (doSplit) {
-    const int tiles = (last - initial + kKeys) / kKeys;
-    const int begin = tiles * blockIdx.z / Splits, end = tiles * (blockIdx.z + 1) / Splits;
-    last = min(last, initial + end * kKeys - 1);
-    initial += begin * kKeys;
-  }
   Stage<Local, DirectGlobalAddress, kKeys>(keys[0], kc, chunkK, initial, first, last, base, cap,
                                            kvhead);
   Wait();
@@ -241,15 +227,6 @@ __launch_bounds__(kThreads, 2) __global__
     for (int j = 0; j < 4; ++j) {
       const int row = j / 2 ? row1 : row0;
       if (row < tokens) {
-        if (doSplit) {
-          float *part = partials + ((row * 32 + head) * Splits + blockIdx.z) * 130;
-          part[tile * 8 + tid * 2 + j % 2] = accum[tile][j];
-          if (tile == 0 && tid == 0 && j % 2 == 0) {
-            part[128] = maximum[j / 2];
-            part[129] = denominator[j / 2];
-          }
-          continue;
-        }
         const float v = RoundOutput ? B(accum[tile][j] / denominator[j / 2])
                                     : accum[tile][j] / denominator[j / 2];
         output[(row * 32 + head) * kDim + tile * 8 + tid * 2 + j % 2] = v;
@@ -257,52 +234,6 @@ __launch_bounds__(kThreads, 2) __global__
       }
     }
   }
-}
-// One independent writer per final element; metadata is complete across four
-// lanes before it is stored. Empty partitions carry (-infinity, 0, zero output).
-template <int Splits, bool RoundOutput, int SplitThreshold = 0>
-__global__ void Merge(const float *partials, float *output, int tokens, int *bad,
-                      const PrefillState *state = nullptr,
-                      int context_limit = kW4A8FContextCapacity, int base = 0) {
-  if (state && !ValidPrefillState(*state, tokens, state->capacity, 1, context_limit)) {
-    if (threadIdx.x == 0 && bad)
-      atomicExch(bad, 1);
-    return;
-  }
-  if (state)
-    base = state->base;
-  if (!partials || !output || !bad || tokens < 1 || tokens > kW4A8FMaxPrefillChunk || base < 0 ||
-      base > context_limit - tokens || blockDim.x != 256 || blockDim.y != 1 || blockDim.z != 1) {
-    if (threadIdx.x == 0 && bad)
-      atomicExch(bad, 1);
-    return;
-  }
-  if (base < SplitThreshold)
-    return;
-  const int i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i >= tokens * 32 * 128)
-    return;
-  const float *part = partials + (i / 128) * Splits * 130;
-  float maximum = -INFINITY;
-#pragma unroll
-  for (int s = 0; s < Splits; ++s)
-    maximum = fmaxf(maximum, part[s * 130 + 128]);
-  float numerator = 0.f, denominator = 0.f;
-#pragma unroll
-  for (int s = 0; s < Splits; ++s) {
-    const float m = part[s * 130 + 128];
-    const float scale = isfinite(m) ? expf(m - maximum) : 0.f;
-    numerator = fmaf(scale, part[s * 130 + i % 128], numerator);
-    denominator = fmaf(scale, part[s * 130 + 129], denominator);
-  }
-  if (!(denominator > 0.f)) {
-    atomicExch(bad, 1);
-    output[i] = 0.f;
-    return;
-  }
-  const float value = numerator / denominator;
-  Finite(value, bad);
-  output[i] = RoundOutput ? B(value) : value;
 }
 __global__ void EncodeChunk(const float *k, const float *v, __nv_bfloat16 *packedK,
                             __nv_bfloat16 *packedV, int tokens) {
@@ -316,27 +247,19 @@ template <bool RoundOutput>
 constexpr auto GlobalKernel =
     PipelineBF16<false, RoundOutput, PADRA_PREFILL_GLOBAL_DATAFLOW != 0,
                  PADRA_PREFILL_GLOBAL_DATAFLOW != 0, PADRA_PREFILL_MATRIX_LOAD != 0>;
-template <bool RoundOutput>
-constexpr auto SplitKernel =
-    PipelineBF16<false, RoundOutput, true, true, true, 4, mellum16::kPrefillSplitThreshold>;
 template <bool RoundOutput> std::vector<const void *> SelectedKernels() {
   std::vector<const void *> kernels = {
       reinterpret_cast<const void *>(PipelineBF16<true, RoundOutput>),
       reinterpret_cast<const void *>(GlobalKernel<RoundOutput>),
       reinterpret_cast<const void *>(EncodeChunk)};
-  if constexpr (PADRA_PREFILL_SPLIT_KV) {
-    kernels.push_back(reinterpret_cast<const void *>(SplitKernel<RoundOutput>));
-    kernels.push_back(
-        reinterpret_cast<const void *>(Merge<4, RoundOutput, mellum16::kPrefillSplitThreshold>));
-  }
   return kernels;
 }
 template <bool RoundOutput = true>
 void LaunchPacked(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc,
                   const __nv_bfloat16 *packedK, const __nv_bfloat16 *packedV, float *output,
                   int base, int tokens, int cap, bool local, int *bad, cudaStream_t stream,
-                  const PrefillState *prefill = nullptr, int context_limit = kW4A8FContextCapacity,
-                  float *partials = nullptr) {
+                  const PrefillState *prefill = nullptr,
+                  int context_limit = kW4A8FContextCapacity) {
   if (!q || !kc || !vc || !packedK || !packedV || !output || !bad || base < 0 || tokens < 1 ||
       tokens > kW4A8FMaxPrefillChunk || base > context_limit - tokens || cap < 1 ||
       cap > context_limit || (local ? cap < std::min(1024, base + tokens) : cap < base + tokens))
@@ -345,17 +268,7 @@ void LaunchPacked(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *
   if (local)
     PipelineBF16<true, RoundOutput><<<grid, kThreads, 0, stream>>>(
         q, kc, vc, packedK, packedV, output, base, tokens, cap, bad, prefill, context_limit);
-  else if (PADRA_PREFILL_SPLIT_KV && tokens <= 512) {
-    if (!partials)
-      throw std::runtime_error("split-KV workspace missing");
-    PipelineBF16<false, RoundOutput, true, true, true, 4, mellum16::kPrefillSplitThreshold>
-        <<<dim3(grid.x, 4, 4), kThreads, 0, stream>>>(q, kc, vc, packedK, packedV, output, base,
-                                                      tokens, cap, bad, prefill, context_limit,
-                                                      partials);
-    Merge<4, RoundOutput, mellum16::kPrefillSplitThreshold>
-        <<<(tokens * 4096 + 255) / 256, 256, 0, stream>>>(partials, output, tokens, bad, prefill,
-                                                          context_limit, base);
-  } else
+  else
     PipelineBF16<false, RoundOutput, PADRA_PREFILL_GLOBAL_DATAFLOW != 0,
                  PADRA_PREFILL_GLOBAL_DATAFLOW != 0, PADRA_PREFILL_MATRIX_LOAD != 0>
         <<<grid, kThreads, 0, stream>>>(q, kc, vc, packedK, packedV, output, base, tokens, cap, bad,
@@ -365,8 +278,7 @@ template <bool RoundOutput = true>
 void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, const float *chunkK,
             const float *chunkV, float *output, int base, int tokens, int cap, bool local, int *bad,
             cudaStream_t stream, __nv_bfloat16 *packedK, __nv_bfloat16 *packedV,
-            const PrefillState *prefill = nullptr, int context_limit = kW4A8FContextCapacity,
-            float *partials = nullptr) {
+            const PrefillState *prefill = nullptr, int context_limit = kW4A8FContextCapacity) {
   if (!q || !kc || !vc || !chunkK || !chunkV || !output || !bad || base < 0 || tokens < 1 ||
       tokens > kW4A8FMaxPrefillChunk || base > context_limit - tokens || cap < 1 ||
       cap > context_limit || (local ? cap < std::min(1024, base + tokens) : cap < base + tokens))
@@ -376,6 +288,6 @@ void Launch(const float *q, const __nv_bfloat16 *kc, const __nv_bfloat16 *vc, co
   EncodeChunk<<<(tokens * 512 + 255) / 256, 256, 0, stream>>>(chunkK, chunkV, packedK, packedV,
                                                               tokens);
   LaunchPacked<RoundOutput>(q, kc, vc, packedK, packedV, output, base, tokens, cap, local, bad,
-                            stream, prefill, context_limit, partials);
+                            stream, prefill, context_limit);
 }
 } // namespace padded_single_prefill_attention
