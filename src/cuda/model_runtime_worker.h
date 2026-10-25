@@ -35,12 +35,13 @@ public:
     stats.kv_format = options.kv_cache_format;
     stats.controlled_chunks = options.controlled_chunk_graphs;
     stats.checkpoint_enabled = options.server_kv_checkpoint;
-    stats.checkpoint_bytes =
-        options.server_kv_checkpoint ? KVCheckpointLedger::kLocalSnapshotBytes : 0;
+    stats.checkpoint_bytes = options.server_kv_checkpoint
+                                 ? KVCheckpointLedger::LocalSnapshotBytes(options.kv_cache_format)
+                                 : 0;
     if (options.server_kv_checkpoint && !options.mtp.artifact.empty())
       stats.checkpoint_bytes += kMtpCheckpointBytes;
     if (options.server_kv_checkpoint)
-      checkpoint.emplace(options.capacity, NewCheckpointRuntimeBinding());
+      checkpoint.emplace(options.capacity, NewCheckpointRuntimeBinding(), options.kv_cache_format);
     options.input_ids.resize(options.capacity, 0);
     options.generate = 0;
     options.capture_logits = true;
@@ -83,6 +84,8 @@ public:
       return status;
     if (anchor < 0 || static_cast<std::size_t>(anchor) > ids.size())
       return {StatusCode::kInvalidArgument, "checkpoint anchor outside canonical prompt"};
+    if (anchor)
+      anchor = CheckpointCaptureAnchor(anchor, options.prefill_chunk);
     if (request_epoch == UINT32_MAX)
       return {StatusCode::kResourceExhausted, "request epoch exhausted; recreate runtime"};
     auto status = state.Prepare(ids, outputs);
@@ -125,6 +128,8 @@ public:
     if (next_anchor < 0 || (next_anchor && (next_anchor < base.value() ||
                                             static_cast<std::size_t>(next_anchor) > ids.size())))
       return {StatusCode::kInvalidArgument, "next checkpoint anchor must extend the saved prefix"};
+    if (next_anchor)
+      next_anchor = CheckpointCaptureAnchor(next_anchor, options.prefill_chunk);
     if (auto status = ValidateSampling(sampling); !status.ok())
       return status;
     if (request_epoch == UINT32_MAX)

@@ -104,8 +104,9 @@ ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT
 Defaults: 600000 ms, 131072 tokens, chunk 2048, actual-free-memory admission,
 and the head format stored in the checkpoint.
 Explicit chunks 512/256 and ceilings 8/12 GiB are supported. Admission includes a
-700 MiB reserve and, with BF16 KV, a 42 MiB target session snapshot. MTP also
-reserves its draft state and snapshot; see the [MTP contract](docs/mtp.md). `KV_FORMAT` defaults
+700 MiB reserve and a target session snapshot in the selected KV format.
+BF16, Q8 and Q8_0 support prefix reuse. MTP also reserves its draft state and
+snapshot; see the [MTP contract](docs/mtp.md). `KV_FORMAT` defaults
 to `bf16`; opt-in `q8` and `q8_0` reduce cache memory with lossy KV storage. See the
 [KV cache contract](docs/kv-cache.md). Unsupported or oversized configurations
 fail explicitly; no silent context/precision/chunk/CPU-offload fallback.

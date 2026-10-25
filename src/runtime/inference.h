@@ -43,7 +43,7 @@ struct InferenceOptions {
   bool warp_projections = true;
   int prefill_chunk = 128;
   int server_device_budget_gib = 0;  // Explicit ceiling; never reduces context/chunk/precision.
-  bool server_kv_checkpoint = false; // Explicit one42MiB local-ring snapshot; no default promotion.
+  bool server_kv_checkpoint = false; // One local-ring snapshot in the selected KV format.
   bool native_prefill = false;
   bool accurate_native_prefill = false;
   bool fp8_expert_activations = false;

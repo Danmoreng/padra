@@ -160,7 +160,7 @@ The shared Q8 head's target-quality caveat above remains applicable.
 
 Embedding and output projection share the validated target allocation. The
 draft owns an independent 1024-token BF16 KV ring. Admission includes all draft
-weights, KV, hidden rows, verifier workspaces and rollback buffers. BF16 session
+weights, KV, hidden rows, verifier workspaces and rollback buffers. Session
 checkpoints also retain the draft ring and the preceding target hidden row.
 Graph allocations receive the existing post-capture reserve check. Admission
 never changes context, precision, chunk size or offload policy to make MTP fit.

@@ -1,0 +1,70 @@
+Q8/Q8_0 prefix reuse qualification — 2026-10-25
+
+One encoded snapshot retains the 21 local rings; unchanged global prefix rows stay in place.
+Codes and scale bits are copied directly without requantization or a BF16 cache shadow.
+MTP also retains its draft BF16 ring and the preceding target hidden row.
+HTTP Chat sessions and Responses continuations reuse the matching resident session.
+Another GPU owner or invalid/stale prefix causes a full replay; this is a single-session GPU cache.
+
+Restore preserves the original chunk grid. Capture moves an anchor back by up to three tokens
+if necessary to leave four rows in the first partial chunk. This avoids an EXL3 T<4 arithmetic
+change solely due to prefix reuse. The ledger binds runtime, generation, capacity, format and tokens.
+
+Hardware: RTX 5080 Laptop GPU, SM120a, 16 GB class. 8/12 GiB admission ceilings are checked
+on this GPU, not physical 8/12 GB cards or other architectures.
+
+Timing: K3/K6 Q8_0, shared stored Q8 head, EXL3-K4 draft, MTP D1, capacity131072, chunk256.
+Natural4K/16K code,64 generated tokens; two warm-ups and six retained repetitions per fixture.
+Replay/capture/reuse order alternates. Reuse retains all but256 prompt tokens. Prefill timings
+include Prepare/restore copies; exclude tokenization, HTTP and model loading. Request timings
+include64-token generation. Tokens, final logit/hidden hashes, callbacks and states match exactly.
+
+Configuration     Replay ms   Capture ms    Reuse ms   Prefill speedup   Request replay/reuse ms
+K3  4096 tokens     714.402      713.607     45.427      15.73x       954.645/283.731
+K3 16384 tokens    3188.995     3190.112     54.611      58.39x       3451.856/316.942
+K6  4096 tokens     740.976      741.192     46.532      15.92x       986.710/290.492
+K6 16384 tokens    3278.506     3278.505     55.448      59.13x       3524.901/301.530
+
+Target snapshot:BF16 42MiB; Q8 21.65625MiB; Q8_0 22.3125MiB.
+MTP snapshot:2MiB plus9216bytes. Total Q8_0 checkpoint with MTP:25502720bytes.
+
+Full-context check:131071 prompt tokens plus one output; then restore130816 tokens and
+process255 suffix tokens. D0/D1 and restore/fresh match exactly. These are single-pair
+execution/memory checks, not repeated performance benchmarks.
+K3 D1: resident7340423196bytes (6.836302GiB); available after graphs945.0625MiB within8GiB; used within ceiling7.077087GiB. Reserve700MiB retained.
+K6 D1: resident11502221340bytes (10.712278GiB); available after graphs1073.0625MiB within12GiB; used within ceiling10.952087GiB. Reserve700MiB retained.
+
+Final native matrix: 960 cases pass across K3 Q8/Q8_0 and K6 Q8_0/BF16, D0-D4.
+Includes eight restore/fresh pairs per depth and profile, cancellation, append,
+recapture, ring wrap, sampling seeds/penalties and capacity boundaries.
+Durable prefix regression: 240 cases across Q8/Q8_0 chunk256 and BF16 chunk2048 pass.
+140 existing non-restore K3 Q8/Q8_0 cases remain bit-exact against the pre-change baseline.
+Production rebuild: 60 native cases match the candidate exactly; Q8_0 D1 HTTP smoke passes.
+24 host tests pass. Snapshot operator:216 byte-oracle cases,72 graph replays,14 invalid guards.
+CUDA memcheck/synccheck/racecheck/initcheck:zero errors/hazards.
+135 unaligned-anchor D0 model cases pass against fresh replay across Q8/Q8_0/BF16.
+Six HTTP configurations pass:K3Q8_0D0/D1/D4,K3Q8D1,K6Q8_0D1,K6BF16D1.
+Chat/Responses hits and session-eviction replay fallback are asserted.
+
+Failed intermediate versions are preserved: chunk restart changed final tail grouping;
+preserving the grid exposed1–3-row first tails. Both were corrected before promotion.
+No relaxed numerical gate, additional quantization or smaller reserve was used.
+
+Evidence:build/q8-checkpoint-2026-10-25. Reproducible native regression:
+tests/cuda/prefix_reuse.py; see docs/development/mtp-porting.md.
+
+Candidate binaries (SHA256):
+padra-mtp-probe: 681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5
+padra-mtp-operators: 234435ddeca8090cd8bfebb174ded86e293b80ac19f98205b83daeb0b5c7eadd
+padra-server: 42b334512c43c84af25174e96a3dd19a773c60d3568fc6217c6ec8bc487ce10c
+
+Production binaries (SHA256):
+padra-mtp-probe: e0d2b937970015d2fb046c0e44fdc54178628037986c4032b6dbfc1a627a28a8
+padra-server: 3e136f8f73032df990242afce8be518c00fa0d5d038576d1601f23cdc3463823
+padra-mtp-operators: 71946b0784a543fb4e751a0278ab6ea6a1f53dc05b080e798dadd784821f7b5d
+
+Base commit: 9ce4156aeb3df71411856b22939891b52d6af525
+Build: Release, SM120a, exact-fusions-v1, global-matrix-v1, async64-v1, packed-chunk-v1.
+The accepted Q8 prefill path and the existing 256 MiB prefix workspace are unchanged.
+No target/draft weights, quantization, MTP depth, admission reserve or published HF files change.
+These measurements concern prefix reuse; they do not demonstrate faster MTP verification.

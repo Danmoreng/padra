@@ -23,7 +23,9 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
               : "") +
          (chunk == 2048 ? "" : "-chunk" + std::to_string(chunk)) +
          (budget_gib ? "-budget" + std::to_string(budget_gib) + "GiB" : "") +
-         (checkpoint ? "-local-checkpoint-bf16-v1" : "");
+         (checkpoint ? (kv_format == KVCacheFormat::BF16 ? "-local-checkpoint-bf16-v1"
+                                                         : "-local-checkpoint-encoded-v1")
+                     : "");
 }
 struct RuntimeStats {
   int mtp_depth = 0;

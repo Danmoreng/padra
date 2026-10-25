@@ -1,0 +1,422 @@
+{
+  "base_commit": "9ce4156aeb3df71411856b22939891b52d6af525",
+  "hardware": "RTX 5080 Laptop, SM120a",
+  "candidate_binaries": {
+    "padra-mtp-probe": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+    "padra-mtp-operators": "234435ddeca8090cd8bfebb174ded86e293b80ac19f98205b83daeb0b5c7eadd",
+    "padra-server": "42b334512c43c84af25174e96a3dd19a773c60d3568fc6217c6ec8bc487ce10c"
+  },
+  "production_binaries": {
+    "padra-mtp-probe": "e0d2b937970015d2fb046c0e44fdc54178628037986c4032b6dbfc1a627a28a8",
+    "padra-server": "3e136f8f73032df990242afce8be518c00fa0d5d038576d1601f23cdc3463823",
+    "padra-mtp-operators": "71946b0784a543fb4e751a0278ab6ea6a1f53dc05b080e798dadd784821f7b5d"
+  },
+  "benchmark": [
+    {
+      "rate": 3,
+      "length": 4096,
+      "stats": {
+        "replay": {
+          "n": 6,
+          "prefill_s": 0.7142408365,
+          "prepare_and_prefill_s": 0.7144020935000001,
+          "request_s": 0.954645218,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 262.329529568612
+        },
+        "capture": {
+          "n": 6,
+          "prefill_s": 0.713445247,
+          "prepare_and_prefill_s": 0.713606855,
+          "request_s": 0.9541872105,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 262.7093431113067
+        },
+        "reuse": {
+          "n": 6,
+          "prefill_s": 0.045234315,
+          "prepare_and_prefill_s": 0.045427096,
+          "request_s": 0.2837308705,
+          "cached_tokens": [
+            3840
+          ],
+          "decode_tokens_s": 264.5340798768352
+        }
+      },
+      "resident_bytes": 7340423196,
+      "post_graph_available_bytes": 993067008,
+      "exact": true
+    },
+    {
+      "rate": 3,
+      "length": 16384,
+      "stats": {
+        "replay": {
+          "n": 6,
+          "prefill_s": 3.1888908965000002,
+          "prepare_and_prefill_s": 3.1889951915,
+          "request_s": 3.4518562875,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 239.90852887325593
+        },
+        "capture": {
+          "n": 6,
+          "prefill_s": 3.1900179765,
+          "prepare_and_prefill_s": 3.1901118075,
+          "request_s": 3.4530872930000003,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 239.80492923902912
+        },
+        "reuse": {
+          "n": 6,
+          "prefill_s": 0.0544394625,
+          "prepare_and_prefill_s": 0.0546108785,
+          "request_s": 0.31694156149999997,
+          "cached_tokens": [
+            16128
+          ],
+          "decode_tokens_s": 240.3104047967767
+        }
+      },
+      "resident_bytes": 7340423196,
+      "post_graph_available_bytes": 990969856,
+      "exact": true
+    },
+    {
+      "rate": 6,
+      "length": 4096,
+      "stats": {
+        "replay": {
+          "n": 6,
+          "prefill_s": 0.740920276,
+          "prepare_and_prefill_s": 0.7409762565,
+          "request_s": 0.9867104655000001,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 256.5196810235952
+        },
+        "capture": {
+          "n": 6,
+          "prefill_s": 0.7411003285,
+          "prepare_and_prefill_s": 0.7411920304999999,
+          "request_s": 0.9869339435,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 256.6184854134168
+        },
+        "reuse": {
+          "n": 6,
+          "prefill_s": 0.0463646815,
+          "prepare_and_prefill_s": 0.046532124999999994,
+          "request_s": 0.2904923735,
+          "cached_tokens": [
+            3840
+          ],
+          "decode_tokens_s": 258.37635995573794
+        }
+      },
+      "resident_bytes": 11502221340,
+      "post_graph_available_bytes": 1127284736,
+      "exact": true
+    },
+    {
+      "rate": 6,
+      "length": 16384,
+      "stats": {
+        "replay": {
+          "n": 6,
+          "prefill_s": 3.2783944555,
+          "prepare_and_prefill_s": 3.2785058695,
+          "request_s": 3.5249014065,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 256.02988753488955
+        },
+        "capture": {
+          "n": 6,
+          "prefill_s": 3.278394536,
+          "prepare_and_prefill_s": 3.2785052080000003,
+          "request_s": 3.524877942,
+          "cached_tokens": [
+            0
+          ],
+          "decode_tokens_s": 255.81395766939607
+        },
+        "reuse": {
+          "n": 6,
+          "prefill_s": 0.0552368355,
+          "prepare_and_prefill_s": 0.055448231,
+          "request_s": 0.301529645,
+          "cached_tokens": [
+            16128
+          ],
+          "decode_tokens_s": 256.2906357180617
+        }
+      },
+      "resident_bytes": 11502221340,
+      "post_graph_available_bytes": 1125187584,
+      "exact": true
+    }
+  ],
+  "full_context": [
+    {
+      "rate": 3,
+      "depth": 0,
+      "exact": true,
+      "first_prefill_s": 44.681852747,
+      "reuse_prefill_s": 0.136386501,
+      "resident_bytes": 7066159944,
+      "post_graph_available_bytes": 1274085376,
+      "checkpoint_bytes": 23396352
+    },
+    {
+      "rate": 3,
+      "depth": 1,
+      "exact": true,
+      "first_prefill_s": 47.2457386,
+      "reuse_prefill_s": 0.140654551,
+      "resident_bytes": 7340423196,
+      "post_graph_available_bytes": 990969856,
+      "checkpoint_bytes": 25502720
+    },
+    {
+      "rate": 6,
+      "depth": 0,
+      "exact": true,
+      "first_prefill_s": 45.698197373,
+      "reuse_prefill_s": 0.1379404,
+      "resident_bytes": 11227958088,
+      "post_graph_available_bytes": 1408303104,
+      "checkpoint_bytes": 23396352
+    },
+    {
+      "rate": 6,
+      "depth": 1,
+      "exact": true,
+      "first_prefill_s": 47.904589835,
+      "reuse_prefill_s": 0.142055293,
+      "resident_bytes": 11502221340,
+      "post_graph_available_bytes": 1125187584,
+      "checkpoint_bytes": 25502720
+    }
+  ],
+  "full_context_d0_d1": {
+    "exact": true,
+    "differences": []
+  },
+  "native_matrix": [
+    {
+      "name": "k3-q8_0",
+      "rows": 240,
+      "exact": true,
+      "differences": [],
+      "seconds": 116.5330186919964,
+      "binary_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "command": [
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/build/padra-mtp-probe",
+        "/home/sebastian/Development/padra/build/gpu-profiles-2026-10-25/artifacts/K3-q8head/native",
+        "/home/sebastian/Development/padra/build/mtp-five-step-2026-10-25/draft-exl3-artifact/native",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k3-q8_0-requests.json",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k3-q8_0.jsonl"
+      ],
+      "checkpoint_bytes": 23396352
+    },
+    {
+      "name": "k3-q8",
+      "rows": 240,
+      "exact": true,
+      "differences": [],
+      "seconds": 135.40219306200015,
+      "binary_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "command": [
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/build/padra-mtp-probe",
+        "/home/sebastian/Development/padra/build/gpu-profiles-2026-10-25/artifacts/K3-q8head/native",
+        "/home/sebastian/Development/padra/build/mtp-five-step-2026-10-25/draft-exl3-artifact/native",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k3-q8-requests.json",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k3-q8.jsonl"
+      ],
+      "checkpoint_bytes": 22708224
+    },
+    {
+      "name": "k6-q8_0",
+      "rows": 240,
+      "exact": true,
+      "differences": [],
+      "seconds": 129.4148817450041,
+      "binary_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "command": [
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/build/padra-mtp-probe",
+        "/home/sebastian/Development/padra/build/gpu-profiles-2026-10-25/artifacts/K6-q8head/native",
+        "/home/sebastian/Development/padra/build/mtp-five-step-2026-10-25/draft-exl3-artifact/native",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k6-q8_0-requests.json",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k6-q8_0.jsonl"
+      ],
+      "checkpoint_bytes": 23396352
+    },
+    {
+      "name": "k6-bf16",
+      "rows": 240,
+      "exact": true,
+      "differences": [],
+      "seconds": 127.36228294100147,
+      "binary_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "command": [
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/build/padra-mtp-probe",
+        "/home/sebastian/Development/padra/build/gpu-profiles-2026-10-25/artifacts/K6-q8head/native",
+        "/home/sebastian/Development/padra/build/mtp-five-step-2026-10-25/draft-exl3-artifact/native",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k6-bf16-requests.json",
+        "/home/sebastian/Development/padra/build/q8-checkpoint-2026-10-25/qualification-v3/k6-bf16.jsonl"
+      ],
+      "checkpoint_bytes": 44040192
+    }
+  ],
+  "prefix_regression": [
+    {
+      "exact": true,
+      "differences": [],
+      "rows_by_depth": {
+        "0": 30,
+        "1": 30,
+        "4": 30
+      },
+      "kv_format": "q8_0",
+      "expert_rate": 3,
+      "chunk": 256,
+      "probe_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "input_sha256": "c695f59d2b8580779bf0a7cc6d06b945cd5330b4c59a5c492303ed7fc221d0cf"
+    },
+    {
+      "exact": true,
+      "differences": [],
+      "rows_by_depth": {
+        "0": 30,
+        "1": 30,
+        "4": 30
+      },
+      "kv_format": "q8",
+      "expert_rate": 3,
+      "chunk": 256,
+      "probe_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "input_sha256": "c695f59d2b8580779bf0a7cc6d06b945cd5330b4c59a5c492303ed7fc221d0cf"
+    },
+    {
+      "exact": true,
+      "differences": [],
+      "rows_by_depth": {
+        "0": 30,
+        "1": 30
+      },
+      "kv_format": "bf16",
+      "expert_rate": 6,
+      "chunk": 2048,
+      "probe_sha256": "681e4c5c5b91d189f9522259d4ff853247dc55fe712b31655e94937a9b45e6d5",
+      "input_sha256": "5d3cfa1159efe4250f752b7f0ec7ecee0e24878620318768cd4bd0df600fb6f0"
+    }
+  ],
+  "baseline_comparison": [
+    {
+      "profile": "k3-q8",
+      "cases": 70,
+      "exact": true,
+      "differences": [],
+      "reference": "build/gpu-profiles-2026-10-25/qualification-v2/8gb-q8.jsonl",
+      "scope": "first 14 existing requests at each D0-D4; chunk256, capacity8192; baseline lacks Q8 checkpoints"
+    },
+    {
+      "profile": "k3-q8_0",
+      "cases": 70,
+      "exact": true,
+      "differences": [],
+      "reference": "build/gpu-profiles-2026-10-25/qualification-v2/8gb-q8_0.jsonl",
+      "scope": "first 14 existing requests at each D0-D4; chunk256, capacity8192; baseline lacks Q8 checkpoints"
+    }
+  ],
+  "http": [
+    {
+      "name": "k3-q8_0-d0",
+      "seconds": 4.821142664004583,
+      "chat_cached_tokens": 8,
+      "responses_cached_tokens": 10
+    },
+    {
+      "name": "k3-q8_0-d1",
+      "seconds": 4.8716830180055695,
+      "chat_cached_tokens": 8,
+      "responses_cached_tokens": 10
+    },
+    {
+      "name": "k3-q8_0-d4",
+      "seconds": 4.9213478220044635,
+      "chat_cached_tokens": 8,
+      "responses_cached_tokens": 10
+    },
+    {
+      "name": "k3-q8-d1",
+      "seconds": 4.922263977001421,
+      "chat_cached_tokens": 8,
+      "responses_cached_tokens": 10
+    },
+    {
+      "name": "k6-q8_0-d1",
+      "seconds": 6.825810529997398,
+      "chat_cached_tokens": 8,
+      "responses_cached_tokens": 10
+    },
+    {
+      "name": "k6-bf16-d1",
+      "seconds": 6.775204632998793,
+      "chat_cached_tokens": 8,
+      "responses_cached_tokens": 10
+    }
+  ],
+  "sanitizers": [
+    {
+      "tool": "memcheck",
+      "exit_code": 0,
+      "seconds": 0.7647289920059848
+    },
+    {
+      "tool": "synccheck",
+      "exit_code": 0,
+      "seconds": 0.7150321070002974
+    },
+    {
+      "tool": "racecheck",
+      "exit_code": 0,
+      "seconds": 2.267739696006174
+    },
+    {
+      "tool": "initcheck",
+      "exit_code": 0,
+      "seconds": 0.764998918006313
+    }
+  ],
+  "production": {
+    "prefix_cases": 60,
+    "candidate_exact": true,
+    "http_passed": true
+  },
+  "host_tests_passed": 24,
+  "unaligned_d0_cases": 135,
+  "operator_cases": 216,
+  "operator_graph_replays": 72,
+  "operator_invalid_guards": 14,
+  "evidence": "build/q8-checkpoint-2026-10-25",
+  "limits": [
+    "8/12 GiB admission ceilings on 16 GB GPU, not physical cards",
+    "Repeated timings use 64 generated tokens; no comparison to previous 512-token decode rates",
+    "Single resident GPU prefix; session misses replay",
+    "Q8 storage remains lossy relative to BF16; reuse itself copies bits exactly"
+  ]
+}

@@ -91,9 +91,9 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
   add("silu", 65536 * 2);
   add("expert_workspace", admission::Bytes(batch, 8 * 2304 * 6));
   if (checkpoint) {
-    if (!persistent || kv_format != KVCacheFormat::BF16 || capacity < 1024)
-      throw std::invalid_argument("checkpoint inventory requires persistent BF16 capacity>=1024");
-    add("local_checkpoint", KVCheckpointLedger::kLocalSnapshotBytes);
+    if (!persistent || capacity < 1024)
+      throw std::invalid_argument("checkpoint inventory requires persistent capacity>=1024");
+    add("local_checkpoint", KVCheckpointLedger::LocalSnapshotBytes(kv_format));
   }
   if (sampling_workspace) {
     add("sampling_arrays_state", 98304 * 28 + 16);

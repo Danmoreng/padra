@@ -829,10 +829,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     const bool q8Native = o.kv_cache_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
     const bool q8Cache = q8Native || o.kv_cache_format == KVCacheFormat::Q8TokenHead128F32ScaleV1;
     if (o.server_kv_checkpoint &&
-        (!worker || !o.controlled_chunk_graphs || q8Cache || o.fp8_kv_cache ||
+        (!worker || !o.controlled_chunk_graphs || o.fp8_kv_cache ||
          !o.padded_bf16_prefill_attention || !o.packed_bf16_prefill_attention || o.capacity < 1024))
       return Status(StatusCode::kUnsupported,
-                    "checkpoint requires explicit selected controlled BF16/packed current chunk");
+                    "checkpoint requires explicit selected controlled/packed current chunk");
     if (o.kv_cache_format != KVCacheFormat::BF16 && !q8Cache)
       return Status(StatusCode::kUnsupported, "unknown typed KV format");
     if (q8Cache && (!worker || !o.controlled_chunk_graphs || !AdmitNativeContext(o.capacity).ok() ||
@@ -1429,7 +1429,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     const auto q8NativePrefixBytes = q8Native ? admission::Bytes(o.capacity, 2048) : 0;
     const auto q8NativeQueryBytes = q8Native ? 128 * sizeof(q8_native::QueryBlock) : 0;
     const std::size_t checkpointBytes =
-        o.server_kv_checkpoint ? KVCheckpointLedger::kLocalSnapshotBytes : 0;
+        o.server_kv_checkpoint ? KVCheckpointLedger::LocalSnapshotBytes(o.kv_cache_format) : 0;
     const std::size_t quantCaptureBytes =
         o.capture_quantization_rows ? row_quantization::kCaptureBytes : 0;
     const auto exl3FixtureBytes =
@@ -1524,9 +1524,13 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                              ? packedChunkK + batch * 512
                              : nullptr;
     Buffer checkpointBuffer(checkpointBytes);
-    if (o.server_kv_checkpoint)
-      Check(cudaFuncGetAttributes(&attributes,
-                                  reinterpret_cast<const void *>(kv_checkpoint::CaptureLocal)));
+    if (o.server_kv_checkpoint) {
+      const auto *capture =
+          q8Native  ? reinterpret_cast<const void *>(kv_checkpoint::CaptureEncoded<true>)
+          : q8Cache ? reinterpret_cast<const void *>(kv_checkpoint::CaptureEncoded<false>)
+                    : reinterpret_cast<const void *>(kv_checkpoint::CaptureLocal);
+      Check(cudaFuncGetAttributes(&attributes, capture));
+    }
     Buffer exl3Fixture(exl3FixtureBytes);
     Buffer routeCapture(routeBytes);
     Buffer rangeCapture(o.diagnostic_routes ? 28 * 3 * 9 * sizeof(unsigned) : 0);
@@ -2258,12 +2262,18 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           // global rows before the anchor have never been overwritten.
           for (int l = 0; l < 28; ++l)
             if (l % 4 != 3) {
-              const auto offset = static_cast<std::size_t>(l - l / 4) * 1024 * 2048;
+              const auto layout = KVCacheLayout::Make(o.kv_cache_format, 1024);
+              const auto offset = static_cast<std::size_t>(l - l / 4) * layout.bytes;
               const auto *saved = checkpointBuffer.As<unsigned char>() + offset;
-              Check(cudaMemcpyAsync(layers[l].kc, saved, 1024 * 1024, cudaMemcpyDeviceToDevice,
-                                    stream.s));
-              Check(cudaMemcpyAsync(layers[l].vc, saved + 1024 * 1024, 1024 * 1024,
-                                    cudaMemcpyDeviceToDevice, stream.s));
+              if (q8Cache)
+                Check(cudaMemcpyAsync(layers[l].q8.k, saved, layout.bytes, cudaMemcpyDeviceToDevice,
+                                      stream.s));
+              else {
+                Check(cudaMemcpyAsync(layers[l].kc, saved, layout.v_offset,
+                                      cudaMemcpyDeviceToDevice, stream.s));
+                Check(cudaMemcpyAsync(layers[l].vc, saved + layout.v_offset, layout.v_offset,
+                                      cudaMemcpyDeviceToDevice, stream.s));
+              }
             }
           if (mtpEnabled) {
             Check(cudaMemcpyAsync(draft->kv.p, mtpCheckpoint.p, draft->kv.bytes,
@@ -2750,11 +2760,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             ",other-shapes-identical-body-eager;no-per-request-capture";
       }
       if (o.server_kv_checkpoint) {
-        result.kernel_profile += "+s8-local-bf16-checkpoint-v1";
-        result.math_profile += ";checkpoint=one42MiB-local-ring-bitcopy/"
+        result.kernel_profile +=
+            q8Cache ? "+local-encoded-checkpoint-v1" : "+s8-local-bf16-checkpoint-v1";
+        result.math_profile += ";checkpoint=one-local-ring-bitcopy/"
                                "unchanged-global-prefix;only-containing-chunk-identical-eager-body/"
                                "no-chunk-split/no-arithmetic-change;restore-before-Prepared/"
-                               "validated-canonical-prefix-runtime-generation-capacity-BF16";
+                               "validated-canonical-prefix-runtime-generation-capacity-format";
       }
       if (worker && o.sampling.selection_graph()) {
         result.kernel_profile += "+sampling-cub-stable-sort-fp64-cdf-splitmix64-v1";
@@ -3746,17 +3757,29 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             }
             capture("attention", ba, selected);
             if (checkpoint_anchor && l % 4 != 3) {
-              const auto offset = static_cast<std::size_t>(l - l / 4) * 1024 * 2048;
-              auto *saved =
-                  reinterpret_cast<std::uint16_t *>(checkpointBuffer.As<unsigned char>() + offset);
-              kv_checkpoint::
-                  CaptureLocal<<<kv_checkpoint::Blocks, kv_checkpoint::Threads, 0, stream.s>>>(
-                      reinterpret_cast<const std::uint16_t *>(a.kc),
-                      reinterpret_cast<const std::uint16_t *>(a.vc),
-                      reinterpret_cast<const std::uint16_t *>(packedChunkK),
-                      reinterpret_cast<const std::uint16_t *>(packedChunkV), saved,
-                      saved + 1024 * 512, prefill, n, checkpoint_anchor, bad.As<int>(),
-                      contextMaximum);
+              const auto layout = KVCacheLayout::Make(o.kv_cache_format, 1024);
+              const auto offset = static_cast<std::size_t>(l - l / 4) * layout.bytes;
+              auto *saved = checkpointBuffer.As<unsigned char>() + offset;
+              if (q8Native)
+                kv_checkpoint::CaptureEncoded<true>
+                    <<<kv_checkpoint::Blocks, kv_checkpoint::Threads, 0, stream.s>>>(
+                        a.q8.k, a.q8.v, nullptr, q8Chunk.k, q8Chunk.v, nullptr, saved, prefill, n,
+                        checkpoint_anchor, bad.As<int>(), contextMaximum);
+              else if (q8Cache)
+                kv_checkpoint::CaptureEncoded<false>
+                    <<<kv_checkpoint::Blocks, kv_checkpoint::Threads, 0, stream.s>>>(
+                        a.q8.k, a.q8.v, a.q8.scales, q8Chunk.k, q8Chunk.v, q8Chunk.scales, saved,
+                        prefill, n, checkpoint_anchor, bad.As<int>(), contextMaximum);
+              else
+                kv_checkpoint::
+                    CaptureLocal<<<kv_checkpoint::Blocks, kv_checkpoint::Threads, 0, stream.s>>>(
+                        reinterpret_cast<const std::uint16_t *>(a.kc),
+                        reinterpret_cast<const std::uint16_t *>(a.vc),
+                        reinterpret_cast<const std::uint16_t *>(packedChunkK),
+                        reinterpret_cast<const std::uint16_t *>(packedChunkV),
+                        reinterpret_cast<std::uint16_t *>(saved),
+                        reinterpret_cast<std::uint16_t *>(saved + layout.v_offset), prefill, n,
+                        checkpoint_anchor, bad.As<int>(), contextMaximum);
             }
             if (q8Native) {
               const int first = l % 4 != 3 ? std::max(0, n - a.cap) : 0;
@@ -3958,9 +3981,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             worker->Publish(result);
             continue;
           }
-          for (int base = worker->append_base; base < static_cast<int>(o.input_ids.size());
-               base += batch) {
-            const int active = std::min(batch, static_cast<int>(o.input_ids.size()) - base);
+          for (int base = worker->append_base; base < static_cast<int>(o.input_ids.size());) {
+            // Reuse must retain canonical chunk boundaries. Starting a fresh
+            // sequence of full chunks at an unaligned anchor can turn the final
+            // tail into a different expert arithmetic shape.
+            const int active =
+                std::min(batch - base % batch, static_cast<int>(o.input_ids.size()) - base);
             PrefillState state{base, base, active, o.capacity, base, 1, worker->request_epoch, 1};
             Check(cudaMemcpyAsync(prefillCommand.p, &state, sizeof(state), cudaMemcpyHostToDevice,
                                   stream.s));
@@ -4026,6 +4052,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             if (executed == static_cast<int>(o.input_ids.size()))
               Check(cudaMemcpyAsync(x, bx + (active - 1) * 2304, 2304 * 4, cudaMemcpyDeviceToDevice,
                                     stream.s));
+            base = executed;
           }
           if (result.cancelled) {
             result.generated_ids.clear();

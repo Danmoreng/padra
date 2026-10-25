@@ -15,6 +15,15 @@ int main() {
   try {
     using namespace mellum16;
     constexpr std::size_t weights = 5705667072ULL, ceiling = 8ULL << 30;
+    for (int chunk : {256, 512, 2048})
+      for (int boundary : {chunk, 2 * chunk, 3 * chunk}) {
+        Require(CheckpointCaptureAnchor(boundary, chunk) == boundary);
+        Require(CheckpointCaptureAnchor(boundary - 4, chunk) == boundary - 4);
+        for (int tail : {1, 2, 3})
+          Require(CheckpointCaptureAnchor(boundary - tail, chunk) == boundary - 4);
+        Require(CheckpointCaptureAnchor(boundary + 1, chunk) == boundary + 1);
+      }
+    Require(CheckpointCaptureAnchor(0, 256) == 0 && CheckpointCaptureAnchor(1, 256) == 1);
     for (int capacity : {8192, 16384, 32768, 65536, 131072}) {
       Require(AdmitNativeContext(capacity).ok());
       const auto layout = KVCacheLayout::Make(KVCacheFormat::Q8TokenHead128F32ScaleV1, capacity);
@@ -42,13 +51,6 @@ int main() {
     // checked against actual free memory by the runtime, not emulated here.
     Require(q8.Fits(ceiling) && !bf16.Fits(ceiling));
     bool rejected = false;
-    try {
-      (void)PlanServerMemory(weights, 131072, 131072, 256, true, 0,
-                             KVCacheFormat::Q8TokenHead128F32ScaleV1, true, 3);
-    } catch (const std::invalid_argument &) {
-      rejected = true;
-    }
-    Require(rejected);
     Require(!AdmitNativeContext(131073).ok());
     const auto native =
         PlanServerMemory(weights, 131072, 131072, 256, true, 0,
@@ -106,6 +108,37 @@ int main() {
         Require(mtp.resident - ordinary.resident ==
                 MtpDraftResidentBytes(false, true) + kMtpVerifyResidentBytes + MtpHiddenBytes(256));
         Require(mtp.buffers.at("kv") == ordinary.buffers.at("kv"));
+        const auto snapshotBytes = format == KVCacheFormat::BF16 ? 44040192ULL
+                                   : format == KVCacheFormat::Q8TokenHead128F32ScaleV1
+                                       ? 22708224ULL
+                                       : 23396352ULL;
+        const auto checkpoint = PlanServerMemory(weights, 131072, 131072, 256, true, 0, format,
+                                                 true, rate, true, false, false, true);
+        Require(checkpoint.buffers.at("local_checkpoint") == snapshotBytes &&
+                checkpoint.resident - mtp.resident == snapshotBytes + kMtpCheckpointBytes &&
+                checkpoint.reserve == mtp.reserve);
+        KVCheckpointLedger ledger(131072, 42, format);
+        std::vector<int> tokens(2048, 123);
+        Require(ledger.Capture(tokens, 1025).ok());
+        const auto handle = *ledger.handle();
+        Require(handle.format == format && ledger.RestoreBase(tokens, handle).value() == 1025);
+        auto wrong = handle;
+        wrong.format = format == KVCacheFormat::BF16 ? KVCacheFormat::Q8TokenHead128F32ScaleV1
+                                                     : KVCacheFormat::BF16;
+        Require(!ledger.RestoreBase(tokens, wrong).ok());
+        wrong = handle;
+        ++wrong.runtime_binding;
+        Require(!ledger.RestoreBase(tokens, wrong).ok());
+        tokens[1024] = 124;
+        Require(!ledger.RestoreBase(tokens, handle).ok());
+        tokens[1024] = 123;
+        tokens[1025] = 124;
+        Require(ledger.RestoreBase(tokens, handle).ok());
+        Require(ledger.Capture(tokens, 1537).ok());
+        Require(!ledger.RestoreBase(tokens, handle).ok());
+        const auto latest = *ledger.handle();
+        ledger.Invalidate();
+        Require(!ledger.RestoreBase(tokens, latest).ok());
       }
     rejected = false;
     try {

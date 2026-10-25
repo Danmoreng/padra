@@ -55,9 +55,9 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
                   "low-memory profiles require the selected controlled-chunk runtime");
   if (diagnostic_decode_token < -1 || diagnostic_decode_token >= 98304)
     return Status(StatusCode::kInvalidArgument, "invalid fixed diagnostic decode token");
-  if (enable_checkpoint && (!controlled_chunks || kv_format != KVCacheFormat::BF16))
+  if (enable_checkpoint && !controlled_chunks)
     return Status(StatusCode::kUnsupported,
-                  "checkpoint capture/restore requires explicit controlled BF16 profile");
+                  "checkpoint capture/restore requires explicit controlled profile");
   auto admitted = AdmitNativeContext(static_cast<int>(capacity));
   if (!admitted.ok())
     return admitted.status();

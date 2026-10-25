@@ -51,8 +51,9 @@ int main(int argc, char **argv) {
           options.kv_cache_format = KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
         else if (c->as_string() != "bf16")
           throw std::runtime_error("unknown KV format");
-        options.server_kv_checkpoint = options.kv_cache_format == KVCacheFormat::BF16;
       }
+      if (const auto *c = requests.as_array().front().find("checkpoint_enabled"))
+        options.server_kv_checkpoint = c->as_bool();
       if (const auto *c = requests.as_array().front().find("device_budget_gib"))
         options.server_device_budget_gib = int(c->as_integer());
       if (depth) {
@@ -116,20 +117,28 @@ int main(int argc, char **argv) {
         const int anchor = request.find("checkpoint_anchor")
                                ? int(request.find("checkpoint_anchor")->as_integer())
                                : 0;
+        const auto preparationStarted = std::chrono::steady_clock::now();
         if (restore) {
           if (!checkpoint)
             throw std::runtime_error("missing checkpoint");
-          Check(runtime.PrepareCheckpointRestore(ids, generate, *checkpoint, 0, true, sampling));
+          Check(
+              runtime.PrepareCheckpointRestore(ids, generate, *checkpoint, anchor, true, sampling));
         } else if (anchor)
           Check(runtime.PrepareWithCheckpoint(ids, generate, anchor, true, sampling));
         else
           Check(append ? runtime.PrepareAppend(ids, generate, true, sampling)
                        : runtime.PrepareRequestShape(ids, generate, true, sampling));
+        const double preparation =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - preparationStarted)
+                .count();
         int callbacks = 0;
         const int cancel =
             request.find("cancel_after") ? int(request.find("cancel_after")->as_integer()) : -1;
         const bool profile =
             request.find("profile_decode") && request.find("profile_decode")->as_bool();
+        const int cancelPrefill = request.find("cancel_prefill_after")
+                                      ? int(request.find("cancel_prefill_after")->as_integer())
+                                      : -1;
         const auto generationStarted = std::chrono::steady_clock::now();
         auto result = runtime.Generate(
             [&](int) {
@@ -138,7 +147,7 @@ int main(int argc, char **argv) {
                 cudaProfilerStart();
               return cancel < 0 || callbacks < cancel;
             },
-            {});
+            [&](int committed) { return cancelPrefill < 0 || committed < cancelPrefill; });
         if (profile)
           cudaProfilerStop();
         if (!result.ok())
@@ -166,6 +175,10 @@ int main(int argc, char **argv) {
             << ",\"prefill_s\":" << r.prefill_seconds << ",\"decode_s\":" << r.decode_seconds
             << ",\"decode_steps\":" << r.decode_steps << ",\"generation_wall_s\":" << wall
             << ",\"capacity\":" << stats.capacity << ",\"prefill_tokens\":" << r.prefill_tokens
+            << ",\"prepare_s\":" << preparation << ",\"cached_tokens\":" << stats.cached_tokens
+            << ",\"checkpoint_bytes\":" << stats.checkpoint_bytes
+            << ",\"checkpoint_captures\":" << stats.checkpoint_captures
+            << ",\"checkpoint_restores\":" << stats.checkpoint_restores
             << ",\"mtp_bytes\":" << r.mtp_resident_bytes
             << ",\"kernel_profile\":" << json::Quote(stats.kernel_profile)
             << ",\"resident_bytes\":" << stats.resident_bytes

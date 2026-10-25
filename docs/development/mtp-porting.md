@@ -37,6 +37,7 @@ jobs. Supply real admitted artifacts and an explicit process time/memory bound.
 
 ```sh
 build/release/padra-mtp-operators /path/to/K3/native 3
+build/release/padra-mtp-operators --checkpoint
 compute-sanitizer --tool memcheck build/release/padra-mtp-operators /path/to/K3/native 3
 build/release/padra-mtp-probe /path/to/K3/native /path/to/MTP-EXL3-K4/native \
   /path/to/requests.json /path/to/results.jsonl
@@ -66,6 +67,16 @@ The input file contains `{"input_ids": [1, 2, 3]}` with your actual tokenized
 prompt. Startup options come from the first request. Each result records tokens,
 final logit/hidden hashes, callbacks, committed/pending state, MTP acceptance,
 memory admission and timings. Natural EOS can end generation before the budget.
+Prefix snapshots are enabled for every cache format; `checkpoint_enabled: false`
+on the first request disables them for a control run. A positive `checkpoint_anchor`
+captures the canonical prefix; a subsequent `restore_checkpoint: true` restores
+the retained snapshot, optionally extending it with a new `checkpoint_anchor`.
+The requested anchor is an upper bound: the runtime may retain up to three fewer
+tokens to avoid changing expert arithmetic at a partial chunk boundary.
+The output includes `cached_tokens`, snapshot bytes, capture/restore counts and
+`prepare_s`, which includes restore copies. The `--checkpoint` operator probe
+checks encoded snapshots against a chronological byte oracle and exercises graph
+replay and invalid-command guards without loading model weights.
 Use identical prompts and target precision for ordinary/MTP comparisons; join
 all GPU jobs, retain warmups separately, and record graph/driver memory too.
 The probe is a diagnostic executable, not a hardened input-facing service.
@@ -73,3 +84,13 @@ The probe is a diagnostic executable, not a hardened input-facing service.
 The current measured scope and identities are recorded in
 [the profile report](../performance/gpu-profiles-2026-10-25.txt) and
 [the MTP optimization report](../performance/mtp-2026-10-25.txt).
+The [prefix reuse report](../performance/prefix-reuse-2026-10-25.txt) records
+the Q8 checkpoint tests, full-context memory and replay/reuse comparison.
+
+For a fresh-replay comparison at chunk and ring boundaries, run
+`tests/cuda/prefix_reuse.py --probe /path/to/padra-mtp-probe --artifact /path/to/target
+--draft /path/to/draft --input /path/to/input.json --output-dir /new/result/directory
+--expert-rate 3 --kv-format q8_0`. It tests Ordinary and MTP D1/D4, checks full
+outputs and state, and preserves all requests and results. Supply at least
+`3 * chunk + 2` input tokens; `--chunk` defaults to 256. Use `--kv-format q8` or
+`bf16` for the other formats. This is an explicit GPU diagnostic, not a host CTest.

@@ -207,8 +207,13 @@ void ExpertProbe(const std::filesystem::path &target, int rate) {
   std::cout << "EXPERT K" << rate << ' ' << tested << " cases exact\n";
 }
 } // namespace mellum16
+#include "checkpoint_probe.cuh"
 int main(int argc, char **argv) {
   try {
+    if (argc == 2 && std::string(argv[1]) == "--checkpoint") {
+      mellum16::CheckpointProbe();
+      return 0;
+    }
     mellum16::CacheProbe();
     if (argc == 3)
       mellum16::ExpertProbe(argv[1], std::stoi(argv[2]));

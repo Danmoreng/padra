@@ -10,6 +10,15 @@
 #include "runtime/kv_cache_layout.h"
 
 namespace mellum16 {
+// A restored prefix resumes on the original chunk grid. Leave at least four
+// rows in a partial first chunk so it uses the same expert arithmetic as the
+// original full chunk. Retaining up to three fewer tokens avoids a T<4 switch.
+inline int CheckpointCaptureAnchor(int anchor, int chunk) {
+  if (anchor < 0 || chunk < 4 || chunk > 2048)
+    throw std::invalid_argument("invalid checkpoint capture anchor/chunk");
+  const int offset = anchor % chunk;
+  return offset > chunk - 4 ? anchor - (offset - (chunk - 4)) : anchor;
+}
 // Keep the original chat-template tokens. Only choose how much of a proven
 // stable prefix to cache; leaving four rows avoids an unnecessary T<4 expert
 // arithmetic branch when replaying the generation-only header.
@@ -39,9 +48,15 @@ struct KVCheckpointHandle {
 class KVCheckpointLedger {
 public:
   static constexpr std::size_t kLocalSnapshotBytes = 21ULL * 1024 * 2048;
-  KVCheckpointLedger(int capacity, std::uint64_t binding) : capacity_(capacity), binding_(binding) {
+  static std::size_t LocalSnapshotBytes(KVCacheFormat format) {
+    return 21 * KVCacheLayout::Make(format, 1024).bytes;
+  }
+  KVCheckpointLedger(int capacity, std::uint64_t binding,
+                     KVCacheFormat format = KVCacheFormat::BF16)
+      : capacity_(capacity), binding_(binding), format_(format) {
     if (capacity < 1024 || capacity > 131072 || !binding)
-      throw std::invalid_argument("invalid BF16 checkpoint binding/capacity");
+      throw std::invalid_argument("invalid checkpoint binding/capacity");
+    (void)LocalSnapshotBytes(format);
     prefix_.reserve(capacity);
   }
   Status Capture(std::span<const int> canonical, int anchor) {
@@ -55,7 +70,7 @@ public:
       return {StatusCode::kResourceExhausted, "checkpoint generation exhausted; recreate runtime"};
     prefix_.assign(canonical.begin(), canonical.begin() + anchor);
     ++generation_;
-    handle_ = KVCheckpointHandle{binding_, generation_, capacity_, anchor, KVCacheFormat::BF16};
+    handle_ = KVCheckpointHandle{binding_, generation_, capacity_, anchor, format_};
     return {};
   }
   Result<int> RestoreBase(std::span<const int> canonical, const KVCheckpointHandle &handle) const {
@@ -85,6 +100,7 @@ private:
   }
   int capacity_;
   std::uint64_t binding_, generation_ = 0;
+  KVCacheFormat format_;
   std::vector<int> prefix_;
   std::optional<KVCheckpointHandle> handle_;
 };

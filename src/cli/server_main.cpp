@@ -158,9 +158,8 @@ int main(int argc, char **argv) {
       throw std::runtime_error(text.status().message());
     auto tokenizer = std::move(text).value();
     std::unique_ptr<mellum16::ModelRuntime> runtime;
-    auto loaded = mellum16::ModelRuntime::Load(
-        argv[1], tokenizer->sha256(), true, context.value(), kv_format, -1, chunk, budget,
-        kv_format == mellum16::KVCacheFormat::BF16, mtp, q8_head);
+    auto loaded = mellum16::ModelRuntime::Load(argv[1], tokenizer->sha256(), true, context.value(),
+                                               kv_format, -1, chunk, budget, true, mtp, q8_head);
     if (!loaded.ok())
       throw std::runtime_error(loaded.status().message());
     runtime = std::move(loaded).value();

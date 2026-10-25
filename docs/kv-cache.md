@@ -60,10 +60,24 @@ execution through 131072 do not establish general long-context model quality or
 equivalence to BF16. BF16 remains the default quality reference. Inspect
 `GET /v1/models` for the active `kv_format` and `execution_profile`.
 
-The runtime supports reset, cancellation and forward prefix append. HTTP sessions
-work by replaying history with Q8: the server's local prefix checkpoint/reuse path
-requires BF16. Q8 trace/snapshot diagnostics and the legacy non-controlled runtime
-are unsupported.
+The runtime supports reset, cancellation, forward prefix append and local prefix
+checkpoint reuse with all three cache formats. The server retains one snapshot
+of the 21 local rings in their original format: 42 MiB for BF16, 21.65625 MiB for
+`q8`, or 22.3125 MiB for `q8_0`. Quantized snapshots copy codes and scale bits
+without decoding or requantizing them. Global rows before the retained anchor
+remain in place. With MTP, the snapshot additionally retains the draft's BF16
+ring and preceding target hidden state (2 MiB plus 9216 bytes).
+
+Reuse applies to the matching resident Chat session or Responses continuation.
+The runtime validates the canonical token prefix, runtime binding, generation,
+capacity and cache format before restoring. A different GPU session, changed
+prefix, reset or stale snapshot causes a full history replay through the server;
+this is not a multi-session GPU cache. Usage reports the actually reused prefix
+in `cached_tokens`. Restore preserves the original chunk boundaries. An anchor
+within three tokens of a chunk end is moved back to leave four rows, preserving
+the full-chunk expert arithmetic instead of switching to a narrow tail path.
+Q8 trace/snapshot diagnostics and the legacy non-controlled
+runtime are unsupported.
 
 MTP supports both quantized target caches. Its rollback saves and restores the
 encoded rows and their scales without dequantizing history. The draft retains

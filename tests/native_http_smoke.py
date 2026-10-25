@@ -14,6 +14,8 @@ parser.add_argument("--capacity", type=int, default=8192)
 parser.add_argument("--prefill-chunk", type=int, default=2048)
 parser.add_argument("--device-budget-gib", type=int, default=0)
 parser.add_argument("--kv-format", choices=("bf16", "q8", "q8_0"), default="bf16")
+parser.add_argument("--mtp-artifact", type=pathlib.Path)
+parser.add_argument("--mtp-depth", type=int, choices=range(1, 5), default=1)
 parser.add_argument("--output-dir", type=pathlib.Path, required=True)
 args = parser.parse_args()
 artifact = args.artifact.resolve()
@@ -54,7 +56,9 @@ with log.open("w") as output:
             str(args.prefill_chunk),
             str(args.device_budget_gib),
             args.kv_format,
-        ] + (["--config", str(args.server_config.resolve())] if args.server_config else []),
+        ] + (["--config", str(args.server_config.resolve())] if args.server_config else [])
+        + (["--mtp-artifact", str(args.mtp_artifact.resolve()), "--mtp-depth", str(args.mtp_depth),
+            "--mtp-draft-experts", "exl3"] if args.mtp_artifact else []),
         stdout=output,
         stderr=output,
     )
@@ -92,8 +96,11 @@ with log.open("w") as output:
         assert identity["context_capacity"] == args.capacity
         assert identity["prefill_chunk"] == args.prefill_chunk
         assert identity["device_budget_gib"] == args.device_budget_gib
-        assert identity["native_kv_reuse"] == (args.kv_format == "bf16")
-        assert (identity["checkpoint_snapshot_bytes"] > 0) == (args.kv_format == "bf16")
+        assert identity["native_kv_reuse"]
+        assert identity["checkpoint_snapshot_bytes"] == (
+            21 * 1024 * {"bf16": 2048, "q8": 1056, "q8_0": 1088}[args.kv_format]
+            + (2 * 1024 * 512 * 2 + 2304 * 4 if args.mtp_artifact else 0)
+        )
         assert identity["build_kernel_profile"] in ("baseline-v1", "exact-fusions-v1")
         resolved = identity["server_config"]
         admin_base = f"http://127.0.0.1:{resolved['admin_port']}"
@@ -170,12 +177,24 @@ with log.open("w") as output:
             assert tool_calls[index]["arguments"] == call["function"]["arguments"]
         session = fetch("/v1/sessions", {"model": model})["id"]
         turn = fetch("/v1/chat/completions", dict(body, session_id=session))
+        assert turn["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
         history = fetch("/v1/sessions/" + session)["messages"]
         assert history[-1]["role"] == "assistant"
         history.append({"role": "user", "content": "What did I ask?"})
         follow = fetch(
             "/v1/chat/completions", dict(body, session_id=session, messages=history)
         )
+        cached = follow["usage"]["prompt_tokens_details"]["cached_tokens"]
+        assert 0 < cached < follow["usage"]["prompt_tokens"]
+        # A different request owns the single live GPU cache. The retained
+        # session history must still work through a full replay on its next turn.
+        history = fetch("/v1/sessions/" + session)["messages"]
+        history.append({"role": "user", "content": "Continue."})
+        replay = fetch("/v1/chat/completions", dict(body, messages=history))
+        miss = fetch("/v1/chat/completions", dict(body, session_id=session, messages=history))
+        assert replay["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        assert miss["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        assert miss["choices"] == replay["choices"]
         fetch("/v1/sessions/" + session, method="DELETE")
         ids = []
         for i in range(40):
@@ -209,6 +228,7 @@ with log.open("w") as output:
                 "enable_thinking": False,
             },
         )
+        assert 0 < child["usage"]["input_tokens_details"]["cached_tokens"] < child["usage"]["input_tokens"]
         fetch("/v1/responses/" + ids[-1], method="DELETE")
         assert fetch("/v1/responses/" + child["id"])["id"] == child["id"]
         wire, _ = request(
@@ -238,6 +258,10 @@ with log.open("w") as output:
             "server_config": resolved,
             "chat_and_responses_streams": True,
             "session_followup": True,
+            "chat_cached_tokens": cached,
+            "responses_cached_tokens": child["usage"]["input_tokens_details"]["cached_tokens"],
+            "session_cache_miss_replay": True,
+            "mtp_depth": args.mtp_depth if args.mtp_artifact else 0,
             "native_tool_request": True,
             "native_tool_calls": len(expected_tools),
             "independent_stored_responses": len(ids),

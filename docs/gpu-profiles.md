@@ -15,15 +15,20 @@ and embeddings retain their existing precision.
 
 The runtime admits the complete model, both KV caches, working buffers and a
 700 MiB reserve, then checks available memory again after graph creation.
-The reserve is headroom, not an additional allocated buffer. BF16 target KV
-also supports a local prefix checkpoint. Q8 sessions replay history instead.
+The reserve is headroom, not an additional allocated buffer. All target KV
+formats support a local prefix checkpoint, including encoded Q8 codes and scales.
+The target snapshot uses 42 MiB with BF16 or 22.3125 MiB with Q8_0; MTP adds
+2 MiB plus 9216 bytes for its checkpoint. A matching resident session reuses its
+prefix; a cache miss replays history. See the [KV cache contract](kv-cache.md).
 No profile silently reduces context or precision or offloads weights to the CPU.
 
 These are experimental SM120/SM120a profiles. Measurements use an RTX 5080
 Laptop GPU with 16 GB VRAM. The 8/12 GiB limits are explicit admission ceilings
 on that GPU; they do not establish performance or driver overhead on physical
-8/12 GB cards. See the measured memory, throughput and validation scope in
-[the profile report](performance/gpu-profiles-2026-10-25.txt).
+8/12 GB cards. See throughput and the initial qualification scope in
+[the profile report](performance/gpu-profiles-2026-10-25.txt), and current
+snapshot-inclusive memory and reuse timings in
+[the prefix reuse report](performance/prefix-reuse-2026-10-25.txt).
 Successful execution at 131K does not establish retrieval or coding quality at
 that context length.
 
