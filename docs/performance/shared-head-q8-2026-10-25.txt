@@ -6,17 +6,17 @@ as a compatibility and numerical-quality reference. This is a scoped engineering
 decision, not a claim of general coding-quality equivalence.
 
 Format and storage
-INT8 codes -127..127, blocks of32, BF16 positive scales, FP32 division and
+INT8 codes -127..127, blocks of 32, BF16 positive scales, FP32 division and
 round-to-nearest-even. The entire shared head has SHA256
 0fa4891dcd9443a3d36d8d31d5f777c1cc06339eb1782855d86587cad276d587.
 The stored checkpoint equals the existing C++ host converter byte-for-byte.
-All5630 other target tensors are unchanged for each K3/K4/K6 checkpoint.
-Head payload:240648192bytes (229.5MiB), saving212336640bytes (202.5MiB).
+All 5630 other target tensors are unchanged for each K3/K4/K6 checkpoint.
+Head payload:240648192 bytes (229.5 MiB), saving212336640 bytes (202.5 MiB).
 Target and draft use the same GPU allocation. Stored artifacts require no head
 quantization or repack on startup. No BF16 GPU shadow is retained.
 
 Paired head-quality experiment
-32 frozen documents:24 authored code snippets in8 languages plus8 repository
+32 frozen documents:24 authored code snippets in 8 languages plus 8 repository
 source files. Evaluate19657 next-token positions per configuration after the
 first16/64 tokens, with at most4096 tokens per document. Feed the same captured
 hidden vector to both heads. The diagnostic probe temporarily loads both heads
@@ -38,7 +38,7 @@ PPL change is exp(mean NLL_Q8 - mean NLL_BF16)-1 on these token positions.
 Top1 agreement describes one-step decisions on identical hidden states; it is
 not sequence equivalence or an estimate of task success. Small logit changes
 can change a generated sequence. These documents are not a held-out public
-benchmark and do not establish quality at131K context.
+benchmark and do not establish quality at 131K context.
 
 Executable code comparison
 12 frozen Python/Rust/C++ tasks with executable tests and checked gold/mutant

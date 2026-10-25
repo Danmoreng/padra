@@ -1,31 +1,31 @@
 131K/MTP GPU profile qualification — 2026-10-25
 
-Tested hardware:NVIDIA GeForce RTX5080 Laptop GPU, SM120a,16GiB class.
-8/12GiB profiles use explicit memory-admission ceilings on this GPU. Physical
-8/12GiB cards, Pascal/GTX1070 and other architectures are not qualified.
-The current CUDA implementation requiresSM120/SM120a. These are experimental
+Tested hardware:NVIDIA GeForce RTX 5080 Laptop GPU, SM120a,16 GiB class.
+8/12 GiB profiles use explicit memory-admission ceilings on this GPU. Physical
+8/12 GiB cards, Pascal/GTX1070 and other architectures are not qualified.
+The current CUDA implementation requires SM120/SM120a. These are experimental
 profiles and a starting point for architecture ports, not cross-GPU speed claims.
 
 Selected profiles
-16gb:target EXL3K6, BF16KV, prefill chunk2048, actual-device admission.
-12gb:target EXL3K6, Q8_0KV, prefill chunk256,12GiB ceiling.
-8gb:target EXL3K3, Q8_0KV, prefill chunk256,8GiB ceiling.
-All:capacity131072, MTPD1, compact verifier dispatch, EXL3K4 draft experts,
+16gb:target EXL3 K6, BF16KV, prefill chunk2048, actual-device admission.
+12gb:target EXL3 K6, Q8_0KV, prefill chunk256,12 GiB ceiling.
+8gb:target EXL3 K3, Q8_0KV, prefill chunk256,8 GiB ceiling.
+All:capacity131072, MTP D1, compact verifier dispatch, EXL3 K4 draft experts,
 one stored Q8 output head shared by target and draft. No shared GPU shadows.
-Draft experts:4bpw codes,4.0248015873 effectivebpw with FP16 sidecars;
+Draft experts:4 bpw codes,4.0248015873 effectivebpw with FP16 sidecars;
 the thirteen other draft tensors remain unchanged; draft KV staysBF16.
 Common build:exact-fusions-v1/global-matrix-v1/async64-v1/packed-chunk-v1.
 
 Memory at actual full-context execution
-Profile        Resident GiB   Admission incl700MiB reserve   Available after graphs GiB
-16gb: full-context validation pending at this report snapshot
+Profile        Resident GiB   Admission incl700 MiB reserve   Available after graphs GiB
+16gb           11.894583                 12.578176                     3.431824
 12gb           10.688527                 11.372121                     1.075256
-8gb: full-context validation pending at this report snapshot
-The reserve is admission headroom, not a separate allocated700MiB buffer.
+8gb             6.812551                  7.496144                     0.950256
+The reserve is admission headroom, not a separate allocated 700 MiB buffer.
 Resident accounting includes target/draft weights, both caches and working
 buffers; driver/graph allocation is additionally checked after capture.
-Target KV payloads at131K:BF16 1923088384bytes; plainQ8 991592448bytes;
-Q8_0 1021640704bytes plus its256MiB prefix workspace. Draft BF16KV:2MiB.
+Target KV payloads at 131K:BF16 1923088384 bytes; plainQ8 991592448 bytes;
+Q8_0 1021640704 bytes plus its256 MiB prefix workspace. Draft BF16KV:2 MiB.
 Full-context tests use repeated natural code:131040 prompt tokens with up to32
 outputs (normal EOS), then131071 prompt tokens and one output. D0/D1 token,
 final-logit, hidden, callback and committed/pending states must match exactly.
@@ -34,13 +34,13 @@ retrieval/coding quality. Full-context timing during concurrent CPU/network
 publication work is not used as a performance benchmark.
 
 Correctness
-400 native D0-D4 cases acrossK6/BF16,K4/BF16,K3/Q8,K3/Q8_0, plus170 additional
+400 native D0-D4 cases acrossK6/BF16,K4/BF16,K3/Q8,K3/Q8_0, plus 170 additional
 K6/Q8 andK6/Q8_0 cases, pass exact state/output comparison against their own
 ordinary target. Coverage includes output tails, ring wrap, context capacity,
 cancel/append, seeded sampling and penalties; BF16 also covers checkpoint reuse.
 Q8 sessions replay history; unsupported checkpoint reuse remains rejected.
 CUDA operator probes:300 encoded-cache cases and7 invalid-range/descriptor
-checks, plus64 expert projection cases per target rateK3/K4/K6. Direct execution,
+checks, plus 64 expert projection cases per target rateK3/K4/K6. Direct execution,
 memcheck,synccheck,racecheck all pass. Host tests:24 passed in the candidate build.
 Stored-head validation and quality are in shared-head-q8-2026-10-25.txt.
 
@@ -57,17 +57,33 @@ K3 Q8_0 chunk256         239.96 /253.81       222.46 /230.35
 K6/Q8_0 speed is not inferred from K6/BF16 or K3/Q8_0. K4 remains supported
 for the faster lower-precision target option. The selected12GB profile favors
 K6 target precision as requested. See mtp-2026-10-25.txt for the earlier
-counterbalanced K4 result (~298.5tok/s at32K allocated capacity) and the limits
-of comparison with the archived llama.cpp ~271.4tok/s run.
+counterbalanced K4 result (~298.5 tok/s at 32K allocated capacity) and the limits
+of comparison with the archived llama.cpp ~271.4 tok/s run.
 
 Preserved failed experiments
 First Q8_0 verifier candidate passed a non-null separate scale pointer although
 Q8_0 scales are inline; corrected to null before acceptance. A GPU-overlapping
 qualification attempt was rejected by memory admission and invalidated. One
 full-context harness assertion incorrectly required32 tokens despite natural
-EOS at29; the completed revised protocol acceptsEOS and adds the exact-capacity
+EOS at 29; the completed revised protocol acceptsEOS and adds the exact-capacity
 one-token case. None of those failed/invalid attempts are counted as successes.
 
 Evidence root:build/gpu-profiles-2026-10-25. Source/manifest hashes, complete
 per-request JSONL and telemetry are retained locally; compact published metrics
 are in the neighboring JSON report. Model payloads are distributed separately.
+
+Production build and publication
+Commit 95daba218691d1cebed4d7aa20428dd40858adc1 builds successfully with the
+optional published native/operator probes. All 24 local host tests pass.
+All 16 GitHub CI jobs passed, including GCC/Clang, native text on/off, sanitizer,
+SDK, parser-fuzz and format jobs. Workflow 40211710566.
+The production binary matches the qualified candidate exactly for 285 native
+D0-D4 request cases across the three selected profiles. Real HTTP tests pass
+at D0-D4 for each profile: Chat/Responses, streaming, stop handling, seeded
+penalties, tools and continuation. Production operator probes pass all 3 target
+rates; the encoded-cache guard probe also passes memcheck with 0 errors.
+All three selected profiles pass actual 131K-capacity execution and D0/D1
+state/output equality. Package launchers and all current payload checksums were
+verified. K3/K4/K6 stored-Q8 targets and the EXL3 draft are published at Hub
+revision c9029d1ace9e891ab41bee380f05f0a61c99bb79. K4/K6 old native files are
+replaced on current main; historical revisions remain available as references.

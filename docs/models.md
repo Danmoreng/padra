@@ -14,7 +14,8 @@ expert artifact; target and draft do not hold separate copies of shared weights.
 | K6 with stored Q8 head | 6 bits/weight | 9.655 GB | `mellum21-exl3-k6-research` |
 
 Sizes are decimal GB and exclude the separate 0.264 GB draft payload, KV caches
-and runtime memory. EXL3 expert sidecars are FP16. Attention projections retain
+and runtime memory. EXL3 expert sidecars (`suh`/`svh`) are IEEE FP16 input/output scaling vectors,
+not head weights. They occupy 32.8125 MiB per target and remain unchanged. Attention projections retain
 FP8; routers, norms and embeddings retain BF16. The output head uses signed
 symmetric INT8 blocks of 32 values with one BF16 scale per block: 8.5 effective
 bits/weight. It occupies 229.5 MiB and saves 202.5 MiB against BF16. The loader
@@ -29,27 +30,52 @@ reject `--head-format bf16`. Neither path stores both heads on the GPU.
 
 ## Artifact availability and conversion
 
-The existing public [Padra EXL3 repository](https://huggingface.co/danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3)
-provides the legacy K4/K6 packages with BF16 heads. The stored-Q8 artifacts and
-K3 profile are prepared locally; their publication is not established by these
-instructions. A legacy package's bundled launcher is independent of the
-131K/MTP profiles supplied here.
+The public [Padra EXL3 repository](https://huggingface.co/danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3)
+provides stored-Q8 K3, K4 and K6 target packages and the EXL3 K4 MTP draft.
+The complete release is pinned at revision
+`c9029d1ace9e891ab41bee380f05f0a61c99bb79`. The latest native files in all three
+target directories use the admitted Q8-head identities. Legacy BF16-head
+checkpoints remain available through historical Hub revisions.
 
-To obtain a legacy K6 package with the Hugging Face CLI:
+Download the K3 target and matching MTP draft:
 
 ```sh
 export PADRA_MODEL_ROOT="$HOME/.cache/padra/mellum21-exl3"
 hf download danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3 \
-  --include "K6/*" --local-dir "$PADRA_MODEL_ROOT"
+  --revision c9029d1ace9e891ab41bee380f05f0a61c99bb79 \
+  --include "K3/*" "MTP-EXL3-K4/*" "LICENSE" "NOTICE" \
+  --local-dir "$PADRA_MODEL_ROOT"
+(cd "$PADRA_MODEL_ROOT/K3" && sha256sum -c SHA256SUMS)
+(cd "$PADRA_MODEL_ROOT/MTP-EXL3-K4" && sha256sum -c SHA256SUMS)
 ```
 
-Convert its admitted native directory once on CPU (Python 3 and NumPy required):
+Replace `K3/*` with `K4/*` or `K6/*` to download another target; the draft is shared.
+The paths for `tools/run_profile.py --profile 8gb` are
+`K3/native`, `MTP-EXL3-K4/native` and `K3/tokenizer.json` under this directory.
+The current CUDA engine requires SM120/SM120a; the 8 GB memory profile does not
+provide GTX 1070/Pascal support. See [porting diagnostics](development/mtp-porting.md).
+
+Each target package also provides `launch.py --verify-only` and
+`launch.py --server /path/to/padra-server`; the launcher enables MTP and uses the
+sibling `MTP-EXL3-K4/native` directory. K6 accepts `--profile 12gb` for Q8_0 KV.
+K4 uses its BF16-KV configuration with a 12 GiB ceiling. `--dry-run` prints the
+command; `--ordinary` disables MTP. The source is `tools/launch_package.py`.
+
+## Optional conversion from a legacy reference
+
+The published packages already contain the Q8 head. To reproduce a K6 conversion,
+download the old BF16-head package into a separate directory:
 
 ```sh
+export PADRA_LEGACY_ROOT="$HOME/.cache/padra/mellum21-legacy"
+hf download danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3 \
+  --revision 9b9444c6decd04b9e798a7ef68b86f95f08fbaf2 \
+  --include "K6/*" --local-dir "$PADRA_LEGACY_ROOT"
 python3 tools/quantize_shared_head.py \
-  "$PADRA_MODEL_ROOT/K6/native" "$PADRA_MODEL_ROOT/K6-q8head/native"
+  "$PADRA_LEGACY_ROOT/K6/native" /path/to/fresh/K6-q8head/native
 ```
 
+The converter uses Python 3 and NumPy and runs entirely on CPU.
 The destination must not exist. Conversion verifies the complete source identity,
 changes only `lm_head.weight`, copies all other tensors unchanged, writes fresh
 native metadata and verifies the saved weight hash. It accepts only the three

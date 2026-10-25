@@ -24,11 +24,23 @@
   },
   "tokenizer_sha256": "58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a",
   "qualification": {
-    "status": "candidate",
+    "status": "experimental-validated",
     "architecture": "SM120/SM120a",
     "tested_gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
     "physical_gpu_memory_gib": 16,
     "physical_budget_hardware_tested": false,
-    "evidence": "pending current campaign"
+    "evidence": "docs/performance/gpu-profiles-2026-10-25.txt",
+    "context_boundary_tested": 131072,
+    "native_d0_d4_exact": true,
+    "http_d0_d4_exact": true,
+    "resident_bytes": 7314920476,
+    "required_bytes_including_reserve": 8048923676,
+    "post_graph_available_bytes": 1020329984
+  },
+  "artifacts": {
+    "repository": "danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3",
+    "revision": "c9029d1ace9e891ab41bee380f05f0a61c99bb79",
+    "target_path": "K3/native",
+    "draft_path": "MTP-EXL3-K4/native"
   }
 }

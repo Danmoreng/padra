@@ -13,6 +13,10 @@ fixed at startup. Higher depth does not guarantee higher throughput.
 
 ## Prepare the artifact
 
+The prepared EXL3 K4 draft is available in the model repository under
+`MTP-EXL3-K4/native`. See [download and verification](models.md#artifact-availability-and-conversion).
+The following import workflow is for preparing a BF16 reference from source.
+
 Use the original official BF16 GGUF from
 [JetBrains](https://huggingface.co/JetBrains/Mellum2.1-12B-A2.5B-Thinking-GGUF/tree/4159d684ffdb09ba89dc2a58feb3e75c54eef036):
 

@@ -115,7 +115,8 @@ source tokenizer. Source revision: 92ddae9fc7665e9f801d141d2e5a6b2caf2460c4.
 Tokenizer SHA256: 58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a.
 
 The [model repository](https://huggingface.co/danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3)
-provides K4 and K6 packages. See [model setup](docs/models.md) for downloads,
+provides K3/K4/K6 targets with stored shared Q8 heads and the EXL3 MTP draft.
+See [model setup](docs/models.md) for downloads,
 verification, launch commands and memory requirements.
 
 Padra exposes an OpenAI-compatible API server on `127.0.0.1`, including Chat

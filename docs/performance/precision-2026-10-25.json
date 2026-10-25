@@ -1,0 +1,29 @@
+{
+  "3": {
+    "expert_tensors": 5376,
+    "expert_parameters": 11098128384,
+    "sidecar_bytes": 34406400,
+    "effective_expert_bpw": 3.0248015873015874,
+    "sidecar_dtype": "IEEE_FP16",
+    "head_dtype": "Q8_HEAD_BLOCK32",
+    "head_scale_dtype": "BF16"
+  },
+  "4": {
+    "expert_tensors": 5376,
+    "expert_parameters": 11098128384,
+    "sidecar_bytes": 34406400,
+    "effective_expert_bpw": 4.024801587301587,
+    "sidecar_dtype": "IEEE_FP16",
+    "head_dtype": "Q8_HEAD_BLOCK32",
+    "head_scale_dtype": "BF16"
+  },
+  "6": {
+    "expert_tensors": 5376,
+    "expert_parameters": 11098128384,
+    "sidecar_bytes": 34406400,
+    "effective_expert_bpw": 6.024801587301587,
+    "sidecar_dtype": "IEEE_FP16",
+    "head_dtype": "Q8_HEAD_BLOCK32",
+    "head_scale_dtype": "BF16"
+  }
+}
