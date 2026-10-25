@@ -212,7 +212,7 @@ if(BUILD_TESTING)
   add_library(padra_test_server STATIC ${padra_server_sources}
     tests/synthetic_tokenizer.cpp src/text/decoder.cpp src/text/stream.cpp
     src/util/json.cpp src/compiler/sha256.cpp)
-  target_include_directories(padra_test_server PUBLIC include src PRIVATE "${PROJECT_BINARY_DIR}/generated")
+  target_include_directories(padra_test_server PUBLIC include src "${PROJECT_BINARY_DIR}/generated")
   target_compile_definitions(padra_test_server PUBLIC MELLUM16_HAS_CUDA=0 MELLUM16_NATIVE_TEXT=0)
   target_link_libraries(padra_test_server PUBLIC padra_http Threads::Threads)
   if(WIN32)

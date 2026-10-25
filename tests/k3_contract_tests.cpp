@@ -6,12 +6,19 @@ int main() {
   try {
     const auto k4 = SelectedServerOptions("unused", "unused");
     const auto k3 = SelectedServerOptions("unused", "unused", 3);
+#if PADRA_BUILD_SIMT
+    Require(k4.exl3_rate == 4 && !k4.exl3_decode_mma && !k4.exl3_prefill_fp16,
+            "SIMT K4 profile must not select Tensor Cores");
+    Require(k3.exl3_rate == 3 && !k3.exl3_decode_mma,
+            "SIMT selection must retain the rate for explicit runtime admission");
+#else
     Require(k4.exl3_rate == 4 && k4.exl3_decode_mma && k4.exl3_packed_activations,
             "K4 selected dispatch changed");
     Require(k3.exl3_rate == 3 && k3.exl3_decode_mma && k3.exl3_decode_dual &&
                 k3.exl3_prefill_fp16 && k3.exl3_packed_activations && k3.prefill_graphs &&
                 k3.full_decode_graph,
             "K3 must select its own packed decoder with the optimized MMA dispatch");
+#endif
     bool unsupported = false;
     try {
       (void)SelectedServerOptions("unused", "unused", 8);

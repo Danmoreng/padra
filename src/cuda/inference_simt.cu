@@ -1,6 +1,7 @@
 // Portable EXL3 K4 backend. Compile separately from Tensor Core / FP4 kernels.
 #include "runtime/inference.h"
 #include "runtime/simt_memory.h"
+#include "runtime/simt_features.h"
 #include "runtime/gpu_build_config.h"
 #include "cuda/model_runtime_worker.h"
 #include "cuda/device_matrix.cuh"
@@ -54,10 +55,7 @@ struct Layer {
 static_assert(sizeof(DeviceMatrix)==56);
 
 Status ValidateSimtOptions(const InferenceOptions& o,bool persistent){
-  if(o.kv_cache_format!=KVCacheFormat::BF16 || o.fp8_kv_cache)
-    return {StatusCode::kUnsupported,"SIMT backend currently requires BF16 KV"};
-  if(!o.exl3_experts || o.exl3_rate!=4)
-    return {StatusCode::kUnsupported,"SIMT backend requires the existing EXL3 K4 artifact"};
+  if(auto status=ValidateSimtFeatures(o);!status.ok())return status;
   if(o.capacity<1024 || o.capacity>131072 || !ValidServerChunk(o.prefill_chunk) || !ValidServerBudget(o.server_device_budget_gib))
     return {StatusCode::kInvalidArgument,"invalid SIMT capacity/chunk/device budget"};
   if(o.capture_trace || o.snapshot_layer>=0 || o.capture_quantization_rows || o.diagnostic_routes || o.diagnostic_h128_fp32 || o.diagnostic_exl3_layer>=0 || !o.diagnostic_attention.empty())
@@ -100,6 +98,8 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       return Status(StatusCode::kDataLoss,"SIMT artifact/EXL3 K4/tokenizer identity mismatch");
     if(worker && (model.weights_sha256!="e614375f2eb26c17321365d4bd8ee7aa4b716f6badee171bb2040b85b754804c" || model.weights.size()!=7092933120ULL))
       return Status(StatusCode::kDataLoss,"persistent runtime requires pinned K4 checkpoint");
+    if(model.tensors.at("lm_head.weight").format!=internal::WeightFormat::Bf16)
+      return Status(StatusCode::kUnsupported,"SIMT backend requires the legacy BF16 stored head");
     const auto weights_bytes=model.weights.size();
     const auto sampler_bytes=gpu_sampling::WorkspaceBytes();
 #if PADRA_CUDA_SM == 61
@@ -308,7 +308,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       identity.actual_expert_dispatch="EXL3 K4 storage; Prefill dense M32/N128/K64 INT8 DP4A with H128 activation scales; sparse Prefill M8/N128 and Decode selected N128 exact FP32";
     }
 #endif
-    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}if(bounded_prefill){worker->RecordCapture();worker->RecordCapture();}worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile);}
+    if(worker){worker->RecordLoad(plan.resident);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}if(bounded_prefill){worker->RecordCapture();worker->RecordCapture();}worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile,model.weights_sha256,model.manifest_sha256);}
     const auto check_numerics=[&]{int value=0;Check(cudaMemcpyAsync(&value,bad,sizeof(value),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));if(value)throw std::runtime_error("nonfinite/invalid SIMT forward; session poisoned");};
     const auto checkpoint_copy=[&](bool restore){std::size_t offset=0;for(int l=0;l<28;++l)if(l%4!=3){
       auto* saved=buffer("local_checkpoint").As<unsigned char>()+offset;

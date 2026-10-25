@@ -1,9 +1,11 @@
 # MTP porting and reproduction
 
-The production CUDA implementation requires SM120/SM120a. The 8 GB profile is a
-memory/precision configuration, not Pascal support. A GTX 1070 needs a separate
-SM61 implementation; changing only `PADRA_CUDA_ARCHITECTURE` is insufficient.
-The current CMake guard intentionally refuses unsupported architectures.
+The MTP CUDA implementation requires SM120/SM120a. The 8 GB profile is a
+memory/precision configuration, not Pascal MTP support. This branch contains a
+separate SM61 SIMT backend for ordinary K4 decoding, but its draft/verifier,
+shared Q8 head and Q8/Q8_0 KV paths still need porting. These options fail
+explicitly on SIMT; changing only `PADRA_CUDA_ARCHITECTURE` is insufficient.
+MTP operator probes are restricted to the SM120 backend.
 
 ## Relevant execution paths
 
