@@ -36,6 +36,9 @@ inline DeviceMatrix BindDeviceMatrix(const internal::CompiledModel &model, unsig
   case internal::WeightFormat::Exl3K6:
     d.format = 5;
     break;
+  case internal::WeightFormat::Q8HeadBlock32:
+    d.format = 7;
+    break;
   case internal::WeightFormat::Exl3K3:
     d.format = 6;
     break;
@@ -51,7 +54,7 @@ inline DeviceMatrix BindDeviceMatrix(const internal::CompiledModel &model, unsig
     return arena + r.offset;
   };
   d.data = pointer(d.format == 0 ? "data" : "packed");
-  if (d.format == 1 || d.format == 2)
+  if (d.format == 1 || d.format == 2 || d.format == 7)
     d.scales = pointer("scales");
   if (d.format == 3 || d.format == 4 || d.format == 5 || d.format == 6) {
     d.suh = reinterpret_cast<const std::uint16_t *>(pointer("suh"));

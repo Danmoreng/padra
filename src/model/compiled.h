@@ -12,7 +12,11 @@ inline constexpr auto kExl3Profile = "mellum16-exl3-k4-fp8-bf16-v1";
 inline constexpr auto kExl3K3Profile = "mellum16-exl3-k3-fp8-bf16-v1";
 inline constexpr auto kExl3K6Profile = "mellum16-exl3-k6-fp8-bf16-v1";
 inline constexpr auto kExl3K8Profile = "mellum16-exl3-k8-fp8-bf16-v1";
-enum class WeightFormat { Bf16, Fp8, Nvfp4, Exl3K4, Exl3K8, Exl3K6, Exl3K3 };
+inline constexpr auto kExl3Q8HeadProfile = "mellum16-exl3-k4-fp8-q8head-v2";
+inline constexpr auto kExl3K3Q8HeadProfile = "mellum16-exl3-k3-fp8-q8head-v2";
+inline constexpr auto kExl3K6Q8HeadProfile = "mellum16-exl3-k6-fp8-q8head-v2";
+inline constexpr auto kHeadQ8Conversion = "symmetric-int8-block32-bf16scale-rne-v1";
+enum class WeightFormat { Bf16, Fp8, Nvfp4, Exl3K4, Exl3K8, Exl3K6, Exl3K3, Q8HeadBlock32 };
 struct Region {
   std::uint64_t offset = 0, bytes = 0;
 };
@@ -24,9 +28,12 @@ struct Matrix {
 struct UploadSlice {
   std::uint64_t source_offset = 0, device_offset = 0, bytes = 0;
   bool attention = false;
+  bool shared_head = false;
 };
 struct CompiledModel {
   MappedFile diagnostic_attention;
+  std::vector<unsigned char> shared_head;
+  std::string shared_head_sha256;
   std::vector<UploadSlice> uploads;
   std::uint64_t resident_weights_bytes = 0;
   std::string diagnostic_attention_sha256;

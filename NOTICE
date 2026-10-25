@@ -7,7 +7,8 @@ no original or derivative model weights are included in this repository.
 Generic native/runtime/HTTP, quantization and CUDA ownership/staging mechanisms
 were adapted from Danmoreng/gem16 (Apache-2.0). Server reference pin:
 c0a807afcbcd2528f304bada513afd11d1e9c979. CUDA/Trellis reference pin:
-c01789a2b46520df8a699ee3338cb19aaccebae2. Mellum arithmetic and its original
+c01789a2b46520df8a699ee3338cb19aaccebae2. MTP controlled proposal graphs, verification and transaction scheduling also
+follow Gem16 reference 6b71ee31665643d87d8e10861e5443d164337044. Mellum arithmetic and its original
 chat template are retained; Gemma model arithmetic/templates were not copied.
 
 CUTLASS ABI, conversions and FP8 support use NVIDIA/CUTLASS (BSD-3-Clause),

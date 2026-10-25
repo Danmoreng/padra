@@ -41,8 +41,12 @@ Result<std::unique_ptr<ModelRuntime>>
 ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokenizer,
                    bool controlled_chunks, NativeContextCapacity capacity, KVCacheFormat kv_format,
                    int diagnostic_decode_token, int prefill_chunk, int device_budget_gib,
-                   bool enable_checkpoint) {
+                   bool enable_checkpoint, MtpOptions mtp, std::optional<bool> q8_head) {
 #if MELLUM16_HAS_CUDA
+  if (!mtp.artifact.empty() && (mtp.depth < 1 || mtp.depth > 4))
+    return Status(StatusCode::kInvalidArgument, "MTP depth must be D1, D2, D3 or D4");
+  if (!mtp.artifact.empty() && !controlled_chunks)
+    return Status(StatusCode::kUnsupported, "MTP requires controlled execution");
   if (!ValidServerChunk(prefill_chunk) || !ValidServerBudget(device_budget_gib))
     return Status(StatusCode::kInvalidArgument,
                   "server requires explicit chunk2048/512/256 and budget0/8/12GiB");
@@ -93,6 +97,10 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
   profile.prefill_chunk = prefill_chunk;
   profile.server_device_budget_gib = device_budget_gib;
   profile.server_kv_checkpoint = enable_checkpoint;
+  profile.mtp = std::move(mtp);
+  if (identity->q8_head && q8_head == false)
+    return Status(StatusCode::kInvalidArgument, "stored Q8 head cannot be read as BF16");
+  profile.q8_head = q8_head.value_or(identity->q8_head);
   auto backend = LoadCudaModelRuntime(std::move(profile));
   if (!backend.ok())
     return backend.status();
@@ -100,6 +108,7 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
 #else
   (void)path;
   (void)tokenizer;
+  (void)q8_head;
   (void)controlled_chunks;
   (void)capacity;
   (void)kv_format;
@@ -107,6 +116,7 @@ ModelRuntime::Load(const std::filesystem::path &path, const std::string &tokeniz
   (void)prefill_chunk;
   (void)device_budget_gib;
   (void)enable_checkpoint;
+  (void)mtp;
   return Status(StatusCode::kUnsupported, "persistent model runtime requires compiled CUDA/SM120");
 #endif
 }

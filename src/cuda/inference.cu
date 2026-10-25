@@ -2,6 +2,7 @@
 #include "runtime/inference.h"
 #include "runtime/build_identity.h"
 #include "runtime/native_artifacts.h"
+#include "runtime/mtp_schedule.h"
 #include "runtime/server_memory.h"
 #include "runtime/chunk_graph_contract.h"
 #include "compiler/sha256.h"
@@ -9,6 +10,7 @@
 #include "cuda/kv_checkpoint.cuh"
 #include "runtime/size_checked.h"
 #include "runtime/exl3_masked_schedule.h"
+#include "model/shared_head_q8.h"
 #include "cuda/tensor_cores.h"
 #include "expert_scaled_bf16_down.cuh"
 #include "expert_schedule_hybrid.cuh"
@@ -17,6 +19,7 @@
 #include <fstream>
 #include <iostream>
 #include "model/compiled.h"
+#include "model/mtp.h"
 #include "device_matrix.cuh"
 #include "util/json.h"
 #include <cuda_runtime.h>
@@ -39,6 +42,7 @@
 #include <set>
 #include <limits>
 #include <string_view>
+#include <functional>
 namespace mellum16 {
 namespace {
 using internal::WeightFormat;
@@ -780,12 +784,48 @@ std::vector<float> RopeTable(int capacity, bool local) {
   return table;
 }
 #include "prefill_kv_commit.cuh"
+#include "head_q8.cuh"
+#include "mtp.cuh"
+#include "mtp_experts.cuh"
+#include "mtp_fp8.cuh"
+#include "mtp_rows.cuh"
+#include "mtp_attention.cuh"
 } // namespace
 // Operator-probe entry points are excluded from the serving source.
 static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                                     CudaModelWorker *worker = nullptr) {
   const auto begin = std::chrono::steady_clock::now();
   try {
+    const bool mtpEnabled = !o.mtp.artifact.empty();
+    if ((o.mtp.fp8_experts || o.mtp.exl3_experts) && !mtpEnabled)
+      return Status(StatusCode::kInvalidArgument,
+                    "quantized draft experts require an MTP artifact");
+    const auto mtpDraftResidentBytes = MtpDraftResidentBytes(o.mtp.fp8_experts, o.mtp.exl3_experts);
+    if (mtpEnabled && o.mtp.compact_experts && !o.mtp.fused_experts)
+      return Status(StatusCode::kUnsupported,
+                    "compact MTP dispatch requires fused verifier experts");
+    if (mtpEnabled && o.mtp.batched_rows &&
+        (!o.mtp.fused_experts || !o.wide_rms_dataflow || !o.exact_router_rank))
+      return Status(StatusCode::kUnsupported,
+                    "batched MTP rows require selected postnorm/router and verifier experts");
+    if (mtpEnabled && (o.mtp.depth < 1 || o.mtp.depth > kMaximumMtpDepth))
+      return Status(StatusCode::kInvalidArgument, "MTP depth must be D1, D2, D3 or D4");
+    if (mtpEnabled &&
+        (!worker || !o.controlled_chunk_graphs || !o.full_decode_graph ||
+         (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) || o.fp8_kv_cache ||
+         o.prune_last_prefill_ffn || o.capture_trace || o.snapshot_layer >= 0 ||
+         o.diagnostic_decode_token >= 0 || !o.diagnostic_attention.empty() ||
+         o.capture_quantization_rows || o.diagnostic_routes || o.diagnostic_exl3_layer >= 0))
+      return Status(
+          StatusCode::kUnsupported,
+          "MTP qualification requires selected controlled K3/K4/K6, no diagnostic overrides");
+    if (o.q8_head &&
+        (!worker || !o.controlled_chunk_graphs ||
+         (o.exl3_rate != 3 && o.exl3_rate != 4 && o.exl3_rate != 6) || o.fp8_kv_cache ||
+         !o.diagnostic_attention.empty() || o.capture_trace || o.snapshot_layer >= 0))
+      return Status(
+          StatusCode::kUnsupported,
+          "shared Q8 head requires selected persistent K3/K4/K6 without diagnostic overrides");
     const bool q8Native = o.kv_cache_format == KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
     const bool q8Cache = q8Native || o.kv_cache_format == KVCacheFormat::Q8TokenHead128F32ScaleV1;
     if (o.server_kv_checkpoint &&
@@ -818,6 +858,17 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (!loaded.ok())
       return loaded.status();
     auto model = std::move(loaded).value();
+    if (model.tensors.at("lm_head.weight").format == internal::WeightFormat::Q8HeadBlock32 &&
+        !o.q8_head)
+      return Status(StatusCode::kInvalidArgument,
+                    "stored Q8 checkpoint requires Q8 head execution");
+    std::optional<internal::MtpModel> mtpModel;
+    if (mtpEnabled) {
+      auto draft = internal::LoadMtpModel(o.mtp.artifact, o.mtp.fp8_experts, o.mtp.exl3_experts);
+      if (!draft.ok())
+        return draft.status();
+      mtpModel.emplace(std::move(draft).value());
+    }
     if (worker && o.capacity > kW4A8FContextCapacity &&
         (!o.controlled_chunk_graphs || o.capacity > 131072 || o.tc_prefill_attention ||
          o.capture_trace || o.snapshot_layer >= 0 || o.fp8_kv_cache || !o.wide_attention_merge ||
@@ -1302,6 +1353,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       if (!status.ok())
         return status;
     }
+    if (o.q8_head)
+      internal::ApplySharedHeadQ8(model);
     std::size_t free = 0, total = 0;
     Check(cudaMemGetInfo(&free, &total));
     const auto weightsbytes =
@@ -1394,7 +1447,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     const auto exl3Bytes =
         o.exl3_experts ? admission::Bytes(batch, 8 * 2304 * (o.exl3_prefill_fp16 ? 6 : 8)) : 0;
     const auto plannedResident =
-        admission::Sum({checkpointBytes,
+        admission::Sum({mtpEnabled ? mtpDraftResidentBytes + mtp::kVerifyResidentBytes +
+                                         admission::Bytes(batch + 1, 2304 * sizeof(float)) +
+                                         (o.server_kv_checkpoint ? kMtpCheckpointBytes : 0)
+                                   : 0,
+                        checkpointBytes,
                         q8NativePrefixBytes,
                         q8NativeQueryBytes,
                         packedChunkBytes,
@@ -1405,6 +1462,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                         o.diagnostic_routes ? 28 * 3 * 9 * sizeof(unsigned) : 0,
                         exl3Bytes,
                         weightsbytes,
+                        o.q8_head ? head_q8::kWorkspaceBytes : 0,
                         kvbytes,
                         28 * 64 * 3 * sizeof(DeviceMatrix),
                         admission::Bytes(o.capacity, 128 * 4 * 2),
@@ -1446,17 +1504,20 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     Stream stream;
     TimingEvent promptStarted, promptLogitsReady;
     Buffer arena(static_cast<std::size_t>(weightsbytes));
+    Buffer headInput(o.q8_head ? head_q8::kWorkspaceBytes : 0);
     Buffer deviceState(o.device_decode ? sizeof(DecodeState) : 4);
     if (model.uploads.empty())
       Check(cudaMemcpyAsync(arena.p, model.weights.data(), static_cast<std::size_t>(weightsbytes),
                             cudaMemcpyHostToDevice, stream.s));
     else
       for (const auto &r : model.uploads)
-        Check(cudaMemcpyAsync(
-            arena.As<unsigned char>() + r.device_offset,
-            (r.attention ? model.diagnostic_attention.data() : model.weights.data()) +
-                r.source_offset,
-            r.bytes, cudaMemcpyHostToDevice, stream.s));
+        Check(cudaMemcpyAsync(arena.As<unsigned char>() + r.device_offset,
+                              (r.shared_head
+                                   ? reinterpret_cast<const std::byte *>(model.shared_head.data())
+                               : r.attention ? model.diagnostic_attention.data()
+                                             : model.weights.data()) +
+                                  r.source_offset,
+                              r.bytes, cudaMemcpyHostToDevice, stream.s));
     Buffer packedChunk(packedChunkBytes);
     auto *packedChunkK = packedChunk.As<__nv_bfloat16>();
     auto *packedChunkV = o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
@@ -1603,6 +1664,30 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     Buffer ropeL(local.size() * 4), ropeG(global.size() * 4);
     Check(cudaMemcpyAsync(ropeL.p, local.data(), ropeL.bytes, cudaMemcpyHostToDevice, stream.s));
     Check(cudaMemcpyAsync(ropeG.p, global.data(), ropeG.bytes, cudaMemcpyHostToDevice, stream.s));
+    Buffer mtpHidden(mtpEnabled ? admission::Bytes(batch + 1, 2304 * sizeof(float)) : 0);
+    Buffer mtpCheckpoint(mtpEnabled && o.server_kv_checkpoint ? kMtpCheckpointBytes : 0);
+    std::unique_ptr<mtp::Draft> draft;
+    std::unique_ptr<mtp::Verification> verifier;
+    if (mtpEnabled) {
+      draft = std::make_unique<mtp::Draft>(*mtpModel, embed, head, ropeL.As<float>(), o.capacity,
+                                           stream.s, headInput.As<unsigned char>());
+      verifier = std::make_unique<mtp::Verification>();
+      std::array<mtp::CacheBinding, mtp::kCaches> caches;
+      for (int l = 0; l < 28; ++l) {
+        const auto &a = layers[l];
+        caches[l] = q8Cache ? mtp::CacheBinding{a.q8.k,
+                                                a.q8.v,
+                                                a.cap,
+                                                q8Native ? nullptr : a.q8.scales,
+                                                q8Native ? 544 : 512,
+                                                q8Native ? 0 : 32}
+                            : mtp::CacheBinding{a.kc, a.vc, a.cap};
+      }
+      caches[28] = {draft->keys, draft->values, mtp::kWindow};
+      Check(cudaMemcpyAsync(verifier->bindings.p, caches.data(), verifier->bindings.bytes,
+                            cudaMemcpyHostToDevice, stream.s));
+      Check(cudaStreamSynchronize(stream.s));
+    }
     // All workspace and host output capacity are fixed before the first token.
     Buffer scratch(scratchBytes);
     float *ptr = scratch.As<float>();
@@ -1724,6 +1809,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     Buffer prefillCommand(worker && o.controlled_chunk_graphs ? sizeof(PrefillState) : 0);
     DecodeGraph decodeGraph, samplingGraph, prefillGraph;
     std::array<DecodeGraph, ChunkShapeSet::kMaxShapes> chunkGraphs;
+    std::array<DecodeGraph, kMaximumMtpDepth> verifyGraphs;
+    std::array<DecodeGraph, kMaximumMtpDepth> draftGraphs;
     std::optional<SamplingOptions> capturedSampling;
     ChunkShapeSet chunkShapes;
     // Unwind drains outstanding kernels before graph/buffer destructors.
@@ -1734,6 +1821,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       }
     } drain{stream.s};
     InferenceResult result;
+    result.mtp_depth = mtpEnabled ? o.mtp.depth : 0;
+    result.mtp_resident_bytes = mtpEnabled ? mtpDraftResidentBytes + mtp::kVerifyResidentBytes +
+                                                 mtpHidden.bytes + mtpCheckpoint.bytes
+                                           : 0;
     result.prefill_chunk = o.prefill_chunk;
     result.prefill_execution = o.controlled_chunk_graphs ? "chunk_graph_with_eager_tail"
                                : o.prefill_graphs        ? "whole-graph"
@@ -1828,7 +1919,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     if (o.decode_graphs)
       result.kernel_profile +=
           o.full_decode_graph
-              ? "+decode-full-step-graph-bf16-head-select-advance-v1+host-8byte-observation-v1"
+              ? "+decode-full-step-graph-head-select-advance-v1+host-8byte-observation-v1"
               : "+decode-28layer-body-graph-v1+host-head-select-transfer-v1";
     if (o.capture_quantization_rows)
       result.quantization_rows.resize(row_quantization::kCaptureBytes);
@@ -2043,7 +2134,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       result.math_profile += ";EXL3-prefill-transport=async64/sequential-K16-MMA/BF16-boundaries";
     }
 #endif
-    result.resident_buffer_bytes = admission::Sum({checkpointBuffer.bytes,
+    result.resident_buffer_bytes = admission::Sum({draft ? draft->ResidentBytes() : 0,
+                                                   verifier ? verifier->ResidentBytes() : 0,
+                                                   mtpHidden.bytes,
+                                                   mtpCheckpoint.bytes,
+                                                   checkpointBuffer.bytes,
                                                    q8NativePrefix.bytes,
                                                    q8NativeQuery.bytes,
                                                    packedChunk.bytes,
@@ -2054,6 +2149,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                                    rangeCapture.bytes,
                                                    exl3Workspace.bytes,
                                                    weightsbytes,
+                                                   headInput.bytes,
                                                    kvbytes,
                                                    descriptors.bytes,
                                                    ropeL.bytes,
@@ -2094,9 +2190,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     static_assert(sizeof(DeviceMatrix) == 56 && sizeof(Control) == 8 &&
                   sizeof(SelectionCandidate) == 8);
     if (worker) {
-      const auto plan = PlanServerMemory(weightsbytes, o.capacity, o.capacity, o.prefill_chunk,
-                                         true, samplerTempBytes, o.kv_cache_format,
-                                         o.server_kv_checkpoint, o.exl3_rate);
+      const auto plan =
+          PlanServerMemory(weightsbytes, o.capacity, o.capacity, o.prefill_chunk, true,
+                           samplerTempBytes, o.kv_cache_format, o.server_kv_checkpoint, o.exl3_rate,
+                           mtpEnabled, o.mtp.fp8_experts, o.q8_head, o.mtp.exl3_experts);
       if (admission::Sum({plan.resident, prefillCommand.bytes}) != result.resident_buffer_bytes)
         throw std::runtime_error("persistent memory inventory mismatch");
       worker->RecordLoad(result.resident_buffer_bytes);
@@ -2168,6 +2265,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
               Check(cudaMemcpyAsync(layers[l].vc, saved + 1024 * 1024, 1024 * 1024,
                                     cudaMemcpyDeviceToDevice, stream.s));
             }
+          if (mtpEnabled) {
+            Check(cudaMemcpyAsync(draft->kv.p, mtpCheckpoint.p, draft->kv.bytes,
+                                  cudaMemcpyDeviceToDevice, stream.s));
+            Check(cudaMemcpyAsync(mtpHidden.p, mtpCheckpoint.As<unsigned char>() + draft->kv.bytes,
+                                  2304 * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+          }
           Check(cudaStreamSynchronize(stream.s));
           worker->RecordCheckpointRestore();
         }
@@ -2177,6 +2280,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         result.kernel_profile = baseKernelProfile;
         result.math_profile = baseMathProfile;
         result.logits.resize(o.capture_logits ? 98304 : 0);
+        result.hidden.clear();
+        result.mtp_groups = result.mtp_draft_calls = result.mtp_proposed = result.mtp_accepted =
+            result.mtp_ordinary_tails = 0;
         result.cancelled = false;
         result.generated_ids.resize(o.generate);
         result.decode_steps = 0;
@@ -2655,26 +2761,57 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         result.math_profile += ";selection=graph-bound-penalties/temperature/top-k/"
                                "top-p-cub-fp64-cdf-splitmix64-v2;unmodified-logits";
       }
+      if (o.q8_head) {
+        result.kernel_profile += "+shared-target-draft-Q8-block32-head-v1";
+        result.math_profile += ";head=one-shared-Q8-block32-arena/no-BF16-GPU-shadow/Q8-input/"
+                               "DP4A-FP32-BF16-output;head-sha256=" +
+                               model.shared_head_sha256;
+      }
+      if (mtpEnabled && o.mtp.exl3_experts) {
+        result.kernel_profile += "+mtp-experts-EXL3-K4-H128-v1";
+        result.math_profile += ";draft-experts=pinned-EXL3-K4/F16-sidecars/BF16-H128-FP16-MMA/"
+                               "original-SiLU-and-combine/nonexperts-unchanged";
+      }
+      if (mtpEnabled && o.mtp.fp8_experts) {
+        result.kernel_profile += "+mtp-experts-e4m3fn-rowBF16-W8A16-v1";
+        result.math_profile += ";draft-experts=separate-pinned-FP8-arena/row-BF16-scales/"
+                               "BF16-dequant-compensated-FP32";
+      }
+      if (mtpEnabled && o.mtp.compact_experts) {
+        result.kernel_profile += "+mtp-compact-expert-union-v1";
+        result.math_profile += ";mtp-verifier=GPU-compact-ascending-experts/static-8xRows-grid/"
+                               "unchanged-K16-MMA-H128-and-weighted-combine";
+      }
+      if (mtpEnabled && o.mtp.batched_rows) {
+        result.kernel_profile += "+mtp-batched-postnorm-router-v1";
+        result.math_profile += ";mtp-row-tail=ordinary-postnorm/router-arithmetic/independent-rows";
+      }
+      if (mtpEnabled && o.mtp.batched_prime) {
+        result.kernel_profile += "+mtp-batched-prime-v1";
+        result.math_profile +=
+            ";draft-prime=independent-rows/exact-compensated-GEMV/original-KV-rounding";
+      }
+      if (mtpEnabled && o.mtp.paired_attention && o.mtp.packed_qkv && o.mtp.batched_rows &&
+          perHeadMerge) {
+        result.kernel_profile += "+mtp-paired-attention-v1";
+        result.math_profile +=
+            ";mtp-attention=exact-two-row-partitions/shared-KV-when-compatible/saved-ring-history";
+      }
       if (worker)
         worker->RecordIdentity(result.math_profile, result.kernel_profile, model.weights_sha256,
                                model.manifest_sha256);
       const int steps = static_cast<int>(o.input_ids.size()) + std::max(0, o.generate - 1);
-      const auto finishDeviceToken = [&](int position, bool initialize, bool sampled = false,
-                                         SamplingOptions fixed = {}) {
-        Norm<<<1, 128, 0, stream.s>>>(x, normalized, norm, 2304, 1);
-        project(head, normalized, logits);
-        if (initialize) {
-          Check(cudaEventRecord(promptLogitsReady.value, stream.s));
-          promptLogitsRecorded = true;
-        }
+      const auto chooseToken = [&](const float *selectedLogits, bool sampled,
+                                   SamplingOptions fixed) {
         if (sampled && fixed.stochastic())
-          gpu_sampling::Launch(logits, sampleAdjusted, sampleSorted, sampleIds, sampleSortedIds,
-                               sampleCumulative, sampleState, control.As<Control>(), bad.As<int>(),
-                               samplerTemp.p, samplerTempBytes, stream.s, fixed, sampleCounts);
+          gpu_sampling::Launch(selectedLogits, sampleAdjusted, sampleSorted, sampleIds,
+                               sampleSortedIds, sampleCumulative, sampleState,
+                               control.As<Control>(), bad.As<int>(), samplerTemp.p,
+                               samplerTempBytes, stream.s, fixed, sampleCounts);
         else {
-          const float *selectionLogits = logits;
+          const float *selectionLogits = selectedLogits;
           if (sampled && fixed.penalties()) {
-            gpu_sampling::PrepareLaunch(logits, sampleAdjusted, sampleIds, sampleCounts,
+            gpu_sampling::PrepareLaunch(selectedLogits, sampleAdjusted, sampleIds, sampleCounts,
                                         kVocabulary, bad.As<int>(), fixed, stream.s);
             selectionLogits = sampleAdjusted;
           }
@@ -2687,6 +2824,20 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         if (sampled && fixed.penalties())
           gpu_sampling::RecordChoice<<<1, 1, 0, stream.s>>>(control.As<Control>(), sampleCounts,
                                                             kVocabulary, bad.As<int>());
+      };
+      const auto finishDeviceToken = [&](int position, bool initialize, bool sampled = false,
+                                         SamplingOptions fixed = {}) {
+        Norm<<<1, 128, 0, stream.s>>>(x, normalized, norm, 2304, 1);
+        if (o.q8_head)
+          head_q8::Launch(1, head, normalized, headInput.As<unsigned char>(), logits, bad.As<int>(),
+                          stream.s);
+        else
+          project(head, normalized, logits);
+        if (initialize) {
+          Check(cudaEventRecord(promptLogitsReady.value, stream.s));
+          promptLogitsRecorded = true;
+        }
+        chooseToken(logits, sampled, fixed);
         if (o.device_decode) {
           if (initialize)
             InitializeDecodeState<<<1, 1, 0, stream.s>>>(
@@ -2721,20 +2872,106 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                           worker && o.sampling.selection_graph(), o.sampling);
         return observeToken(position);
       };
-      const auto decodeBody = [&](int position) {
-        if (o.diagnostic_decode_token >= 0)
-          fast_attention::ForceDiagnosticDecodeToken<<<1, 1, 0, stream.s>>>(
-              deviceState.As<DecodeState>(), o.diagnostic_decode_token, bad.As<int>(),
-              contextMaximum);
-        if (o.device_decode)
-          EmbedControlled<<<1, 128, 0, stream.s>>>(embed, deviceState.As<DecodeState>(), x,
-                                                   bad.As<int>(), contextMaximum);
+      const auto finishLayer = [&](int l, int position, DecodeState *activeState, float *row,
+                                   bool beforeExperts = false, bool providedO = false,
+                                   bool onlyO = false) {
+        float *saved = x;
+        x = row;
+        const auto &a = layers[l];
+        const bool selected = l == o.snapshot_layer && position == o.snapshot_position;
+        if (!providedO)
+          project(a.out, attn, residual, o.fused_attention_o && o.diagnostic_attention.empty());
+        capture("o_proj", residual, selected);
+        if (onlyO) {
+          x = saved;
+          return;
+        }
+        if (o.wide_rms_dataflow)
+          ResidualPostNormWideExact<<<1, 256, 0, stream.s>>>(
+              x, residual, normalized, a.post, bad.As<int>(),
+              selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
+        else if (o.exl3_bf16_postnorm)
+          ResidualPostNormBF16<<<1, 128, 0, stream.s>>>(
+              x, residual, normalized, a.post, bad.As<int>(),
+              selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
+        else if (o.reciprocal_fused_quantization)
+          ResidualPostNormFP8<true><<<1, 128, 0, stream.s>>>(
+              x, residual, normalized, a.post, fp8Input, fp8Scales, bad.As<int>(),
+              selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
+        else if (o.fused_residual_norm)
+          ResidualPostNormFP8<<<1, 128, 0, stream.s>>>(
+              x, residual, normalized, a.post, fp8Input, fp8Scales, bad.As<int>(),
+              selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
+        else {
+          Add<<<18, 128, 0, stream.s>>>(x, residual, 2304, bad.As<int>());
+          if (o.ordinary_rms_norm)
+            fast_norm::Rms2304<false>
+                <<<1, 128, 0, stream.s>>>(x, normalized, a.post, nullptr, nullptr, bad.As<int>());
+          else
+            Norm<<<1, 128, 0, stream.s>>>(
+                x, normalized, a.post, 2304, 1,
+                selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
+        }
+        if (o.capture_quantization_rows && l == 0) {
+          auto *dst = quantCapture.As<unsigned char>();
+          Check(cudaMemcpyAsync(dst + 16384, normalized, 2304 * 4, cudaMemcpyDeviceToDevice,
+                                stream.s));
+          Check(cudaMemcpyAsync(dst + 29696, fp8Input, 2304, cudaMemcpyDeviceToDevice, stream.s));
+          Check(cudaMemcpyAsync(dst + 32004, fp8Scales, 4, cudaMemcpyDeviceToDevice, stream.s));
+        }
+        capture("after_attention", x, selected);
+        project(a.router, normalized, router);
+        capture("post_norm", normalized, selected);
+        capture("router_logits", router, selected);
+        if (o.exact_router_rank)
+          RouteRankExact<<<1, 64, 0, stream.s>>>(router, ids.As<int>(), routing.As<float>(),
+                                                 bad.As<int>());
         else
-          Embed<<<1, 128, 0, stream.s>>>(embed, token, x);
-        for (int l = 0; l < 28; ++l) {
-          const auto &a = layers[l];
-          const bool selected = l == o.snapshot_layer && position == o.snapshot_position;
-          capture("input", x, selected);
+          RouteParallel<<<1, 64, 0, stream.s>>>(router, ids.As<int>(), routing.As<float>(),
+                                                bad.As<int>());
+        if (selected)
+          CaptureRouting<<<1, 8, 0, stream.s>>>(bindings.find("router_ids")->second.pointer,
+                                                ids.As<int>(), routing.As<float>());
+        if (beforeExperts) {
+          x = saved;
+          return;
+        }
+        if (o.native_decode) {
+          expert(l, 0, normalized, gate, o.fused_residual_norm);
+        } else {
+          expert(l, 0, normalized, gate);
+          expert(l, 1, normalized, up);
+          capture("expert_gate", gate, selected);
+          capture("expert_up", up, selected);
+          Activate<<<56, 128, 0, stream.s>>>(gate, up);
+        }
+
+        capture("expert_activation", gate, selected);
+        expert(l, 2, gate, down);
+        capture("expert_down", down, selected);
+        Combine<<<18, 128, 0, stream.s>>>(x, down, routing.As<float>(), bad.As<int>());
+        capture("output", x, selected);
+        if (o.capture_trace) {
+          if (o.device_decode)
+            TraceControlled<<<19, 128, 0, stream.s>>>(trace.As<float>(), x, router, ids.As<int>(),
+                                                      routing.As<float>(), activeState, l,
+                                                      bad.As<int>());
+          else
+            Trace<<<19, 128, 0, stream.s>>>(trace.As<float>() + (position * 28 + l) * 2384, x,
+                                            router, ids.As<int>(), routing.As<float>());
+        }
+        x = saved;
+      };
+      const auto decodeLayer = [&](int l, int position, DecodeState *activeState, float *row,
+                                   bool beforeExperts = false, bool providedQKV = false,
+                                   bool beforeO = false, bool onlyO = false,
+                                   bool beforeAttention = false) {
+        float *saved = x;
+        x = row;
+        const auto &a = layers[l];
+        const bool selected = l == o.snapshot_layer && position == o.snapshot_position;
+        capture("input", x, selected);
+        if (!providedQKV) {
           if (o.ordinary_rms_norm)
             fast_norm::Rms2304<true><<<1, 128, 0, stream.s>>>(x, normalized, a.norm, fp8Input,
                                                               fp8Scales, bad.As<int>());
@@ -2780,207 +3017,147 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           capture("q_proj", q, selected);
           capture("k_proj", k, selected);
           capture("v_proj", v, selected);
-          if (fusedQKStore)
-            QKNormRopeStoreControlled<<<36, 128, 0, stream.s>>>(
-                q, k, a.qn, a.kn, (l % 4 == 3 ? ropeG : ropeL).As<float>(),
-                deviceState.As<DecodeState>(), bad.As<int>(), v, a.kc, a.vc, a.cap, contextMaximum);
-          else if (o.device_decode)
-            QKNormRopeControlled<<<36, 128, 0, stream.s>>>(
-                q, k, a.qn, a.kn, (l % 4 == 3 ? ropeG : ropeL).As<float>(),
-                deviceState.As<DecodeState>(), bad.As<int>(), nullptr, nullptr, contextMaximum);
-          else
-            QKNormRope<<<36, 128, 0, stream.s>>>(
-                q, k, a.qn, a.kn, (l % 4 == 3 ? ropeG : ropeL).As<float>(), position, bad.As<int>(),
-                selected ? bindings.find("q_norm")->second.pointer : nullptr,
-                selected ? bindings.find("k_norm")->second.pointer : nullptr);
-          capture("q_rope", q, selected);
-          capture("k_rope", k, selected);
-          if (q8Native)
-            q8_native::EncodeKV<true><<<1, 128, 0, stream.s>>>(
-                k, v, static_cast<q8_native::CacheRow *>(a.q8.k),
-                static_cast<q8_native::CacheRow *>(a.q8.v), 1, bad.As<int>(),
-                deviceState.As<DecodeState>(), a.cap, contextMaximum);
-          else if (q8Cache)
-            kv_q8::Encode<true><<<1, 128, 0, stream.s>>>(
-                k, v, static_cast<signed char *>(a.q8.k), static_cast<signed char *>(a.q8.v),
-                static_cast<kv_q8::Scales *>(a.q8.scales), 1, bad.As<int>(),
-                deviceState.As<DecodeState>(), a.cap, contextMaximum);
-          else if (o.fp8_kv_cache)
-            kv_fp8::Encode<true><<<1, 128, 0, stream.s>>>(
-                k, v, a.ek, a.ev, a.sf, 1, a.cap, deviceState.As<DecodeState>(), bad.As<int>());
-          else if (o.device_decode && !fusedQKStore)
-            StoreControlled<<<4, 128, 0, stream.s>>>(k, v, a.kc, a.vc,
-                                                     deviceState.As<DecodeState>(), a.cap,
-                                                     bad.As<int>(), contextMaximum);
-          else if (!o.device_decode)
-            Store<<<4, 128, 0, stream.s>>>(k, v, a.kc, a.vc, position, a.cap);
-          if (selected) {
-            const auto &r = bindings.find("key_cache")->second;
-            const int visible = l % 4 == 3 ? position + 1 : std::min(position + 1, 1024);
-            CaptureKV<<<(visible * 512 + 127) / 128, 128, 0, stream.s>>>(
-                r.pointer, a.kc, a.vc, position, a.cap, l % 4 != 3);
-          }
-          if (q8Native) {
-            q8_native::EncodeQuery<<<8, 128, 0, stream.s>>>(
-                q, q8NativeQuery.As<q8_native::QueryBlock>(), bad.As<int>());
-            const bool local = l % 4 != 3;
-            const int splits = local ? 16 : 32;
-            auto *partial = fastAttentionScratch.As<float>();
-            auto *lse = partial + splits * 32 * 128;
-            auto *output = attn;
-            if (local) {
-              q8_native::Split<true><<<dim3(8, splits), 128, 0, stream.s>>>(
-                  q8NativeQuery.As<q8_native::QueryBlock>(),
-                  static_cast<const q8_native::CacheRow *>(a.q8.k),
-                  static_cast<const q8_native::CacheRow *>(a.q8.v), partial, lse,
-                  deviceState.As<DecodeState>(), a.cap, splits, bad.As<int>(), contextMaximum);
-              q8_native::Merge<true, float>
-                  <<<8, 128, 0, stream.s>>>(partial, lse, output, deviceState.As<DecodeState>(),
-                                            splits, bad.As<int>(), contextMaximum);
-            } else {
-              q8_native::Split<false><<<dim3(8, splits), 128, 0, stream.s>>>(
-                  q8NativeQuery.As<q8_native::QueryBlock>(),
-                  static_cast<const q8_native::CacheRow *>(a.q8.k),
-                  static_cast<const q8_native::CacheRow *>(a.q8.v), partial, lse,
-                  deviceState.As<DecodeState>(), a.cap, splits, bad.As<int>(), contextMaximum);
-              q8_native::Merge<false, float>
-                  <<<8, 128, 0, stream.s>>>(partial, lse, output, deviceState.As<DecodeState>(),
-                                            splits, bad.As<int>(), contextMaximum);
-            }
-            QuantizeFP8<<<1, 128, 0, stream.s>>>(output, fp8Input, fp8Scales, 4096, bad.As<int>());
-          } else if (q8Cache) {
-            gqa8_q8_attention::Launch(
-                q, a.q8, attn, fp8Input, fp8Scales, deviceState.As<DecodeState>(), l % 4 != 3,
-                fastAttentionScratch.As<float>(), bad.As<int>(), stream.s, contextMaximum);
-          } else if (perHeadMerge) {
-            attention_perhead_exact::Launch(q, a.kc, a.vc, reinterpret_cast<__nv_bfloat16 *>(attn),
-                                            deviceState.As<DecodeState>(), a.cap, l % 4 != 3,
-                                            fastAttentionScratch.As<float>(), bad.As<int>(),
-                                            stream.s, contextMaximum);
-            attention_perhead_exact::Quantize<<<1, 512, 0, stream.s>>>(
-                reinterpret_cast<const __nv_bfloat16 *>(attn), fp8Input, fp8Scales, bad.As<int>());
-          } else if (o.wide_attention_merge) {
-            attention_o_wide_exact::Launch(q, a.kc, a.vc, attn, fp8Input, fp8Scales,
-                                           deviceState.As<DecodeState>(), a.cap, l % 4 != 3,
-                                           fastAttentionScratch.As<float>(), bad.As<int>(),
-                                           stream.s, true, contextMaximum);
-          } else if (o.exact_fp8_encoding) {
-            attention_o_exact::Launch(q, a.kc, a.vc, attn, fp8Input, fp8Scales,
-                                      deviceState.As<DecodeState>(), a.cap, l % 4 != 3,
-                                      fastAttentionScratch.As<float>(), bad.As<int>(), stream.s,
-                                      o.attention_fragment_validation);
-          } else if (o.reciprocal_fused_quantization) {
-            attention_o_fusion::Launch<true>(
-                q, a.kc, a.vc, attn, fp8Input, fp8Scales, deviceState.As<DecodeState>(), a.cap,
-                l % 4 != 3, fastAttentionScratch.As<float>(), bad.As<int>(), stream.s);
-          } else if (o.fused_attention_o) {
-            attention_o_fusion::Launch(q, a.kc, a.vc, attn, fp8Input, fp8Scales,
-                                       deviceState.As<DecodeState>(), a.cap, l % 4 != 3,
-                                       fastAttentionScratch.As<float>(), bad.As<int>(), stream.s);
-          } else if (o.fp8_kv_cache) {
-            gqa8_fp8_attention::Launch(q, a.ek, a.ev, a.sf, attn, deviceState.As<DecodeState>(),
-                                       a.cap, l % 4 != 3, fastAttentionScratch.As<float>(),
-                                       bad.As<int>(), stream.s);
-          } else if (o.gqa8_decode_attention) {
-            gqa8_attention::Launch(q, a.kc, a.vc, attn, deviceState.As<DecodeState>(), a.cap,
-                                   l % 4 != 3, fastAttentionScratch.As<float>(), bad.As<int>(),
-                                   stream.s);
-          } else if (o.fast_w4a8) {
-            fast_attention::Launch(q, a.kc, a.vc, attn, deviceState.As<DecodeState>(), a.cap,
-                                   l % 4 != 3, fastAttentionScratch.As<float>(), bad.As<int>(),
-                                   stream.s);
-          } else if (o.device_decode) {
-            if (l % 4 != 3)
-              AttendDecodeControlled<true><<<32, 256, a.cap * sizeof(float), stream.s>>>(
-                  q, a.kc, a.vc, attn, deviceState.As<DecodeState>(), a.cap, bad.As<int>());
-            else
-              AttendDecodeControlled<false><<<32, 256, a.cap * sizeof(float), stream.s>>>(
-                  q, a.kc, a.vc, attn, deviceState.As<DecodeState>(), a.cap, bad.As<int>());
-          } else
-            DecodeAttention(
-                q, a.kc, a.vc, attn, position, a.cap, l % 4 != 3, bad.As<int>(), stream.s,
-                selected ? bindings.find("attention_scores")->second.pointer : nullptr,
-                selected ? bindings.find("attention_probabilities")->second.pointer : nullptr);
-          if (o.capture_quantization_rows && l == 0) {
-            auto *dst = quantCapture.As<unsigned char>();
-            Check(cudaMemcpyAsync(dst, attn, 4096 * 4, cudaMemcpyDeviceToDevice, stream.s));
-            Check(cudaMemcpyAsync(dst + 25600, fp8Input, 4096, cudaMemcpyDeviceToDevice, stream.s));
-            Check(cudaMemcpyAsync(dst + 32000, fp8Scales, 4, cudaMemcpyDeviceToDevice, stream.s));
-          }
-          capture("attention", attn, selected);
-          project(a.out, attn, residual, o.fused_attention_o && o.diagnostic_attention.empty());
-          capture("o_proj", residual, selected);
-          if (o.wide_rms_dataflow)
-            ResidualPostNormWideExact<<<1, 256, 0, stream.s>>>(
-                x, residual, normalized, a.post, bad.As<int>(),
-                selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
-          else if (o.exl3_bf16_postnorm)
-            ResidualPostNormBF16<<<1, 128, 0, stream.s>>>(
-                x, residual, normalized, a.post, bad.As<int>(),
-                selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
-          else if (o.reciprocal_fused_quantization)
-            ResidualPostNormFP8<true><<<1, 128, 0, stream.s>>>(
-                x, residual, normalized, a.post, fp8Input, fp8Scales, bad.As<int>(),
-                selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
-          else if (o.fused_residual_norm)
-            ResidualPostNormFP8<<<1, 128, 0, stream.s>>>(
-                x, residual, normalized, a.post, fp8Input, fp8Scales, bad.As<int>(),
-                selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
-          else {
-            Add<<<18, 128, 0, stream.s>>>(x, residual, 2304, bad.As<int>());
-            if (o.ordinary_rms_norm)
-              fast_norm::Rms2304<false>
-                  <<<1, 128, 0, stream.s>>>(x, normalized, a.post, nullptr, nullptr, bad.As<int>());
-            else
-              Norm<<<1, 128, 0, stream.s>>>(
-                  x, normalized, a.post, 2304, 1,
-                  selected ? bindings.find("post_norm_stats")->second.pointer : nullptr);
-          }
-          if (o.capture_quantization_rows && l == 0) {
-            auto *dst = quantCapture.As<unsigned char>();
-            Check(cudaMemcpyAsync(dst + 16384, normalized, 2304 * 4, cudaMemcpyDeviceToDevice,
-                                  stream.s));
-            Check(cudaMemcpyAsync(dst + 29696, fp8Input, 2304, cudaMemcpyDeviceToDevice, stream.s));
-            Check(cudaMemcpyAsync(dst + 32004, fp8Scales, 4, cudaMemcpyDeviceToDevice, stream.s));
-          }
-          capture("after_attention", x, selected);
-          project(a.router, normalized, router);
-          capture("post_norm", normalized, selected);
-          capture("router_logits", router, selected);
-          if (o.exact_router_rank)
-            RouteRankExact<<<1, 64, 0, stream.s>>>(router, ids.As<int>(), routing.As<float>(),
-                                                   bad.As<int>());
-          else
-            RouteParallel<<<1, 64, 0, stream.s>>>(router, ids.As<int>(), routing.As<float>(),
-                                                  bad.As<int>());
-          if (selected)
-            CaptureRouting<<<1, 8, 0, stream.s>>>(bindings.find("router_ids")->second.pointer,
-                                                  ids.As<int>(), routing.As<float>());
-          if (o.native_decode) {
-            expert(l, 0, normalized, gate, o.fused_residual_norm);
-          } else {
-            expert(l, 0, normalized, gate);
-            expert(l, 1, normalized, up);
-            capture("expert_gate", gate, selected);
-            capture("expert_up", up, selected);
-            Activate<<<56, 128, 0, stream.s>>>(gate, up);
-          }
-
-          capture("expert_activation", gate, selected);
-          expert(l, 2, gate, down);
-          capture("expert_down", down, selected);
-          Combine<<<18, 128, 0, stream.s>>>(x, down, routing.As<float>(), bad.As<int>());
-          capture("output", x, selected);
-          if (o.capture_trace) {
-            if (o.device_decode)
-              TraceControlled<<<19, 128, 0, stream.s>>>(
-                  trace.As<float>(), x, router, ids.As<int>(), routing.As<float>(),
-                  deviceState.As<DecodeState>(), l, bad.As<int>());
-            else
-              Trace<<<19, 128, 0, stream.s>>>(trace.As<float>() + (position * 28 + l) * 2384, x,
-                                              router, ids.As<int>(), routing.As<float>());
-          }
         }
+        if (fusedQKStore)
+          QKNormRopeStoreControlled<<<36, 128, 0, stream.s>>>(
+              q, k, a.qn, a.kn, (l % 4 == 3 ? ropeG : ropeL).As<float>(), activeState,
+              bad.As<int>(), v, a.kc, a.vc, a.cap, contextMaximum);
+        else if (o.device_decode)
+          QKNormRopeControlled<<<36, 128, 0, stream.s>>>(
+              q, k, a.qn, a.kn, (l % 4 == 3 ? ropeG : ropeL).As<float>(), activeState,
+              bad.As<int>(), nullptr, nullptr, contextMaximum);
+        else
+          QKNormRope<<<36, 128, 0, stream.s>>>(
+              q, k, a.qn, a.kn, (l % 4 == 3 ? ropeG : ropeL).As<float>(), position, bad.As<int>(),
+              selected ? bindings.find("q_norm")->second.pointer : nullptr,
+              selected ? bindings.find("k_norm")->second.pointer : nullptr);
+        capture("q_rope", q, selected);
+        capture("k_rope", k, selected);
+        if (q8Native)
+          q8_native::EncodeKV<true>
+              <<<1, 128, 0, stream.s>>>(k, v, static_cast<q8_native::CacheRow *>(a.q8.k),
+                                        static_cast<q8_native::CacheRow *>(a.q8.v), 1,
+                                        bad.As<int>(), activeState, a.cap, contextMaximum);
+        else if (q8Cache)
+          kv_q8::Encode<true><<<1, 128, 0, stream.s>>>(
+              k, v, static_cast<signed char *>(a.q8.k), static_cast<signed char *>(a.q8.v),
+              static_cast<kv_q8::Scales *>(a.q8.scales), 1, bad.As<int>(), activeState, a.cap,
+              contextMaximum);
+        else if (o.fp8_kv_cache)
+          kv_fp8::Encode<true><<<1, 128, 0, stream.s>>>(k, v, a.ek, a.ev, a.sf, 1, a.cap,
+                                                        activeState, bad.As<int>());
+        else if (o.device_decode && !fusedQKStore)
+          StoreControlled<<<4, 128, 0, stream.s>>>(k, v, a.kc, a.vc, activeState, a.cap,
+                                                   bad.As<int>(), contextMaximum);
+        else if (!o.device_decode)
+          Store<<<4, 128, 0, stream.s>>>(k, v, a.kc, a.vc, position, a.cap);
+        if (selected) {
+          const auto &r = bindings.find("key_cache")->second;
+          const int visible = l % 4 == 3 ? position + 1 : std::min(position + 1, 1024);
+          CaptureKV<<<(visible * 512 + 127) / 128, 128, 0, stream.s>>>(r.pointer, a.kc, a.vc,
+                                                                       position, a.cap, l % 4 != 3);
+        }
+        if (beforeAttention) {
+          x = saved;
+          return;
+        }
+        if (q8Native) {
+          q8_native::EncodeQuery<<<8, 128, 0, stream.s>>>(
+              q, q8NativeQuery.As<q8_native::QueryBlock>(), bad.As<int>());
+          const bool local = l % 4 != 3;
+          const int splits = local ? 16 : 32;
+          auto *partial = fastAttentionScratch.As<float>();
+          auto *lse = partial + splits * 32 * 128;
+          auto *output = attn;
+          if (local) {
+            q8_native::Split<true><<<dim3(8, splits), 128, 0, stream.s>>>(
+                q8NativeQuery.As<q8_native::QueryBlock>(),
+                static_cast<const q8_native::CacheRow *>(a.q8.k),
+                static_cast<const q8_native::CacheRow *>(a.q8.v), partial, lse, activeState, a.cap,
+                splits, bad.As<int>(), contextMaximum);
+            q8_native::Merge<true, float><<<8, 128, 0, stream.s>>>(
+                partial, lse, output, activeState, splits, bad.As<int>(), contextMaximum);
+          } else {
+            q8_native::Split<false><<<dim3(8, splits), 128, 0, stream.s>>>(
+                q8NativeQuery.As<q8_native::QueryBlock>(),
+                static_cast<const q8_native::CacheRow *>(a.q8.k),
+                static_cast<const q8_native::CacheRow *>(a.q8.v), partial, lse, activeState, a.cap,
+                splits, bad.As<int>(), contextMaximum);
+            q8_native::Merge<false, float><<<8, 128, 0, stream.s>>>(
+                partial, lse, output, activeState, splits, bad.As<int>(), contextMaximum);
+          }
+          QuantizeFP8<<<1, 128, 0, stream.s>>>(output, fp8Input, fp8Scales, 4096, bad.As<int>());
+        } else if (q8Cache) {
+          gqa8_q8_attention::Launch(q, a.q8, attn, fp8Input, fp8Scales, activeState, l % 4 != 3,
+                                    fastAttentionScratch.As<float>(), bad.As<int>(), stream.s,
+                                    contextMaximum);
+        } else if (perHeadMerge) {
+          attention_perhead_exact::Launch(q, a.kc, a.vc, reinterpret_cast<__nv_bfloat16 *>(attn),
+                                          activeState, a.cap, l % 4 != 3,
+                                          fastAttentionScratch.As<float>(), bad.As<int>(), stream.s,
+                                          contextMaximum);
+          attention_perhead_exact::Quantize<<<1, 512, 0, stream.s>>>(
+              reinterpret_cast<const __nv_bfloat16 *>(attn), fp8Input, fp8Scales, bad.As<int>());
+        } else if (o.wide_attention_merge) {
+          attention_o_wide_exact::Launch(q, a.kc, a.vc, attn, fp8Input, fp8Scales, activeState,
+                                         a.cap, l % 4 != 3, fastAttentionScratch.As<float>(),
+                                         bad.As<int>(), stream.s, true, contextMaximum);
+        } else if (o.exact_fp8_encoding) {
+          attention_o_exact::Launch(q, a.kc, a.vc, attn, fp8Input, fp8Scales, activeState, a.cap,
+                                    l % 4 != 3, fastAttentionScratch.As<float>(), bad.As<int>(),
+                                    stream.s, o.attention_fragment_validation);
+        } else if (o.reciprocal_fused_quantization) {
+          attention_o_fusion::Launch<true>(q, a.kc, a.vc, attn, fp8Input, fp8Scales, activeState,
+                                           a.cap, l % 4 != 3, fastAttentionScratch.As<float>(),
+                                           bad.As<int>(), stream.s);
+        } else if (o.fused_attention_o) {
+          attention_o_fusion::Launch(q, a.kc, a.vc, attn, fp8Input, fp8Scales, activeState, a.cap,
+                                     l % 4 != 3, fastAttentionScratch.As<float>(), bad.As<int>(),
+                                     stream.s);
+        } else if (o.fp8_kv_cache) {
+          gqa8_fp8_attention::Launch(q, a.ek, a.ev, a.sf, attn, activeState, a.cap, l % 4 != 3,
+                                     fastAttentionScratch.As<float>(), bad.As<int>(), stream.s);
+        } else if (o.gqa8_decode_attention) {
+          gqa8_attention::Launch(q, a.kc, a.vc, attn, activeState, a.cap, l % 4 != 3,
+                                 fastAttentionScratch.As<float>(), bad.As<int>(), stream.s);
+        } else if (o.fast_w4a8) {
+          fast_attention::Launch(q, a.kc, a.vc, attn, activeState, a.cap, l % 4 != 3,
+                                 fastAttentionScratch.As<float>(), bad.As<int>(), stream.s);
+        } else if (o.device_decode) {
+          if (l % 4 != 3)
+            AttendDecodeControlled<true><<<32, 256, a.cap * sizeof(float), stream.s>>>(
+                q, a.kc, a.vc, attn, activeState, a.cap, bad.As<int>());
+          else
+            AttendDecodeControlled<false><<<32, 256, a.cap * sizeof(float), stream.s>>>(
+                q, a.kc, a.vc, attn, activeState, a.cap, bad.As<int>());
+        } else
+          DecodeAttention(q, a.kc, a.vc, attn, position, a.cap, l % 4 != 3, bad.As<int>(), stream.s,
+                          selected ? bindings.find("attention_scores")->second.pointer : nullptr,
+                          selected ? bindings.find("attention_probabilities")->second.pointer
+                                   : nullptr);
+        if (o.capture_quantization_rows && l == 0) {
+          auto *dst = quantCapture.As<unsigned char>();
+          Check(cudaMemcpyAsync(dst, attn, 4096 * 4, cudaMemcpyDeviceToDevice, stream.s));
+          Check(cudaMemcpyAsync(dst + 25600, fp8Input, 4096, cudaMemcpyDeviceToDevice, stream.s));
+          Check(cudaMemcpyAsync(dst + 32000, fp8Scales, 4, cudaMemcpyDeviceToDevice, stream.s));
+        }
+        capture("attention", attn, selected);
+        if (!beforeO)
+          finishLayer(l, position, activeState, row, beforeExperts, false, onlyO);
+        x = saved;
+      };
+      const auto decodeBody = [&](int position) {
+        if (o.diagnostic_decode_token >= 0)
+          fast_attention::ForceDiagnosticDecodeToken<<<1, 1, 0, stream.s>>>(
+              deviceState.As<DecodeState>(), o.diagnostic_decode_token, bad.As<int>(),
+              contextMaximum);
+        if (o.device_decode)
+          EmbedControlled<<<1, 128, 0, stream.s>>>(embed, deviceState.As<DecodeState>(), x,
+                                                   bad.As<int>(), contextMaximum);
+        else
+          Embed<<<1, 128, 0, stream.s>>>(embed, token, x);
+        for (int l = 0; l < 28; ++l)
+          decodeLayer(l, position, deviceState.As<DecodeState>(), x);
       };
       if (o.decode_graphs && !decodeGraph.executable) {
         const auto setup = std::chrono::steady_clock::now();
@@ -3014,6 +3191,184 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         });
         capturedSampling = fixed;
         worker->RecordCapture();
+      }
+      if (mtpEnabled) {
+        for (int depth = 1; depth <= o.mtp.depth; ++depth) {
+          auto &graph = draftGraphs[depth - 1];
+          if (graph.executable)
+            continue;
+          // Controlled device draft chaining follows Gem16 6b71ee3's fixed
+          // proposal graph. Mellum supplies its own shifted hidden and own KV.
+          graph.Capture(stream.s, [&] {
+            for (int d = 0; d < depth; ++d) {
+              draft->Forward(0, 0, d ? draft->hidden : mtpHidden.As<float>(), bad.As<int>(),
+                             stream.s, {}, deviceState.As<DecodeState>(),
+                             verifier->inputs.As<int>(), d);
+              chooseToken(draft->logits, false, {});
+              mtp::SaveProposal<<<1, 1, 0, stream.s>>>(
+                  control.As<Control>(), deviceState.As<DecodeState>(), verifier->inputs.As<int>(),
+                  d, bad.As<int>());
+            }
+          });
+          worker->RecordCapture();
+        }
+        for (int rows = 2; rows <= o.mtp.depth + 1; ++rows) {
+          auto &graph = verifyGraphs[rows - 2];
+          if (graph.executable)
+            continue;
+          graph.Capture(stream.s, [&] {
+            mtp::BuildStates<<<1, 32, 0, stream.s>>>(
+                deviceState.As<DecodeState>(), verifier->inputs.As<int>(),
+                verifier->states.As<DecodeState>(), rows, bad.As<int>(), contextMaximum);
+            for (int row = 0; row < rows; ++row)
+              EmbedControlled<<<1, 128, 0, stream.s>>>(
+                  embed, verifier->states.As<DecodeState>() + row,
+                  verifier->x.As<float>() + row * 2304, bad.As<int>(), contextMaximum);
+            // Layer-major execution retains adjacent rows' weight locality.
+            // The paired path reads overwritten local history from the existing
+            // pre-group snapshot. Other shapes preserve sequential KV/attention.
+            const bool pairAttention = rows == 2 && o.mtp.paired_attention && o.mtp.packed_qkv &&
+                                       o.mtp.batched_rows && perHeadMerge;
+            for (int l = 0; l < 28; ++l) {
+              auto *queries = verifier->qkv.As<float>();
+              auto *keys = queries + mtp::kMaxRows * 4096;
+              auto *values = keys + mtp::kMaxRows * 512;
+              if (o.mtp.packed_qkv) {
+                NormFP8WideExact<<<rows, 256, 0, stream.s>>>(
+                    verifier->x.As<float>(), verifier->normalized.As<float>(), layers[l].norm,
+                    verifier->packed.As<unsigned char>(), verifier->scales.As<float>(),
+                    bad.As<int>());
+                mtp_fp8::Launch(rows, layers[l].q, layers[l].k, layers[l].v,
+                                verifier->packed.As<unsigned char>(), verifier->scales.As<float>(),
+                                queries, keys, values, bad.As<int>(), stream.s);
+              }
+              const auto saveRoute = [&](int row) {
+                if (o.mtp.fused_experts) {
+                  Check(cudaMemcpyAsync(verifier->normalized.As<float>() + row * 2304, normalized,
+                                        2304 * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+                  Check(cudaMemcpyAsync(verifier->ids.As<int>() + row * 8, ids.p, 8 * sizeof(int),
+                                        cudaMemcpyDeviceToDevice, stream.s));
+                  Check(cudaMemcpyAsync(verifier->routing.As<float>() + row * 8, routing.p,
+                                        8 * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+                }
+              };
+              for (int row = 0; row < rows; ++row) {
+                float *savedQ = q, *savedK = k, *savedV = v;
+                float *savedResidual = residual;
+                // The gate arena is dead until the subsequent expert projection.
+                // Keep all O rows there while attention preserves its ring order.
+                if (o.mtp.batched_rows)
+                  residual = verifier->gate.As<float>() + row * 2304;
+                if (o.mtp.packed_qkv) {
+                  q = queries + row * 4096;
+                  k = keys + row * 512;
+                  v = values + row * 512;
+                }
+                decodeLayer(l, 0, verifier->states.As<DecodeState>() + row,
+                            verifier->x.As<float>() + row * 2304, o.mtp.fused_experts,
+                            o.mtp.packed_qkv, o.mtp.packed_o, o.mtp.batched_rows, pairAttention);
+                q = savedQ;
+                k = savedK;
+                v = savedV;
+                residual = savedResidual;
+                if (o.mtp.packed_o && !pairAttention) {
+                  Check(cudaMemcpyAsync(verifier->packed.As<unsigned char>() + row * 4096, fp8Input,
+                                        4096, cudaMemcpyDeviceToDevice, stream.s));
+                  Check(cudaMemcpyAsync(verifier->scales.As<float>() + row, fp8Scales,
+                                        sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+                } else if (!o.mtp.batched_rows)
+                  saveRoute(row);
+              }
+              if (pairAttention) {
+                // Final logits and the expert gate arena are dead here. Two
+                // attention workspaces fit in logits; quantization consumes both
+                // BF16 output rows before O reuses gate for its float rows.
+                mtp_attention::Launch(
+                    queries, layers[l].kc, layers[l].vc, verifier->gate.As<__nv_bfloat16>(),
+                    verifier->packed.As<unsigned char>(), verifier->scales.As<float>(),
+                    verifier->states.As<DecodeState>(), layers[l].cap, l % 4 != 3,
+                    verifier->logits.As<float>(),
+                    verifier->backup.As<__nv_bfloat16>() + (l * mtp::kMaxRows + 1) * 1024,
+                    bad.As<int>(), stream.s, contextMaximum);
+                if (!o.mtp.packed_o) {
+                  auto *savedInput = fp8Input;
+                  auto *savedScales = fp8Scales;
+                  for (int row = 0; row < rows; ++row) {
+                    fp8Input = verifier->packed.As<unsigned char>() + row * 4096;
+                    fp8Scales = verifier->scales.As<float>() + row;
+                    project(layers[l].out, attn, verifier->gate.As<float>() + row * 2304, true);
+                  }
+                  fp8Input = savedInput;
+                  fp8Scales = savedScales;
+                }
+              }
+              if (o.mtp.packed_o) {
+                // Q/K/V are dead after all attention rows. Reuse that arena for O.
+                mtp_fp8::LaunchOutput(rows, layers[l].out, verifier->packed.As<unsigned char>(),
+                                      verifier->scales.As<float>(),
+                                      o.mtp.batched_rows ? verifier->gate.As<float>() : queries,
+                                      bad.As<int>(), stream.s);
+                for (int row = 0; !o.mtp.batched_rows && row < rows; ++row) {
+                  float *saved = residual;
+                  residual = queries + row * 2304;
+                  finishLayer(l, 0, verifier->states.As<DecodeState>() + row,
+                              verifier->x.As<float>() + row * 2304, o.mtp.fused_experts, true);
+                  residual = saved;
+                  saveRoute(row);
+                }
+              }
+              if (o.mtp.batched_rows) {
+                ResidualPostNormWideExact<<<rows, 256, 0, stream.s>>>(
+                    verifier->x.As<float>(), verifier->gate.As<float>(),
+                    verifier->normalized.As<float>(), layers[l].post, bad.As<int>(), nullptr, rows);
+                // The up arena is dead until gate/up begins. Router logits do not
+                // survive RouteRankExact, so no additional resident storage is needed.
+                mtp_rows::Router<<<dim3(16, rows), 128, 0, stream.s>>>(
+                    layers[l].router, verifier->normalized.As<float>(), verifier->up.As<float>(),
+                    rows, bad.As<int>());
+                RouteRankExact<<<rows, 64, 0, stream.s>>>(
+                    verifier->up.As<float>(), verifier->ids.As<int>(),
+                    verifier->routing.As<float>(), bad.As<int>());
+              }
+              if (o.mtp.fused_experts) {
+                int *active = o.mtp.compact_experts ? verifier->activeExperts.As<int>() : nullptr;
+                int *activeCount =
+                    o.mtp.compact_experts ? verifier->activeCount.As<int>() : nullptr;
+                if (o.mtp.compact_experts)
+                  mtp_experts::BuildUnion<true><<<1, 64, 0, stream.s>>>(
+                      verifier->ids.As<int>(), verifier->masks.As<unsigned>(),
+                      verifier->slots.As<int>(), rows, bad.As<int>(), active, activeCount);
+                else
+                  mtp_experts::BuildUnion<false><<<1, 64, 0, stream.s>>>(
+                      verifier->ids.As<int>(), verifier->masks.As<unsigned>(),
+                      verifier->slots.As<int>(), rows, bad.As<int>());
+                mtp_experts::Launch(descriptors.As<DeviceMatrix>(), l, 0,
+                                    verifier->masks.As<unsigned>(), verifier->slots.As<int>(), rows,
+                                    verifier->normalized.As<float>(), verifier->gate.As<float>(),
+                                    verifier->up.As<float>(), bad.As<int>(), stream.s, active,
+                                    activeCount, o.exl3_rate);
+                activateExl3(verifier->gate.As<float>(), verifier->up.As<float>(), rows);
+                mtp_experts::Launch(descriptors.As<DeviceMatrix>(), l, 2,
+                                    verifier->masks.As<unsigned>(), verifier->slots.As<int>(), rows,
+                                    verifier->gate.As<float>(), verifier->down.As<float>(), nullptr,
+                                    bad.As<int>(), stream.s, active, activeCount, o.exl3_rate);
+                Combine<<<dim3(18, rows), 128, 0, stream.s>>>(
+                    verifier->x.As<float>(), verifier->down.As<float>(),
+                    verifier->routing.As<float>(), bad.As<int>());
+              }
+            }
+            Norm<<<dim3(1, rows), 128, 0, stream.s>>>(verifier->x.As<float>(),
+                                                      verifier->hidden.As<float>(), norm, 2304, 1);
+            if (o.q8_head)
+              head_q8::Launch(rows, head, verifier->hidden.As<float>(),
+                              headInput.As<unsigned char>(), verifier->logits.As<float>(),
+                              bad.As<int>(), stream.s);
+            else
+              mtp::LaunchHeadRows(rows, head, verifier->hidden.As<float>(),
+                                  verifier->logits.As<float>(), bad.As<int>(), stream.s);
+          });
+          worker->RecordCapture();
+        }
       }
       if (worker && o.sampling.penalties()) {
         Check(cudaMemsetAsync(sampleCounts, 0, 98304 * sizeof(int), stream.s));
@@ -3620,6 +3975,39 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
               prefillChunk(0, active, prefillCommand.As<PrefillState>(),
                            capturing ? worker->checkpoint_anchor
                                      : 0); // unchanged containing chunk or same-body tail
+            if (mtpEnabled) {
+              if (base == 0)
+                Check(cudaMemsetAsync(mtpHidden.p, 0, 2304 * sizeof(float), stream.s));
+              Norm<<<dim3(1, active), 128, 0, stream.s>>>(bx, mtpHidden.As<float>() + 2304, norm,
+                                                          2304, 1);
+              const auto prime = [&](int rows) {
+                const int first = std::max(0, rows - mtp::kWindow);
+                if (o.mtp.batched_prime && rows - first >= 4) {
+                  // All target layers have completed. Preserve bx and mtpHidden;
+                  // the other prefill arenas can hold independent draft rows.
+                  draft->EncodeRows(prompt.As<int>(), base + first, rows - first,
+                                    mtpHidden.As<float>() + first * 2304, bg, br, bn, bk, bv, ba,
+                                    bad.As<int>(), stream.s);
+                } else {
+                  for (int row = first; row < rows; ++row)
+                    draft->Encode(o.input_ids[base + row], base + row,
+                                  mtpHidden.As<float>() + row * 2304, bad.As<int>(), stream.s);
+                }
+              };
+              if (capturing) {
+                const int rows = worker->checkpoint_anchor - base;
+                prime(rows);
+                Check(cudaMemcpyAsync(mtpCheckpoint.p, draft->kv.p, draft->kv.bytes,
+                                      cudaMemcpyDeviceToDevice, stream.s));
+                Check(cudaMemcpyAsync(mtpCheckpoint.As<unsigned char>() + draft->kv.bytes,
+                                      mtpHidden.As<float>() + rows * 2304, 2304 * sizeof(float),
+                                      cudaMemcpyDeviceToDevice, stream.s));
+              }
+              if (!capturing || worker->checkpoint_anchor != base + active)
+                prime(active);
+              Check(cudaMemcpyAsync(mtpHidden.p, mtpHidden.As<float>() + active * 2304,
+                                    2304 * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+            }
             Check(cudaMemcpyAsync(&state, prefillCommand.p, sizeof(state), cudaMemcpyDeviceToHost,
                                   stream.s));
             Check(cudaMemcpyAsync(host.p, bad.p, sizeof(int), cudaMemcpyDeviceToHost, stream.s));
@@ -3691,34 +4079,134 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           prefillBody();
         stopped = finishToken(static_cast<int>(o.input_ids.size()) - 1);
       }
-      for (int position = o.prefill_chunk > 1 ? static_cast<int>(o.input_ids.size()) : 0;
-           position < steps && !stopped && !result.cancelled; ++position) {
-        if (position < static_cast<int>(o.input_ids.size()))
-          token = o.input_ids[static_cast<std::size_t>(position)];
-        if (o.device_decode &&
-            ((o.cancellation_requested &&
-              o.cancellation_requested->load(std::memory_order_relaxed)) ||
-             (o.diagnostic_cancel_after >= 0 && generated >= o.diagnostic_cancel_after))) {
-          CancelDecodeState<<<1, 1, 0, stream.s>>>(
-              deviceState.As<DecodeState>(), control.As<Control>(), bad.As<int>(), contextMaximum);
-          Check(cudaMemcpyAsync(host.p, control.p, sizeof(Control), cudaMemcpyDeviceToHost,
-                                stream.s));
-          Check(cudaStreamSynchronize(stream.s));
-          if (host.p->bad)
-            throw std::runtime_error("invalid decode state at cancellation boundary");
-          result.cancelled = true;
-          break;
+      if (mtpEnabled) {
+        result.mtp_depth = o.mtp.depth;
+        result.mtp_resident_bytes = mtpDraftResidentBytes + mtp::kVerifyResidentBytes +
+                                    mtpHidden.bytes + mtpCheckpoint.bytes;
+        int position = static_cast<int>(o.input_ids.size());
+        while (position < steps && !stopped && !result.cancelled) {
+          if (worker->cancel.load(std::memory_order_relaxed)) {
+            result.cancelled = true;
+            break;
+          }
+          const int remaining = o.generate - generated;
+          const int budget = MtpProposalBudget(o.mtp.depth, remaining, position, o.capacity);
+          if (budget < 0)
+            throw std::runtime_error("invalid MTP context/output boundary");
+          const int savedRows = budget + 1;
+          mtp::CopyCacheRows<false><<<dim3(savedRows, mtp::kCaches), 128, 0, stream.s>>>(
+              verifier->bindings.As<mtp::CacheBinding>(), deviceState.As<DecodeState>(),
+              verifier->backup.As<__nv_bfloat16>(), savedRows, 0, bad.As<int>());
+          std::array<int, kMaximumMtpRows> inputs{};
+          inputs[0] = token;
+          int proposed = 0;
+          if (budget) {
+            draftGraphs[budget - 1].Launch(stream.s);
+            result.mtp_draft_calls += budget;
+            Check(cudaMemcpyAsync(inputs.data(), verifier->inputs.p, (budget + 1) * sizeof(int),
+                                  cudaMemcpyDeviceToHost, stream.s));
+            Check(cudaMemcpyAsync(host.p, control.p, sizeof(Control), cudaMemcpyDeviceToHost,
+                                  stream.s));
+            Check(cudaStreamSynchronize(stream.s));
+            if (host.p->bad)
+              throw std::runtime_error("nonfinite MTP proposal");
+            while (proposed < budget && inputs[proposed + 1] != 28)
+              ++proposed;
+          }
+          if (proposed == 0) {
+            mtp::CopyCacheRows<true><<<dim3(savedRows, mtp::kCaches), 128, 0, stream.s>>>(
+                verifier->bindings.As<mtp::CacheBinding>(), deviceState.As<DecodeState>(),
+                verifier->backup.As<__nv_bfloat16>(), savedRows, 1, bad.As<int>());
+            draft->Encode(token, position, mtpHidden.As<float>(), bad.As<int>(), stream.s);
+            if (o.sampling.selection_graph())
+              samplingGraph.Launch(stream.s);
+            else
+              decodeGraph.Launch(stream.s);
+            Check(cudaMemcpyAsync(mtpHidden.p, normalized, 2304 * sizeof(float),
+                                  cudaMemcpyDeviceToDevice, stream.s));
+            stopped = observeToken(position);
+            ++position;
+            executed = position;
+            ++result.mtp_ordinary_tails;
+            continue;
+          }
+          ++result.mtp_groups;
+          result.mtp_proposed += proposed;
+          Check(cudaMemcpyAsync(verifier->inputs.p, inputs.data(), (proposed + 1) * sizeof(int),
+                                cudaMemcpyHostToDevice, stream.s));
+          verifyGraphs[proposed - 1].Launch(stream.s);
+          int retained = 0;
+          for (int row = 0; row <= proposed; ++row) {
+            chooseToken(verifier->logits.As<float>() + row * mtp::kVocabulary,
+                        o.sampling.selection_graph(), o.sampling);
+            stopped = observeToken(position + row);
+            ++retained;
+            const bool accepted = row < proposed && token == inputs[row + 1];
+            result.mtp_accepted += accepted;
+            if (!accepted || stopped || result.cancelled)
+              break;
+          }
+          mtp::CopyCacheRows<true><<<dim3(savedRows, mtp::kCaches), 128, 0, stream.s>>>(
+              verifier->bindings.As<mtp::CacheBinding>(), deviceState.As<DecodeState>(),
+              verifier->backup.As<__nv_bfloat16>(), savedRows, retained, bad.As<int>());
+          // Recursive draft hidden is tentative: repair retained draft KV with
+          // actual target hidden before the next group or an appended prompt.
+          for (int row = 1; row < retained; ++row)
+            draft->Encode(inputs[row], position + row,
+                          verifier->hidden.As<float>() + (row - 1) * 2304, bad.As<int>(), stream.s);
+          Check(cudaMemcpyAsync(mtpHidden.p, verifier->hidden.As<float>() + (retained - 1) * 2304,
+                                2304 * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+          Check(cudaMemcpyAsync(normalized, mtpHidden.p, 2304 * sizeof(float),
+                                cudaMemcpyDeviceToDevice, stream.s));
+          Check(cudaMemcpyAsync(x, verifier->x.As<float>() + (retained - 1) * 2304,
+                                2304 * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+          Check(cudaMemcpyAsync(
+              logits, verifier->logits.As<float>() + (retained - 1) * mtp::kVocabulary,
+              mtp::kVocabulary * sizeof(float), cudaMemcpyDeviceToDevice, stream.s));
+          mtp::CommitState<<<1, 1, 0, stream.s>>>(deviceState.As<DecodeState>(),
+                                                  control.As<Control>(), retained, bad.As<int>(),
+                                                  contextMaximum);
+          position += retained;
+          executed = position;
         }
-        executed = position + 1;
-        if (o.decode_graphs) {
-          if (worker && o.sampling.selection_graph())
-            samplingGraph.Launch(stream.s);
-          else
-            decodeGraph.Launch(stream.s);
-        } else
-          decodeBody(position);
-        if (position + 1 >= static_cast<int>(o.input_ids.size()))
-          stopped = o.full_decode_graph ? observeToken(position) : finishToken(position);
+        int fault = 0;
+        Check(cudaMemcpyAsync(&fault, bad.p, sizeof(fault), cudaMemcpyDeviceToHost, stream.s));
+        Check(cudaStreamSynchronize(stream.s));
+        if (fault)
+          throw std::runtime_error("MTP state/cache commit failed; session poisoned");
+        if (executed > static_cast<int>(o.input_ids.size()))
+          last_token_ready = std::chrono::steady_clock::now();
+      } else {
+        for (int position = o.prefill_chunk > 1 ? static_cast<int>(o.input_ids.size()) : 0;
+             position < steps && !stopped && !result.cancelled; ++position) {
+          if (position < static_cast<int>(o.input_ids.size()))
+            token = o.input_ids[static_cast<std::size_t>(position)];
+          if (o.device_decode &&
+              ((o.cancellation_requested &&
+                o.cancellation_requested->load(std::memory_order_relaxed)) ||
+               (o.diagnostic_cancel_after >= 0 && generated >= o.diagnostic_cancel_after))) {
+            CancelDecodeState<<<1, 1, 0, stream.s>>>(deviceState.As<DecodeState>(),
+                                                     control.As<Control>(), bad.As<int>(),
+                                                     contextMaximum);
+            Check(cudaMemcpyAsync(host.p, control.p, sizeof(Control), cudaMemcpyDeviceToHost,
+                                  stream.s));
+            Check(cudaStreamSynchronize(stream.s));
+            if (host.p->bad)
+              throw std::runtime_error("invalid decode state at cancellation boundary");
+            result.cancelled = true;
+            break;
+          }
+          executed = position + 1;
+          if (o.decode_graphs) {
+            if (worker && o.sampling.selection_graph())
+              samplingGraph.Launch(stream.s);
+            else
+              decodeGraph.Launch(stream.s);
+          } else
+            decodeBody(position);
+          if (position + 1 >= static_cast<int>(o.input_ids.size()))
+            stopped = o.full_decode_graph ? observeToken(position) : finishToken(position);
+        }
       }
       Check(cudaGetLastError());
       Check(cudaStreamSynchronize(stream.s));
@@ -3748,6 +4236,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       if (o.capture_logits)
         Check(cudaMemcpy(result.logits.data(), logits, 98304 * sizeof(float),
                          cudaMemcpyDeviceToHost));
+      if (o.capture_hidden && !result.cancelled) {
+        result.hidden.resize(2304);
+        Check(cudaMemcpy(result.hidden.data(), normalized, 2304 * sizeof(float),
+                         cudaMemcpyDeviceToHost));
+      }
       if (o.capture_trace) {
         const auto n = static_cast<std::size_t>(executed) * 28 * 2384;
         Check(cudaMemcpy(result.trace.data(), trace.p, n * sizeof(float), cudaMemcpyDeviceToHost));

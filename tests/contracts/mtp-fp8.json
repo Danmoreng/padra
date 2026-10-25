@@ -1,0 +1,179 @@
+{
+  "conversion": "e4m3fn-rne-f32div-ceilbf16-maxabs448-zero1-positivezero-bf16decode-v1",
+  "model_revision": "92ddae9fc7665e9f801d141d2e5a6b2caf2460c4",
+  "parent_weights_sha256": "b03d5abcf0adf5f5089694668f723fb262f78dc104aeb14dcd00be7db40b8389",
+  "profile": "mellum21-mtp-fp8-experts-bf16-f32-v1",
+  "schema_version": 1,
+  "shared_target": {
+    "output.weight": "lm_head.weight",
+    "output_norm.weight": "model.norm.weight",
+    "token_embd.weight": "model.embed_tokens.weight"
+  },
+  "source_bytes": 1766609280,
+  "source_revision": "4159d684ffdb09ba89dc2a58feb3e75c54eef036",
+  "source_sha256": "9c7b2c37dcdcb28140118debc81175cfc22bb00a7aa51bcaf0be1768bcfd139b",
+  "tensors": {
+    "blk.28.attn_k.weight": {
+      "bytes": 2359296,
+      "dtype": "BF16",
+      "offset": 0,
+      "shape": [
+        512,
+        2304
+      ]
+    },
+    "blk.28.attn_k_norm.weight": {
+      "bytes": 512,
+      "dtype": "F32",
+      "offset": 2359296,
+      "shape": [
+        128
+      ]
+    },
+    "blk.28.attn_norm.weight": {
+      "bytes": 9216,
+      "dtype": "F32",
+      "offset": 2359808,
+      "shape": [
+        2304
+      ]
+    },
+    "blk.28.attn_output.weight": {
+      "bytes": 18874368,
+      "dtype": "BF16",
+      "offset": 2369024,
+      "shape": [
+        2304,
+        4096
+      ]
+    },
+    "blk.28.attn_q.weight": {
+      "bytes": 18874368,
+      "dtype": "BF16",
+      "offset": 21243392,
+      "shape": [
+        4096,
+        2304
+      ]
+    },
+    "blk.28.attn_q_norm.weight": {
+      "bytes": 512,
+      "dtype": "F32",
+      "offset": 40117760,
+      "shape": [
+        128
+      ]
+    },
+    "blk.28.attn_v.weight": {
+      "bytes": 2359296,
+      "dtype": "BF16",
+      "offset": 40118272,
+      "shape": [
+        512,
+        2304
+      ]
+    },
+    "blk.28.ffn_down_exps.weight": {
+      "bytes": 132415488,
+      "codes_sha256": "b99f96c46153f82f5a32f9c25ba25aafa1c4ea35a435533f5ee910739f0fdefe",
+      "dtype": "FP8_E4M3FN",
+      "offset": 42477568,
+      "scale_bytes": 294912,
+      "scale_dtype": "BF16",
+      "scale_offset": 174598144,
+      "scales_sha256": "d79df82b4a3de0cfb1055746e085be594787f21732091499a5c8ee72393cfda0",
+      "shape": [
+        64,
+        2304,
+        896
+      ],
+      "source_sha256": "81b2b76a5d4e0e202a9f1d7a46401048b9cac324bfc37e74bb1e9b3335989e1f"
+    },
+    "blk.28.ffn_gate_exps.weight": {
+      "bytes": 132235264,
+      "codes_sha256": "c8afeb4ff5705de07b173a808524227405d413614ae99918a898ef6ee24ad745",
+      "dtype": "FP8_E4M3FN",
+      "offset": 174893056,
+      "scale_bytes": 114688,
+      "scale_dtype": "BF16",
+      "scale_offset": 307013632,
+      "scales_sha256": "2dd6db5282b22b13f8d4bfc7bd683456efdc6febbec379b52f317bfe2b0e1e34",
+      "shape": [
+        64,
+        896,
+        2304
+      ],
+      "source_sha256": "9492519e2ab6da1da1e8870cfe5945d5390c09af1810f165e354adbbd2dab0d8"
+    },
+    "blk.28.ffn_gate_inp.weight": {
+      "bytes": 589824,
+      "dtype": "F32",
+      "offset": 307128320,
+      "shape": [
+        64,
+        2304
+      ]
+    },
+    "blk.28.ffn_norm.weight": {
+      "bytes": 9216,
+      "dtype": "F32",
+      "offset": 307718144,
+      "shape": [
+        2304
+      ]
+    },
+    "blk.28.ffn_up_exps.weight": {
+      "bytes": 132235264,
+      "codes_sha256": "f35660def61c30098b3cfa65750c4476e4b73b797d0ce5a82e325d47b1037ace",
+      "dtype": "FP8_E4M3FN",
+      "offset": 307727360,
+      "scale_bytes": 114688,
+      "scale_dtype": "BF16",
+      "scale_offset": 439847936,
+      "scales_sha256": "cf10330aedd5dc8cf8da88ea6a77c6d7ed511a84e572df9dc966b37f1386f052",
+      "shape": [
+        64,
+        896,
+        2304
+      ],
+      "source_sha256": "1e484c4b0113af1e1c341c12d4568b5e648a9d1f0217e98be3e4b509500752a6"
+    },
+    "blk.28.nextn.eh_proj.weight": {
+      "bytes": 21233664,
+      "dtype": "BF16",
+      "offset": 439962624,
+      "shape": [
+        2304,
+        4608
+      ]
+    },
+    "blk.28.nextn.enorm.weight": {
+      "bytes": 9216,
+      "dtype": "F32",
+      "offset": 461196288,
+      "shape": [
+        2304
+      ]
+    },
+    "blk.28.nextn.hnorm.weight": {
+      "bytes": 9216,
+      "dtype": "F32",
+      "offset": 461205504,
+      "shape": [
+        2304
+      ]
+    },
+    "blk.28.nextn.shared_head_norm.weight": {
+      "bytes": 9216,
+      "dtype": "F32",
+      "offset": 461214720,
+      "shape": [
+        2304
+      ]
+    }
+  },
+  "tokenizer_sha256": "58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a",
+  "weights_bytes": 461223936,
+  "weights_file": "weights.bin",
+  "weights_sha256": "2b6b785cea1296bdf5a45abb89d7306208288d761951c16a6d7ace0ab1252d30"
+}

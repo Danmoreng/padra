@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "K3/K4/K6 131K GPU profiles (ordinary and MTP)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PADRA_KERNEL_PROFILE": "exact-fusions-v1",
+        "PADRA_PREFILL_PROFILE": "global-matrix-v1",
+        "PADRA_EXL3_PREFILL_TRANSPORT": "async64-v1",
+        "PADRA_Q8_PREFILL_PROFILE": "packed-chunk-v1"
+      }
+    },
+    {
+      "name": "release-k4",
+      "displayName": "Compatible release-k4 build directory",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release-k4",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PADRA_KERNEL_PROFILE": "exact-fusions-v1",
+        "PADRA_PREFILL_PROFILE": "global-matrix-v1",
+        "PADRA_EXL3_PREFILL_TRANSPORT": "async64-v1",
+        "PADRA_Q8_PREFILL_PROFILE": "packed-chunk-v1"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "jobs": 2
+    },
+    {
+      "name": "release-k4",
+      "configurePreset": "release-k4",
+      "jobs": 2
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-k4",
+      "configurePreset": "release-k4",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

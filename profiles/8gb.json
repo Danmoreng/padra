@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "profile": "8gb",
+  "gpu_memory_gib": 8,
+  "context_capacity": 131072,
+  "mtp_depth": 1,
+  "kv_format": "q8_0",
+  "prefill_chunk": 256,
+  "device_budget_gib": 8,
+  "head_format": "q8",
+  "target": {
+    "expert_rate": 3,
+    "manifest_sha256": "9032f99eab3b9adf536f722a3721185ee32daa07f96254e9449ef7c69e5c507d",
+    "weights_sha256": "bfa5157b1bcf8919399023f9f943129044835844cc8354cb58ec9dada65299a9",
+    "weights_bytes": 5493330432,
+    "head_sha256": "0fa4891dcd9443a3d36d8d31d5f777c1cc06339eb1782855d86587cad276d587"
+  },
+  "draft": {
+    "format": "mellum21-mtp-exl3-k4-experts-bf16-f32-v1",
+    "weights_sha256": "985312eda174b32499468fb60291584e63da3b930674ccb0c9a59a700d8e2464",
+    "weights_bytes": 263747584,
+    "expert_bpw": 4,
+    "effective_expert_bpw": 4.024801587301587
+  },
+  "tokenizer_sha256": "58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a",
+  "qualification": {
+    "status": "candidate",
+    "architecture": "SM120/SM120a",
+    "tested_gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+    "physical_gpu_memory_gib": 16,
+    "physical_budget_hardware_tested": false,
+    "evidence": "pending current campaign"
+  }
+}

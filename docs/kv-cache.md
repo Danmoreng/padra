@@ -64,3 +64,8 @@ The runtime supports reset, cancellation and forward prefix append. HTTP session
 work by replaying history with Q8: the server's local prefix checkpoint/reuse path
 requires BF16. Q8 trace/snapshot diagnostics and the legacy non-controlled runtime
 are unsupported.
+
+MTP supports both quantized target caches. Its rollback saves and restores the
+encoded rows and their scales without dequantizing history. The draft retains
+its separate 1024-token BF16 ring. See the [GPU profiles](gpu-profiles.md) for
+the selected 131K/MTP combinations and measured memory requirements.

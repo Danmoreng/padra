@@ -1,0 +1,457 @@
+{
+  "long_context": {
+    "12gb-k6-q8_0": {
+      "exact": true,
+      "differences": [],
+      "rows": [
+        [
+          {
+            "depth": 0,
+            "request": 0,
+            "ids": [
+              233,
+              514,
+              5394,
+              97,
+              55923,
+              710,
+              8899,
+              21495,
+              42,
+              542,
+              112,
+              19288,
+              533,
+              5243,
+              48,
+              1395,
+              62,
+              564,
+              43540,
+              233,
+              412,
+              1208,
+              233,
+              422,
+              5394,
+              233,
+              889,
+              233,
+              28
+            ],
+            "head_sha256": "3e859262cdfe0e98e6ced64c064cd711ca82c868e99c3339cbc1d49a6cb380a5",
+            "hidden_sha256": "4f73a79577c2005e76c18ec07051ce69cf475102401878e2e3869c425158dfae",
+            "callbacks": 29,
+            "cancelled": false,
+            "committed": 131068,
+            "pending": 28,
+            "prefill_s": 45.181748902,
+            "decode_s": 0.211743291,
+            "decode_steps": 28,
+            "generation_wall_s": 45.393879879,
+            "capacity": 131072,
+            "prefill_tokens": 131040,
+            "mtp_bytes": 0,
+            "kernel_profile": "simt-warp4-rn-v1+prefill-gem16-w4a8-register-fp8mma-product-residual-fp8-mma-bins-v3+decode-selected8-m16-native-v3+decode-gateup-w4a8-simt-k16-fixed-basis-v1+decode-gateup-w4a8-exact-planes-dp4a-v1+prefill-experts-m16-compensated-v1+prefill-fp8-two-m16-weight-bin-reuse-v1+decode-fp8-simt-vector4-compensated-v1+decode-gateup-split-warps8-direct-m1-v1+prefill-fp8-mma-bins-k32-v1+argmax-hierarchical-v1+attention-decode-specialized-v1+router-parallel-rn-stable-v1+qk-norm-rope-fused-compensated-bf16-v1+input-norm-fp8-fused-2304-v1+expert-e2m1-fp8-basis-prmt-v1+qkv-fp8-input-reuse-v1+prefill-qkv-compact-v1+prefill-source-window-specialized-v1+decode-qkv-compact-v1+n3a-gqa8-async32-visible-split-local16-global32-bf16-mma-merge4-v1+decode-device-token-position-budget-v1+decode-full-step-graph-head-select-advance-v1+host-8byte-observation-v1+g3-prefill-bf16-q8h8-k32-regq-async-cta4-v1+prefill-exact-shared136-oneK-v1+prefill-global-direct-address-unit-alpha-v1+prefill-global-ldmatrix-k32-v1+prefill-cutlass-fp8-128x128x64-scaled-bf16-expand+decode-fp8-simt-vector4-ordinary-qkv1280-v1+compact-bf16-m16n64k32-selected-vector4-v1+explicit-prefill-override-compact-k16-fp8-block-v1+n1a-compact-m16-prefill-expf-silu-v1+f3a-stable-device-compact-m16-descriptors-v1+n4b-attention-residual-postnorm-expert-encode-row128-compensated-direct-div-v1+n4a-merge-o-encode-row256-direct-div-v1+q8_0-row512-aligned-gqa4-async32-exact-warp-slices-v2+q8-prefill-packed-current-chunk-v1+exl3-k6-h128-explicit-f16-mma-v1+exl3-k6-prefill-register-m32+prefill-exact-UDP4A-codebook+decode-exact-UDP4A-codebook+decode-fused-H128-N128-warps8+decode-paired-gateup-gridZ2+same128-compensated-input-RMS-256-output-dataflow+postnorm-compensated-tree256-registerrow+exact-N4a-merge-512-workers+exact-O-SIMT-pairedrows+exact-probability-rank-router-decode+same-BF16-fragment-finite-validation+exact-E4-RN-boundary-correction-staged-norm+decode-transpose-one-shuffle-K6+prefill-warp-H128+prefill-norm-exact-corrected-batch-v1+prefill-qknorm-same128-pair64-large-v1+prefill-router-compensated-quadrows-v1+prefill-H128-vector-warps8-v1+prefill-exact-BF16-storage-SiLU-downH128-v1+exact-BF16-SiLU-table+EXL3-BF16-only-postnorm+s2-controlled-chunk-graphs-eager-tail-v1+shared-target-draft-Q8-block32-head-v1",
+            "resident_bytes": 11204561736,
+            "free_initialized": 5259853824,
+            "device_total_bytes": 16707092480,
+            "device_free_before_bytes": 16473325568,
+            "required_bytes": 11938564936,
+            "post_graph_available_bytes": 1433468928,
+            "draft_calls": 0,
+            "groups": 0,
+            "proposed": 0,
+            "accepted": 0,
+            "tails": 0
+          },
+          {
+            "depth": 0,
+            "request": 1,
+            "ids": [
+              18932
+            ],
+            "head_sha256": "224053ec525a3e6ebf44f7f26b9da78e67d4a9438d31875ccde73b3ebf6731ba",
+            "hidden_sha256": "626eaaa9aac2f79a8dabfd91e683ccc7df98d652ea0ac40bc5b10928988c199d",
+            "callbacks": 1,
+            "cancelled": false,
+            "committed": 131071,
+            "pending": 18932,
+            "prefill_s": 45.590433965,
+            "decode_s": 0,
+            "decode_steps": 0,
+            "generation_wall_s": 45.59067151,
+            "capacity": 131072,
+            "prefill_tokens": 131071,
+            "mtp_bytes": 0,
+            "kernel_profile": "simt-warp4-rn-v1+prefill-gem16-w4a8-register-fp8mma-product-residual-fp8-mma-bins-v3+decode-selected8-m16-native-v3+decode-gateup-w4a8-simt-k16-fixed-basis-v1+decode-gateup-w4a8-exact-planes-dp4a-v1+prefill-experts-m16-compensated-v1+prefill-fp8-two-m16-weight-bin-reuse-v1+decode-fp8-simt-vector4-compensated-v1+decode-gateup-split-warps8-direct-m1-v1+prefill-fp8-mma-bins-k32-v1+argmax-hierarchical-v1+attention-decode-specialized-v1+router-parallel-rn-stable-v1+qk-norm-rope-fused-compensated-bf16-v1+input-norm-fp8-fused-2304-v1+expert-e2m1-fp8-basis-prmt-v1+qkv-fp8-input-reuse-v1+prefill-qkv-compact-v1+prefill-source-window-specialized-v1+decode-qkv-compact-v1+n3a-gqa8-async32-visible-split-local16-global32-bf16-mma-merge4-v1+decode-device-token-position-budget-v1+decode-full-step-graph-head-select-advance-v1+host-8byte-observation-v1+g3-prefill-bf16-q8h8-k32-regq-async-cta4-v1+prefill-exact-shared136-oneK-v1+prefill-global-direct-address-unit-alpha-v1+prefill-global-ldmatrix-k32-v1+prefill-cutlass-fp8-128x128x64-scaled-bf16-expand+decode-fp8-simt-vector4-ordinary-qkv1280-v1+compact-bf16-m16n64k32-selected-vector4-v1+explicit-prefill-override-compact-k16-fp8-block-v1+n1a-compact-m16-prefill-expf-silu-v1+f3a-stable-device-compact-m16-descriptors-v1+n4b-attention-residual-postnorm-expert-encode-row128-compensated-direct-div-v1+n4a-merge-o-encode-row256-direct-div-v1+q8_0-row512-aligned-gqa4-async32-exact-warp-slices-v2+q8-prefill-packed-current-chunk-v1+exl3-k6-h128-explicit-f16-mma-v1+exl3-k6-prefill-register-m32+prefill-exact-UDP4A-codebook+decode-exact-UDP4A-codebook+decode-fused-H128-N128-warps8+decode-paired-gateup-gridZ2+same128-compensated-input-RMS-256-output-dataflow+postnorm-compensated-tree256-registerrow+exact-N4a-merge-512-workers+exact-O-SIMT-pairedrows+exact-probability-rank-router-decode+same-BF16-fragment-finite-validation+exact-E4-RN-boundary-correction-staged-norm+decode-transpose-one-shuffle-K6+prefill-warp-H128+prefill-norm-exact-corrected-batch-v1+prefill-qknorm-same128-pair64-large-v1+prefill-router-compensated-quadrows-v1+prefill-H128-vector-warps8-v1+prefill-exact-BF16-storage-SiLU-downH128-v1+exact-BF16-SiLU-table+EXL3-BF16-only-postnorm+s2-controlled-chunk-graphs-eager-tail-v1+shared-target-draft-Q8-block32-head-v1",
+            "resident_bytes": 11204561736,
+            "free_initialized": 5259853824,
+            "device_total_bytes": 16707092480,
+            "device_free_before_bytes": 16473325568,
+            "required_bytes": 11938564936,
+            "post_graph_available_bytes": 1433468928,
+            "draft_calls": 0,
+            "groups": 0,
+            "proposed": 0,
+            "accepted": 0,
+            "tails": 0
+          }
+        ],
+        [
+          {
+            "depth": 1,
+            "request": 0,
+            "ids": [
+              233,
+              514,
+              5394,
+              97,
+              55923,
+              710,
+              8899,
+              21495,
+              42,
+              542,
+              112,
+              19288,
+              533,
+              5243,
+              48,
+              1395,
+              62,
+              564,
+              43540,
+              233,
+              412,
+              1208,
+              233,
+              422,
+              5394,
+              233,
+              889,
+              233,
+              28
+            ],
+            "head_sha256": "3e859262cdfe0e98e6ced64c064cd711ca82c868e99c3339cbc1d49a6cb380a5",
+            "hidden_sha256": "4f73a79577c2005e76c18ec07051ce69cf475102401878e2e3869c425158dfae",
+            "callbacks": 29,
+            "cancelled": false,
+            "committed": 131068,
+            "pending": 28,
+            "prefill_s": 47.891743355,
+            "decode_s": 0.195325697,
+            "decode_steps": 28,
+            "generation_wall_s": 48.087742062,
+            "capacity": 131072,
+            "prefill_tokens": 131040,
+            "mtp_bytes": 272156884,
+            "kernel_profile": "simt-warp4-rn-v1+prefill-gem16-w4a8-register-fp8mma-product-residual-fp8-mma-bins-v3+decode-selected8-m16-native-v3+decode-gateup-w4a8-simt-k16-fixed-basis-v1+decode-gateup-w4a8-exact-planes-dp4a-v1+prefill-experts-m16-compensated-v1+prefill-fp8-two-m16-weight-bin-reuse-v1+decode-fp8-simt-vector4-compensated-v1+decode-gateup-split-warps8-direct-m1-v1+prefill-fp8-mma-bins-k32-v1+argmax-hierarchical-v1+attention-decode-specialized-v1+router-parallel-rn-stable-v1+qk-norm-rope-fused-compensated-bf16-v1+input-norm-fp8-fused-2304-v1+expert-e2m1-fp8-basis-prmt-v1+qkv-fp8-input-reuse-v1+prefill-qkv-compact-v1+prefill-source-window-specialized-v1+decode-qkv-compact-v1+n3a-gqa8-async32-visible-split-local16-global32-bf16-mma-merge4-v1+decode-device-token-position-budget-v1+decode-full-step-graph-head-select-advance-v1+host-8byte-observation-v1+g3-prefill-bf16-q8h8-k32-regq-async-cta4-v1+prefill-exact-shared136-oneK-v1+prefill-global-direct-address-unit-alpha-v1+prefill-global-ldmatrix-k32-v1+prefill-cutlass-fp8-128x128x64-scaled-bf16-expand+decode-fp8-simt-vector4-ordinary-qkv1280-v1+compact-bf16-m16n64k32-selected-vector4-v1+explicit-prefill-override-compact-k16-fp8-block-v1+n1a-compact-m16-prefill-expf-silu-v1+f3a-stable-device-compact-m16-descriptors-v1+n4b-attention-residual-postnorm-expert-encode-row128-compensated-direct-div-v1+n4a-merge-o-encode-row256-direct-div-v1+q8_0-row512-aligned-gqa4-async32-exact-warp-slices-v2+q8-prefill-packed-current-chunk-v1+exl3-k6-h128-explicit-f16-mma-v1+exl3-k6-prefill-register-m32+prefill-exact-UDP4A-codebook+decode-exact-UDP4A-codebook+decode-fused-H128-N128-warps8+decode-paired-gateup-gridZ2+same128-compensated-input-RMS-256-output-dataflow+postnorm-compensated-tree256-registerrow+exact-N4a-merge-512-workers+exact-O-SIMT-pairedrows+exact-probability-rank-router-decode+same-BF16-fragment-finite-validation+exact-E4-RN-boundary-correction-staged-norm+decode-transpose-one-shuffle-K6+prefill-warp-H128+prefill-norm-exact-corrected-batch-v1+prefill-qknorm-same128-pair64-large-v1+prefill-router-compensated-quadrows-v1+prefill-H128-vector-warps8-v1+prefill-exact-BF16-storage-SiLU-downH128-v1+exact-BF16-SiLU-table+EXL3-BF16-only-postnorm+s2-controlled-chunk-graphs-eager-tail-v1+shared-target-draft-Q8-block32-head-v1+mtp-experts-EXL3-K4-H128-v1+mtp-compact-expert-union-v1+mtp-batched-postnorm-router-v1+mtp-batched-prime-v1",
+            "resident_bytes": 11476718620,
+            "free_initialized": 4985126912,
+            "device_total_bytes": 16707092480,
+            "device_free_before_bytes": 16473325568,
+            "required_bytes": 12210721820,
+            "post_graph_available_bytes": 1156644864,
+            "draft_calls": 14,
+            "groups": 14,
+            "proposed": 14,
+            "accepted": 14,
+            "tails": 0
+          },
+          {
+            "depth": 1,
+            "request": 1,
+            "ids": [
+              18932
+            ],
+            "head_sha256": "224053ec525a3e6ebf44f7f26b9da78e67d4a9438d31875ccde73b3ebf6731ba",
+            "hidden_sha256": "626eaaa9aac2f79a8dabfd91e683ccc7df98d652ea0ac40bc5b10928988c199d",
+            "callbacks": 1,
+            "cancelled": false,
+            "committed": 131071,
+            "pending": 18932,
+            "prefill_s": 48.170219974,
+            "decode_s": 0,
+            "decode_steps": 0,
+            "generation_wall_s": 48.170430789,
+            "capacity": 131072,
+            "prefill_tokens": 131071,
+            "mtp_bytes": 272156884,
+            "kernel_profile": "simt-warp4-rn-v1+prefill-gem16-w4a8-register-fp8mma-product-residual-fp8-mma-bins-v3+decode-selected8-m16-native-v3+decode-gateup-w4a8-simt-k16-fixed-basis-v1+decode-gateup-w4a8-exact-planes-dp4a-v1+prefill-experts-m16-compensated-v1+prefill-fp8-two-m16-weight-bin-reuse-v1+decode-fp8-simt-vector4-compensated-v1+decode-gateup-split-warps8-direct-m1-v1+prefill-fp8-mma-bins-k32-v1+argmax-hierarchical-v1+attention-decode-specialized-v1+router-parallel-rn-stable-v1+qk-norm-rope-fused-compensated-bf16-v1+input-norm-fp8-fused-2304-v1+expert-e2m1-fp8-basis-prmt-v1+qkv-fp8-input-reuse-v1+prefill-qkv-compact-v1+prefill-source-window-specialized-v1+decode-qkv-compact-v1+n3a-gqa8-async32-visible-split-local16-global32-bf16-mma-merge4-v1+decode-device-token-position-budget-v1+decode-full-step-graph-head-select-advance-v1+host-8byte-observation-v1+g3-prefill-bf16-q8h8-k32-regq-async-cta4-v1+prefill-exact-shared136-oneK-v1+prefill-global-direct-address-unit-alpha-v1+prefill-global-ldmatrix-k32-v1+prefill-cutlass-fp8-128x128x64-scaled-bf16-expand+decode-fp8-simt-vector4-ordinary-qkv1280-v1+compact-bf16-m16n64k32-selected-vector4-v1+explicit-prefill-override-compact-k16-fp8-block-v1+n1a-compact-m16-prefill-expf-silu-v1+f3a-stable-device-compact-m16-descriptors-v1+n4b-attention-residual-postnorm-expert-encode-row128-compensated-direct-div-v1+n4a-merge-o-encode-row256-direct-div-v1+q8_0-row512-aligned-gqa4-async32-exact-warp-slices-v2+q8-prefill-packed-current-chunk-v1+exl3-k6-h128-explicit-f16-mma-v1+exl3-k6-prefill-register-m32+prefill-exact-UDP4A-codebook+decode-exact-UDP4A-codebook+decode-fused-H128-N128-warps8+decode-paired-gateup-gridZ2+same128-compensated-input-RMS-256-output-dataflow+postnorm-compensated-tree256-registerrow+exact-N4a-merge-512-workers+exact-O-SIMT-pairedrows+exact-probability-rank-router-decode+same-BF16-fragment-finite-validation+exact-E4-RN-boundary-correction-staged-norm+decode-transpose-one-shuffle-K6+prefill-warp-H128+prefill-norm-exact-corrected-batch-v1+prefill-qknorm-same128-pair64-large-v1+prefill-router-compensated-quadrows-v1+prefill-H128-vector-warps8-v1+prefill-exact-BF16-storage-SiLU-downH128-v1+exact-BF16-SiLU-table+EXL3-BF16-only-postnorm+s2-controlled-chunk-graphs-eager-tail-v1+shared-target-draft-Q8-block32-head-v1+mtp-experts-EXL3-K4-H128-v1+mtp-compact-expert-union-v1+mtp-batched-postnorm-router-v1+mtp-batched-prime-v1",
+            "resident_bytes": 11476718620,
+            "free_initialized": 4985126912,
+            "device_total_bytes": 16707092480,
+            "device_free_before_bytes": 16473325568,
+            "required_bytes": 12210721820,
+            "post_graph_available_bytes": 1154547712,
+            "draft_calls": 0,
+            "groups": 0,
+            "proposed": 0,
+            "accepted": 0,
+            "tails": 0
+          }
+        ]
+      ]
+    }
+  },
+  "screen": {
+    "protocol": "/home/sebastian/Development/padra/build/gpu-profiles-2026-10-25/screen-131k/PROTOCOL.json",
+    "requests": 112,
+    "exact": true,
+    "differences": [],
+    "summary": [
+      {
+        "fixture": "natural-4k",
+        "mode": "16gb-d0",
+        "n": 5,
+        "tokens_s": 238.17918643697826,
+        "prefill_ms": 424.166767,
+        "wall_ms": 2569.55183,
+        "acceptance": null,
+        "cohort_medians": {
+          "16gb-d0": 238.17918643697826
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "16gb-d1",
+        "n": 5,
+        "tokens_s": 259.50502486892515,
+        "prefill_ms": 473.306889,
+        "wall_ms": 2440.594627,
+        "acceptance": 0.6666666666666666,
+        "cohort_medians": {
+          "16gb-d1": 259.50502486892515
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "12gb-d0",
+        "n": 5,
+        "tokens_s": 276.1134870739713,
+        "prefill_ms": 402.278501,
+        "wall_ms": 2252.783166,
+        "acceptance": null,
+        "cohort_medians": {
+          "12gb-d0": 276.1134870739713
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "12gb-d1",
+        "n": 5,
+        "tokens_s": 296.17066961535033,
+        "prefill_ms": 446.944047,
+        "wall_ms": 2171.912464,
+        "acceptance": 0.7,
+        "cohort_medians": {
+          "12gb-d1": 296.17066961535033
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "8gb-q8-d0",
+        "n": 5,
+        "tokens_s": 217.15059274024978,
+        "prefill_ms": 805.1036150000001,
+        "wall_ms": 3158.6419690000002,
+        "acceptance": null,
+        "cohort_medians": {
+          "8gb-q8-d0": 217.15059274024978
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "8gb-q8-d1",
+        "n": 5,
+        "tokens_s": 222.38474867533174,
+        "prefill_ms": 871.058305,
+        "wall_ms": 3169.355536,
+        "acceptance": 0.7114093959731543,
+        "cohort_medians": {
+          "8gb-q8-d1": 222.38474867533174
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "8gb-q8_0-d0",
+        "n": 5,
+        "tokens_s": 239.95838683918166,
+        "prefill_ms": 663.7615169999999,
+        "wall_ms": 2793.5007299999997,
+        "acceptance": null,
+        "cohort_medians": {
+          "8gb-q8_0-d0": 239.95838683918166
+        }
+      },
+      {
+        "fixture": "natural-4k",
+        "mode": "8gb-q8_0-d1",
+        "n": 5,
+        "tokens_s": 253.81293549460025,
+        "prefill_ms": 731.741729,
+        "wall_ms": 2746.024173,
+        "acceptance": 0.7647058823529411,
+        "cohort_medians": {
+          "8gb-q8_0-d1": 253.81293549460025
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "16gb-d0",
+        "n": 5,
+        "tokens_s": 219.77908205800665,
+        "prefill_ms": 2011.9619000000002,
+        "wall_ms": 4337.238598,
+        "acceptance": null,
+        "cohort_medians": {
+          "16gb-d0": 219.77908205800665
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "16gb-d1",
+        "n": 5,
+        "tokens_s": 249.33314849175693,
+        "prefill_ms": 2161.768032,
+        "wall_ms": 4212.65406,
+        "acceptance": 0.6976744186046512,
+        "cohort_medians": {
+          "16gb-d1": 249.33314849175693
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "12gb-d0",
+        "n": 5,
+        "tokens_s": 253.13004702644562,
+        "prefill_ms": 1859.729134,
+        "wall_ms": 3879.327069,
+        "acceptance": null,
+        "cohort_medians": {
+          "12gb-d0": 253.13004702644562
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "12gb-d1",
+        "n": 5,
+        "tokens_s": 274.41440809767255,
+        "prefill_ms": 2003.237137,
+        "wall_ms": 3866.9096729999997,
+        "acceptance": 0.6831683168316832,
+        "cohort_medians": {
+          "12gb-d1": 274.41440809767255
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "8gb-q8-d0",
+        "n": 5,
+        "tokens_s": 169.1596539214878,
+        "prefill_ms": 4159.944275,
+        "wall_ms": 7180.9357279999995,
+        "acceptance": null,
+        "cohort_medians": {
+          "8gb-q8-d0": 169.1596539214878
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "8gb-q8-d1",
+        "n": 5,
+        "tokens_s": 173.62107248565377,
+        "prefill_ms": 4416.61284,
+        "wall_ms": 7360.411163,
+        "acceptance": 0.7465753424657534,
+        "cohort_medians": {
+          "8gb-q8-d1": 173.62107248565377
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "8gb-q8_0-d0",
+        "n": 5,
+        "tokens_s": 222.46437152223618,
+        "prefill_ms": 2962.19329,
+        "wall_ms": 5259.428322,
+        "acceptance": null,
+        "cohort_medians": {
+          "8gb-q8_0-d0": 222.46437152223618
+        }
+      },
+      {
+        "fixture": "natural-16k",
+        "mode": "8gb-q8_0-d1",
+        "n": 5,
+        "tokens_s": 230.3517060787241,
+        "prefill_ms": 3237.304138,
+        "wall_ms": 5455.851393,
+        "acceptance": 0.7380952380952381,
+        "cohort_medians": {
+          "8gb-q8_0-d1": 230.3517060787241
+        }
+      }
+    ],
+    "completed": [
+      {
+        "cohort": "16gb-d0",
+        "seconds": 53.91683407700111,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "a9e2a851d44feaaafb8016a4b1360553396c5a37342f13fa75b73208f69bd783",
+        "requests": 14
+      },
+      {
+        "cohort": "16gb-d1",
+        "seconds": 52.51277202800338,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "4b1f40e6fac1c51b2f25892f9f4823a6192784aec5ceef7ba85a70e1df626200",
+        "requests": 14
+      },
+      {
+        "cohort": "12gb-d0",
+        "seconds": 47.10372143800123,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "9d10701a004fedabdde33c013825458a2ce6e1d606bc3261a312baf5bc6aed2c",
+        "requests": 14
+      },
+      {
+        "cohort": "12gb-d1",
+        "seconds": 46.75123064100262,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "88004acc140e09e1bebc206bda740c47c01a44ae2f9096e08ec9a736f917e9b6",
+        "requests": 14
+      },
+      {
+        "cohort": "8gb-q8-d0",
+        "seconds": 76.139856288999,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "882c229d332f9bb36216af685c7b9ecd04f0b4c7b90bc5f196f311f35788c7b6",
+        "requests": 14
+      },
+      {
+        "cohort": "8gb-q8-d1",
+        "seconds": 77.54409959600162,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "92dca5b155b0934fc01d4934c7afc246c1e596326af5f22ef0758db552552eeb",
+        "requests": 14
+      },
+      {
+        "cohort": "8gb-q8_0-d0",
+        "seconds": 60.11971549899681,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "807f58bc98228544cd356fb7f59e749c3be7e8ccaabfe6f6c34c5835ca7d1c85",
+        "requests": 14
+      },
+      {
+        "cohort": "8gb-q8_0-d1",
+        "seconds": 61.372524155001884,
+        "binary_sha256": "e4f29b5e990a0c0f9f45975b6a24440729103de8b2be3c5a9d585320546a3bcf",
+        "samples_sha256": "4ee86af70acd86e252d67eb29cd7c5da5cc814cbccaab27e0f0fc1f15754639b",
+        "requests": 14
+      }
+    ]
+  },
+  "native_cases": 570
+}

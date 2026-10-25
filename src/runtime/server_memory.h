@@ -7,6 +7,8 @@
 #include "kv_cache_layout.h"
 #include "exl3_masked_schedule.h"
 #include "kv_checkpoint.h"
+#include "mtp_memory.h"
+#include "head_memory.h"
 namespace mellum16 {
 struct ServerMemoryPlan {
   std::map<std::string, std::size_t> buffers;
@@ -24,10 +26,14 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
                                          bool persistent = false,
                                          std::size_t sampling_workspace = 0,
                                          KVCacheFormat kv_format = KVCacheFormat::BF16,
-                                         bool checkpoint = false, int expert_rate = 4) {
+                                         bool checkpoint = false, int expert_rate = 4,
+                                         bool mtp = false, bool mtp_fp8_experts = false,
+                                         bool q8_head = false, bool mtp_exl3_experts = false) {
   if (capacity < 1 || capacity > 131072 || prompt < 1 || prompt > capacity || chunk < 2 ||
       chunk > 2048 || (expert_rate != 3 && expert_rate != 4 && expert_rate != 6))
     throw std::invalid_argument("invalid selected-profile memory shape");
+  if ((mtp_fp8_experts || mtp_exl3_experts) && !mtp)
+    throw std::invalid_argument("quantized draft experts require MTP");
   const std::size_t batch = persistent ? chunk : std::min(chunk, prompt);
   ServerMemoryPlan plan;
   const auto add = [&](const char *name, std::size_t bytes) {
@@ -35,6 +41,17 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
     plan.resident = admission::Sum({plan.resident, bytes});
   };
   add("weights", weights);
+  if (q8_head)
+    add("head_input", kHeadQ8InputBytes);
+  if (mtp) {
+    if (!persistent)
+      throw std::invalid_argument("MTP inventory requires persistent execution");
+    add("mtp_draft", MtpDraftResidentBytes(mtp_fp8_experts, mtp_exl3_experts));
+    add("mtp_verifier", kMtpVerifyResidentBytes);
+    add("mtp_hidden", MtpHiddenBytes(chunk));
+    if (checkpoint)
+      add("mtp_checkpoint", kMtpCheckpointBytes);
+  }
   add("kv", admission::Bytes(7ULL * capacity + 21ULL * std::min(capacity, 1024),
                              KVCacheLayout::Make(kv_format, 1).bytes));
   add("descriptors", 28 * 64 * 3 * 56);

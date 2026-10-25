@@ -13,7 +13,23 @@ inline constexpr int kW4A8FContextCapacity = 8192;
 inline constexpr int kW4A8FMaxPrefillChunk = 2048;
 inline constexpr const char *kCompensatedMathProfile = "mellum16-bf16-compensated-rnexp-v1";
 inline constexpr const char *kW4A8FProfile = "mellum16-w4a8f-v1";
+struct MtpOptions {
+  std::filesystem::path artifact;
+  int depth = 1; // An empty artifact selects ordinary execution.
+  bool fused_experts = true;
+  bool packed_qkv = true;
+  bool packed_o = false;     // Explicit research override; selected path keeps paired ordinary O.
+  bool batched_prime = true; // Exact prompt-to-draft KV rows in dead prefill arenas.
+  bool paired_attention = true; // Exact adjacent-row attention with saved ring history.
+  bool batched_rows = true;     // Reuse verifier arenas for batched postnorm/router.
+  bool compact_experts =
+      true; // Qualified graph-static active-expert dispatch; full remains selectable.
+  bool exl3_experts = false; // Separate pinned EXL3-K4 draft experts, nonexperts unchanged.
+  bool fp8_experts = false;  // Separate pinned draft-only FP8 artifact; explicit opt-in.
+};
 struct InferenceOptions {
+  MtpOptions mtp;
+  bool q8_head = false; // Explicit shared target/draft Q8-block32 head; no BF16 GPU shadow.
   SamplingOptions sampling;
   KVCacheFormat kv_cache_format = KVCacheFormat::BF16;
   std::filesystem::path artifact;
@@ -22,6 +38,7 @@ struct InferenceOptions {
   int capacity = 256;
   int generate = 16;
   bool capture_logits = false;
+  bool capture_hidden = false; // Last post-final-norm row, for independent draft qualification.
   bool capture_trace = false;
   bool warp_projections = true;
   int prefill_chunk = 128;
@@ -116,6 +133,7 @@ struct InferenceResult {
   std::string actual_attention_projection, actual_expert_dispatch, diagnostic_attention_sha256;
   std::vector<int> generated_ids;
   std::vector<float> logits;
+  std::vector<float> hidden;
   std::vector<float> trace;
   std::vector<unsigned char> quantization_rows;
   std::vector<float> operator_snapshot;
@@ -132,6 +150,9 @@ struct InferenceResult {
   std::string prefill_execution = "stream";
   bool cancelled = false;
   int prefill_tokens = 0, decode_steps = 0;
+  int mtp_depth = 0;
+  std::uint64_t mtp_resident_bytes = 0, mtp_groups = 0, mtp_draft_calls = 0, mtp_proposed = 0,
+                mtp_accepted = 0, mtp_ordinary_tails = 0;
   // CUDA stream elapsed time through the final prompt logits, before selection.
   // Kept separate from wall-clock TTFT/prefill and N-1 decode measurements.
   double prompt_forward_stream_seconds = 0;

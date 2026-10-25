@@ -1,0 +1,77 @@
+Shared Q8 output-head qualification — 2026-10-25
+
+Decision: use one stored Q8-block32 head as the default of the new GPU profiles.
+Deprecate BF16-head distribution for these profiles; retain legacy BF16 loading
+as a compatibility and numerical-quality reference. This is a scoped engineering
+decision, not a claim of general coding-quality equivalence.
+
+Format and storage
+INT8 codes -127..127, blocks of32, BF16 positive scales, FP32 division and
+round-to-nearest-even. The entire shared head has SHA256
+0fa4891dcd9443a3d36d8d31d5f777c1cc06339eb1782855d86587cad276d587.
+The stored checkpoint equals the existing C++ host converter byte-for-byte.
+All5630 other target tensors are unchanged for each K3/K4/K6 checkpoint.
+Head payload:240648192bytes (229.5MiB), saving212336640bytes (202.5MiB).
+Target and draft use the same GPU allocation. Stored artifacts require no head
+quantization or repack on startup. No BF16 GPU shadow is retained.
+
+Paired head-quality experiment
+32 frozen documents:24 authored code snippets in8 languages plus8 repository
+source files. Evaluate19657 next-token positions per configuration after the
+first16/64 tokens, with at most4096 tokens per document. Feed the same captured
+hidden vector to both heads. The diagnostic probe temporarily loads both heads
+only for this comparison; the production engine owns exactly one. Final-row
+logits are checked against the real runtime. This measures the complete Q8 head
+path, including input quantization and accumulation, not weight error alone.
+Corpus specification SHA256:
+8b23fd6daccfc5129e051bb632d6e65f0ab0991130381362cd92682fedc3ef11
+
+Configuration       Positions   Mean KL       Mean NLL delta   PPL change    Top1 same
+k6-bf16kv            19657  0.000211740    0.000215002    0.021503%  99.638806%
+k4-bf16kv            19657  0.000209772    0.000129294    0.012930%  99.720201%
+k3-bf16kv            19657  0.000210210    0.000317629    0.031768%  99.684591%
+k3-q8kv              19657  0.000215186    0.000305632    0.030568%  99.694765%
+k3-q8_0kv            19657  0.000216992   -0.000207926   -0.020790%  99.689678%
+k6-q8_0kv            19657  0.000209921   -0.000149175   -0.014916%  99.674416%
+
+PPL change is exp(mean NLL_Q8 - mean NLL_BF16)-1 on these token positions.
+Top1 agreement describes one-step decisions on identical hidden states; it is
+not sequence equivalence or an estimate of task success. Small logit changes
+can change a generated sequence. These documents are not a held-out public
+benchmark and do not establish quality at131K context.
+
+Executable code comparison
+12 frozen Python/Rust/C++ tasks with executable tests and checked gold/mutant
+oracles; one greedy attempt per arm, fixed output budgets, no repair. Generated
+code is compiled/executed in a bounded isolated process without networking.
+The comparison changes only the head within each target/cache configuration.
+16gb-bf16: 10/12; failed: py-intervals, rust-rotate
+16gb-q8: 10/12; failed: py-intervals, rust-rotate
+12gb-bf16: 10/12; failed: py-intervals, rust-rotate
+12gb-q8: 10/12; failed: py-intervals, rust-rotate
+8gb-q8-bf16: 11/12; failed: py-intervals
+8gb-q8-q8: 11/12; failed: py-intervals
+8gb-q8_0-bf16: 10/12; failed: py-intervals, rust-checked-sum
+8gb-q8_0-q8: 10/12; failed: py-intervals, rust-checked-sum
+12gb-k6-q8_0-bf16: 10/12; failed: py-intervals, rust-rotate
+12gb-k6-q8_0-q8: 10/12; failed: py-intervals, rust-rotate
+
+Engineering gates were frozen before execution:mean KL<=0.001, mean NLL
+delta<=0.01, top1 agreement>=98.5%, no loss of functional passes. They are
+engineering screening criteria, not user-specified quality guarantees. The
+completed comparisons satisfy those gates. No extra failed functional case
+appeared with Q8 in the completed paired tests.
+
+Integrity and correctness
+Native loading validates format, block size, scale type, complete weight hash,
+head hash and all regions. Three valid stored artifacts and ten malformed
+metadata cases were exercised.315 native request/depth combinations compare
+stored Q8 with the former runtime-converted head exactly in token IDs, final
+logits/hidden state, callbacks and committed/pending state. Independent MTP
+verifier and memory qualification is recorded in gpu-profiles-2026-10-25.txt.
+Offline MTP import against the stored-Q8 K4 target reproduces the original
+BF16/F32 draft payload b03d5abcf0adf5f5089694668f723fb262f78dc104aeb14dcd00be7db40b8389.
+
+Local raw evidence:build/gpu-profiles-2026-10-25/{head-quality,functional,
+functional-q8_0,loader-validation,STORED_VS_RUNTIME_HEAD.json,artifacts}.
+Raw captured hidden vectors and model payloads are not stored in Git.

@@ -1,0 +1,73 @@
+131K/MTP GPU profile qualification — 2026-10-25
+
+Tested hardware:NVIDIA GeForce RTX5080 Laptop GPU, SM120a,16GiB class.
+8/12GiB profiles use explicit memory-admission ceilings on this GPU. Physical
+8/12GiB cards, Pascal/GTX1070 and other architectures are not qualified.
+The current CUDA implementation requiresSM120/SM120a. These are experimental
+profiles and a starting point for architecture ports, not cross-GPU speed claims.
+
+Selected profiles
+16gb:target EXL3K6, BF16KV, prefill chunk2048, actual-device admission.
+12gb:target EXL3K6, Q8_0KV, prefill chunk256,12GiB ceiling.
+8gb:target EXL3K3, Q8_0KV, prefill chunk256,8GiB ceiling.
+All:capacity131072, MTPD1, compact verifier dispatch, EXL3K4 draft experts,
+one stored Q8 output head shared by target and draft. No shared GPU shadows.
+Draft experts:4bpw codes,4.0248015873 effectivebpw with FP16 sidecars;
+the thirteen other draft tensors remain unchanged; draft KV staysBF16.
+Common build:exact-fusions-v1/global-matrix-v1/async64-v1/packed-chunk-v1.
+
+Memory at actual full-context execution
+Profile        Resident GiB   Admission incl700MiB reserve   Available after graphs GiB
+16gb: full-context validation pending at this report snapshot
+12gb           10.688527                 11.372121                     1.075256
+8gb: full-context validation pending at this report snapshot
+The reserve is admission headroom, not a separate allocated700MiB buffer.
+Resident accounting includes target/draft weights, both caches and working
+buffers; driver/graph allocation is additionally checked after capture.
+Target KV payloads at131K:BF16 1923088384bytes; plainQ8 991592448bytes;
+Q8_0 1021640704bytes plus its256MiB prefix workspace. Draft BF16KV:2MiB.
+Full-context tests use repeated natural code:131040 prompt tokens with up to32
+outputs (normal EOS), then131071 prompt tokens and one output. D0/D1 token,
+final-logit, hidden, callback and committed/pending states must match exactly.
+This checks allocation and execution to the capacity boundary, not long-context
+retrieval/coding quality. Full-context timing during concurrent CPU/network
+publication work is not used as a performance benchmark.
+
+Correctness
+400 native D0-D4 cases acrossK6/BF16,K4/BF16,K3/Q8,K3/Q8_0, plus170 additional
+K6/Q8 andK6/Q8_0 cases, pass exact state/output comparison against their own
+ordinary target. Coverage includes output tails, ring wrap, context capacity,
+cancel/append, seeded sampling and penalties; BF16 also covers checkpoint reuse.
+Q8 sessions replay history; unsupported checkpoint reuse remains rejected.
+CUDA operator probes:300 encoded-cache cases and7 invalid-range/descriptor
+checks, plus64 expert projection cases per target rateK3/K4/K6. Direct execution,
+memcheck,synccheck,racecheck all pass. Host tests:24 passed in the candidate build.
+Stored-head validation and quality are in shared-head-q8-2026-10-25.txt.
+
+Initial throughput screen (not a cross-hardware comparison)
+131072 capacity allocated; natural4K/16K code prompts;512 generated tokens;
+2warmups+5 retained requests per fixture/arm; median511/decode_seconds.
+Ordinary/MTP output and state hashes agree exactly within each numerical profile.
+One cohort per arm:use as initial screen, not a counterbalanced final estimate.
+Configuration           4K D0/D1 tok/s       16K D0/D1 tok/s
+K6 BF16KV chunk2048      238.18 /259.51       219.78 /249.33
+K4 BF16KV chunk2048      276.11 /296.17       253.13 /274.41
+K3 plainQ8 chunk256      217.15 /222.38       169.16 /173.62
+K3 Q8_0 chunk256         239.96 /253.81       222.46 /230.35
+K6/Q8_0 speed is not inferred from K6/BF16 or K3/Q8_0. K4 remains supported
+for the faster lower-precision target option. The selected12GB profile favors
+K6 target precision as requested. See mtp-2026-10-25.txt for the earlier
+counterbalanced K4 result (~298.5tok/s at32K allocated capacity) and the limits
+of comparison with the archived llama.cpp ~271.4tok/s run.
+
+Preserved failed experiments
+First Q8_0 verifier candidate passed a non-null separate scale pointer although
+Q8_0 scales are inline; corrected to null before acceptance. A GPU-overlapping
+qualification attempt was rejected by memory admission and invalidated. One
+full-context harness assertion incorrectly required32 tokens despite natural
+EOS at29; the completed revised protocol acceptsEOS and adds the exact-capacity
+one-token case. None of those failed/invalid attempts are counted as successes.
+
+Evidence root:build/gpu-profiles-2026-10-25. Source/manifest hashes, complete
+per-request JSONL and telemetry are retained locally; compact published metrics
+are in the neighboring JSON report. Model payloads are distributed separately.

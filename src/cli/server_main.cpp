@@ -19,23 +19,85 @@ int main(int argc, char **argv) {
   try {
     int positional_argc = argc;
     std::string config_body;
-    if (argc >= 3 && std::string_view(argv[argc - 2]) == "--config") {
+    mellum16::MtpOptions mtp;
+    bool head_format_set = false;
+    std::optional<bool> q8_head;
+    bool depth_set = false, artifact_set = false, config_set = false, expert_dispatch_set = false,
+         draft_experts_set = false;
+    while (positional_argc >= 3) {
+      const std::string_view flag = argv[positional_argc - 2];
+      if (flag == "--mtp-artifact") {
+        if (artifact_set)
+          throw std::runtime_error("duplicate MTP artifact");
+        mtp.artifact = argv[positional_argc - 1];
+        artifact_set = true;
+        if (mtp.artifact.empty())
+          throw std::runtime_error("empty MTP artifact path");
+      } else if (flag == "--mtp-depth") {
+        if (depth_set)
+          throw std::runtime_error("duplicate MTP depth");
+        const char *value = argv[positional_argc - 1];
+        auto [stop, code] =
+            std::from_chars(value, value + std::char_traits<char>::length(value), mtp.depth);
+        if (code != std::errc{} || *stop || mtp.depth < 1 || mtp.depth > 4)
+          throw std::runtime_error("MTP depth must be1..4");
+        depth_set = true;
+      } else if (flag == "--mtp-expert-dispatch") {
+        if (expert_dispatch_set)
+          throw std::runtime_error("duplicate MTP expert dispatch");
+        const std::string_view value = argv[positional_argc - 1];
+        if (value != "full" && value != "compact")
+          throw std::runtime_error("MTP expert dispatch must be full or compact");
+        mtp.compact_experts = value == "compact";
+        expert_dispatch_set = true;
+      } else if (flag == "--mtp-draft-experts") {
+        if (draft_experts_set)
+          throw std::runtime_error("duplicate MTP draft experts");
+        const std::string_view value = argv[positional_argc - 1];
+        if (value != "bf16" && value != "fp8" && value != "exl3")
+          throw std::runtime_error("MTP draft experts must be bf16, fp8 or exl3");
+        mtp.fp8_experts = value == "fp8";
+        mtp.exl3_experts = value == "exl3";
+        draft_experts_set = true;
+      } else if (flag == "--head-format") {
+        if (head_format_set)
+          throw std::runtime_error("duplicate head format");
+        const std::string_view value = argv[positional_argc - 1];
+        if (value != "bf16" && value != "q8")
+          throw std::runtime_error("head format must be bf16 or q8");
+        q8_head = value == "q8";
+        head_format_set = true;
+      } else if (flag == "--config") {
+        if (config_set)
+          throw std::runtime_error("duplicate server configuration");
+        config_set = true;
+        std::ifstream file(argv[positional_argc - 1], std::ios::binary);
+        if (!file)
+          throw std::runtime_error("cannot open server configuration");
+        std::array<char, 65537> bytes{};
+        file.read(bytes.data(), bytes.size());
+        if (file.gcount() > 65536 || (!file.eof() && !file.good()))
+          throw std::runtime_error("server configuration read failed or exceeds 64 KiB");
+        config_body.assign(bytes.data(), static_cast<std::size_t>(file.gcount()));
+        if (config_body.empty())
+          throw std::runtime_error("server configuration is empty");
+      } else
+        break;
       positional_argc -= 2;
-      std::ifstream file(argv[argc - 1], std::ios::binary);
-      if (!file)
-        throw std::runtime_error("cannot open server configuration");
-      std::array<char, 65537> bytes{};
-      file.read(bytes.data(), bytes.size());
-      if (file.gcount() > 65536 || (!file.eof() && !file.good()))
-        throw std::runtime_error("server configuration read failed or exceeds 64 KiB");
-      config_body.assign(bytes.data(), static_cast<std::size_t>(file.gcount()));
-      if (config_body.empty())
-        throw std::runtime_error("server configuration is empty");
     }
+    if (depth_set && !artifact_set)
+      throw std::runtime_error("MTP depth requires --mtp-artifact");
+    if (expert_dispatch_set && !artifact_set)
+      throw std::runtime_error("MTP expert dispatch requires --mtp-artifact");
+    if (draft_experts_set && !artifact_set)
+      throw std::runtime_error("MTP draft experts require --mtp-artifact");
     if (positional_argc < 5 || positional_argc > 10)
-      throw std::runtime_error("usage: padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT "
-                               "[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] "
-                               "[DEVICE_BUDGET_GIB] [KV_FORMAT=bf16|q8|q8_0] [--config JSON]");
+      throw std::runtime_error(
+          "usage: padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT "
+          "[GENERATION_TIMEOUT_MS] [CONTEXT_CAPACITY] [PREFILL_CHUNK] "
+          "[DEVICE_BUDGET_GIB] [KV_FORMAT=bf16|q8|q8_0] [--mtp-artifact DIRECTORY] [--mtp-depth "
+          "1..4] [--mtp-expert-dispatch full|compact] [--mtp-draft-experts bf16|fp8|exl3] "
+          "[--head-format bf16|q8] [--config JSON]");
     int port = 0;
     auto [end, error] =
         std::from_chars(argv[4], argv[4] + std::char_traits<char>::length(argv[4]), port);
@@ -96,9 +158,9 @@ int main(int argc, char **argv) {
       throw std::runtime_error(text.status().message());
     auto tokenizer = std::move(text).value();
     std::unique_ptr<mellum16::ModelRuntime> runtime;
-    auto loaded =
-        mellum16::ModelRuntime::Load(argv[1], tokenizer->sha256(), true, context.value(), kv_format,
-                                     -1, chunk, budget, kv_format == mellum16::KVCacheFormat::BF16);
+    auto loaded = mellum16::ModelRuntime::Load(
+        argv[1], tokenizer->sha256(), true, context.value(), kv_format, -1, chunk, budget,
+        kv_format == mellum16::KVCacheFormat::BF16, mtp, q8_head);
     if (!loaded.ok())
       throw std::runtime_error(loaded.status().message());
     runtime = std::move(loaded).value();
@@ -129,6 +191,7 @@ int main(int argc, char **argv) {
               << ",\"server_config\":" << config.Json(port, http.AdminPort()) << ",\"model\":"
               << mellum16::json::Quote(
                      mellum16::server::ModelIdForRate(coordinator.RuntimeMetrics().expert_rate))
+              << ",\"mtp_depth\":" << coordinator.RuntimeMetrics().mtp_depth
               << ",\"quality_status\":\"unqualified\"}" << std::endl;
     const bool listened = http.Listen();
     finished.store(true);

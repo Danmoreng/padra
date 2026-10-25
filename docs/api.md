@@ -8,6 +8,8 @@ that ID. The examples below use K4.
 
 Padra implements text/function subsets of Chat Completions and Responses.
 See [API support](api-support.md) for endpoints, accepted options and exclusions.
+MTP is selected at server startup without changing request schemas; see the
+[MTP execution and accounting contract](mtp.md).
 
 ## Chat Completions
 

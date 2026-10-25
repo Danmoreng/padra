@@ -64,6 +64,75 @@ int main() {
     Require(shapes.Admit(key, 100, 1024).ok() && shapes.Find(key));
     key.kv_format = "q8_token_head128_f32scale_v1";
     Require(!shapes.Find(key));
+    for (int chunk : {256, 512, 2048}) {
+      const auto ordinary = PlanServerMemory(7092933120ULL, 8192, 8192, chunk, true);
+      const auto mtp = PlanServerMemory(7092933120ULL, 8192, 8192, chunk, true, 0,
+                                        KVCacheFormat::BF16, false, 4, true);
+      Require(mtp.resident - ordinary.resident ==
+              kMtpDraftResidentBytes + kMtpVerifyResidentBytes + MtpHiddenBytes(chunk));
+      const auto fp8 = PlanServerMemory(7092933120ULL, 8192, 8192, chunk, true, 0,
+                                        KVCacheFormat::BF16, false, 4, true, true);
+      Require(mtp.resident - fp8.resident == kMtpFp8ExpertWeightSavingBytes &&
+              fp8.buffers.at("kv") == mtp.buffers.at("kv") &&
+              fp8.buffers.at("weights") == mtp.buffers.at("weights") &&
+              fp8.reserve == mtp.reserve && fp8.Fits(fp8.required()) &&
+              !fp8.Fits(fp8.required() - 1));
+      Require(mtp.buffers.at("weights") == ordinary.buffers.at("weights") &&
+              mtp.buffers.at("kv") == ordinary.buffers.at("kv") && mtp.Fits(mtp.required()) &&
+              !mtp.Fits(mtp.required() - 1));
+    }
+    for (int chunk : {256, 512, 2048})
+      for (bool draft : {false, true}) {
+        const auto bf = PlanServerMemory(7092933120ULL, 8192, 8192, chunk, true, 0,
+                                         KVCacheFormat::BF16, false, 4, draft);
+        const auto q8 =
+            PlanServerMemory(7092933120ULL - kHeadQ8WeightSavingBytes, 8192, 8192, chunk, true, 0,
+                             KVCacheFormat::BF16, false, 4, draft, false, true);
+        Require(kHeadQ8WeightBytes == 240648192 && kHeadQ8InputBytes == 12240 &&
+                bf.resident - q8.resident == 212324400 &&
+                q8.buffers.at("head_input") == kHeadQ8InputBytes &&
+                bf.buffers.at("kv") == q8.buffers.at("kv") && bf.reserve == q8.reserve &&
+                q8.Fits(q8.required()) && !q8.Fits(q8.required() - 1));
+        if (draft)
+          Require(bf.buffers.at("mtp_draft") == q8.buffers.at("mtp_draft"));
+      }
+    for (int rate : {3, 4, 6})
+      for (auto format : {KVCacheFormat::BF16, KVCacheFormat::Q8TokenHead128F32ScaleV1,
+                          KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2}) {
+        const auto ordinary =
+            PlanServerMemory(weights, 131072, 131072, 256, true, 0, format, false, rate);
+        const auto mtp = PlanServerMemory(weights, 131072, 131072, 256, true, 0, format, false,
+                                          rate, true, false, false, true);
+        Require(mtp.resident - ordinary.resident ==
+                MtpDraftResidentBytes(false, true) + kMtpVerifyResidentBytes + MtpHiddenBytes(256));
+        Require(mtp.buffers.at("kv") == ordinary.buffers.at("kv"));
+      }
+    rejected = false;
+    try {
+      (void)PlanServerMemory(weights, 8192, 8192, 256, false, 0, KVCacheFormat::BF16, false, 4,
+                             true);
+    } catch (const std::invalid_argument &) {
+      rejected = true;
+    }
+    Require(rejected);
+    for (bool head : {false, true})
+      for (int chunk : {256, 512, 2048}) {
+        const auto bf = PlanServerMemory(7092933120ULL, 8192, 8192, chunk, true, 0,
+                                         KVCacheFormat::BF16, false, 4, true, false, head);
+        const auto exl3 = PlanServerMemory(7092933120ULL, 8192, 8192, chunk, true, 0,
+                                           KVCacheFormat::BF16, false, 4, true, false, head, true);
+        Require(bf.resident - exl3.resident == 593313792 &&
+                bf.buffers.at("weights") == exl3.buffers.at("weights") &&
+                bf.buffers.at("kv") == exl3.buffers.at("kv") && exl3.Fits(exl3.required()) &&
+                !exl3.Fits(exl3.required() - 1));
+      }
+    rejected = false;
+    try {
+      (void)MtpDraftResidentBytes(true, true);
+    } catch (const std::invalid_argument &) {
+      rejected = true;
+    }
+    Require(rejected);
     std::cout << "KV memory layouts, Q8 inventory and admission boundaries passed\n";
     return 0;
   } catch (const std::exception &error) {

@@ -99,13 +99,18 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
     const auto &v = parsed.value();
     Require(Number(Field(v, "schema_version")) == 1, "unsupported manifest schema");
     const auto profile = Text(Field(v, "profile"));
-    const bool exl3 = profile == kExl3K3Profile || profile == kExl3Profile ||
+    const bool q8Head = profile == kExl3K3Q8HeadProfile || profile == kExl3Q8HeadProfile ||
+                        profile == kExl3K6Q8HeadProfile;
+    if (q8Head)
+      Require(Text(Field(v, "head_conversion")) == kHeadQ8Conversion,
+              "unsupported shared-head conversion");
+    const bool exl3 = q8Head || profile == kExl3K3Profile || profile == kExl3Profile ||
                       profile == kExl3K6Profile || profile == kExl3K8Profile;
-    const int exl3Rate = profile == kExl3K3Profile   ? 3
-                         : profile == kExl3K8Profile ? 8
-                         : profile == kExl3K6Profile ? 6
-                         : exl3                      ? 4
-                                                     : 0;
+    const int exl3Rate = (profile == kExl3K3Profile || profile == kExl3K3Q8HeadProfile)   ? 3
+                         : profile == kExl3K8Profile                                      ? 8
+                         : (profile == kExl3K6Profile || profile == kExl3K6Q8HeadProfile) ? 6
+                         : exl3                                                           ? 4
+                                                                                          : 0;
     Require(profile == kHybridProfile || exl3, "unsupported precision/math profile");
     Require(Text(Field(v, "model_revision")) == kModelRevision, "wrong Mellum model revision");
     const auto expectedArithmetic =
@@ -155,7 +160,9 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
       const bool expert = name.find(".experts.") != std::string::npos;
       const bool projection = name.find(".self_attn.") != std::string::npos &&
                               name.find("_proj.weight") != std::string::npos;
-      const auto format = expert       ? (exl3 ? (exl3Rate == 3   ? "EXL3_K3"
+      const bool sharedHead = q8Head && name == "lm_head.weight";
+      const auto format = sharedHead   ? "Q8_HEAD_BLOCK32"
+                          : expert     ? (exl3 ? (exl3Rate == 3   ? "EXL3_K3"
                                                   : exl3Rate == 8 ? "EXL3_K8"
                                                   : exl3Rate == 6 ? "EXL3_K6"
                                                                   : "EXL3_K4")
@@ -164,7 +171,8 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
                                        : "BF16";
       Require(Text(Field(t, "format")) == format,
               "tensor precision does not match selected hybrid");
-      matrix.format = expert       ? (exl3 ? (exl3Rate == 3   ? WeightFormat::Exl3K3
+      matrix.format = sharedHead   ? WeightFormat::Q8HeadBlock32
+                      : expert     ? (exl3 ? (exl3Rate == 3   ? WeightFormat::Exl3K3
                                               : exl3Rate == 8 ? WeightFormat::Exl3K8
                                               : exl3Rate == 6 ? WeightFormat::Exl3K6
                                                               : WeightFormat::Exl3K4)
@@ -172,7 +180,11 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
                       : projection ? WeightFormat::Fp8
                                    : WeightFormat::Bf16;
       std::map<std::string, std::uint64_t, std::less<>> sizes;
-      if (expert && exl3) {
+      if (sharedHead) {
+        Require(Number(Field(t, "block_size")) == 32 && Text(Field(t, "scale_dtype")) == "BF16",
+                "unsupported shared-head block/scale format");
+        sizes = {{"packed", elements}, {"scales", elements / 32 * 2}};
+      } else if (expert && exl3) {
         Require(Text(Field(t, "codebook")) == "mul1" && Number(Field(t, "hadamard_block")) == 128,
                 "unsupported EXL3 codec/transform");
         sizes = {{"packed", elements * exl3Rate / 8}, {"suh", shape[1] * 2}, {"svh", shape[0] * 2}};
@@ -209,14 +221,18 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
       (void)name;
       const bool expert = matrix.format == WeightFormat::Nvfp4;
       const bool projection = matrix.format == WeightFormat::Fp8;
+      const bool sharedHead = matrix.format == WeightFormat::Q8HeadBlock32;
       for (const auto &[part, r] : matrix.regions) {
         const auto *raw = result.weights.data() + r.offset;
-        if ((expert && part == "scales") || (projection && part == "packed")) {
+        if (sharedHead && part == "packed") {
+          for (std::uint64_t j = 0; j < r.bytes; ++j)
+            Require(std::to_integer<unsigned>(raw[j]) != 128, "invalid symmetric Q8 head code");
+        } else if ((expert && part == "scales") || (projection && part == "packed")) {
           for (std::uint64_t j = 0; j < r.bytes; ++j) {
             const auto x = std::to_integer<unsigned>(raw[j]);
             Require(expert ? x < 127 : (x & 127) != 127, "invalid E4M3 scale/weight");
           }
-        } else if (part == "data" || (projection && part == "scales")) {
+        } else if (part == "data" || ((projection || sharedHead) && part == "scales")) {
           for (std::uint64_t j = 0; j < r.bytes; j += 2) {
             std::uint16_t x;
             std::memcpy(&x, raw + j, 2);
@@ -237,6 +253,15 @@ Result<CompiledModel> LoadCompiledModel(const std::filesystem::path &directory) 
           Require(std::isfinite(x) && x > 0, "invalid NVFP4 divisor");
         }
       }
+    }
+    if (q8Head) {
+      const auto &head = result.tensors.at("lm_head.weight");
+      const auto packed = head.regions.at("packed"), scales = head.regions.at("scales");
+      Require(scales.offset == packed.offset + packed.bytes, "noncontiguous shared head");
+      result.shared_head_sha256 =
+          Hash(result.weights.data() + packed.offset, packed.bytes + scales.bytes);
+      Require(result.shared_head_sha256 == Text(Field(v, "head_sha256")),
+              "stored shared-head identity mismatch");
     }
     return result;
   } catch (const std::exception &e) {

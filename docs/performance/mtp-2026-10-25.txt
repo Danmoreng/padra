@@ -1,0 +1,216 @@
+Padra MTP: Abschluss der fünf Optimierungsschritte — 25.10.2026
+
+Ergebnis
+========
+Das natürliche code-review4096/G512-Beispiel erreicht 298.520 verifizierte
+Decode-Tokens/s mit D1, EXL3-K4-Draft-Experten und einem gemeinsamen Q8-Head.
+Das liegt 10.56% über dem Ziel von 270 und 9.99% über dem eingefrorenen
+llama.cpp-Vergleich von 271,4 tok/s. Gegenüber Souls ursprünglichen 231,937 tok/s
+beträgt der kampagnenübergreifende Fortschritt 28.71%. Einzelgewinne wurden jeweils
+gegen einen zeitnahen Kontrollbuild gemessen; Tagesdrift verhindert das einfache
+Addieren der Prozentwerte.
+
+Der neue Head ist ausdrücklich eine Änderung des numerischen Target-Profils.
+Der Nutzer hat diese Änderung für Target UND Draft autorisiert. BF16 bleibt
+ohne explizite Auswahl erhalten. Genau eine Head-Matrix liegt auf der GPU,
+entweder BF16 oder Q8, und Target/Draft verwenden dieselbe Allocation.
+Es gibt keine zusätzliche private Q8-Draft-Kopie und keinen BF16-GPU-Schatten.
+
+Warum MTP ursprünglich langsamer war
+===================================
+Soul hatte zuletzt unter padra-performance/2026-10-25-mtp gemessen. Sein Review-
+Archiv padra-mtp-review-2026-10-25.tar.gz wurde unabhängig geprüft:
+c59ac3b9d55155133d95283756c7e1d63e0e477e5879515e69def41f20136c62.
+Die relevanten archivierten Quellen stimmten mit dem ursprünglichen Arbeitsbaum
+überein. Der ursprüngliche HEAD und alle vorhandenen Änderungen sind unter
+baseline/ erhalten; keine fremden Änderungen wurden zurückgesetzt.
+
+Natürliche 4K-Ausgangswerte: Padra Ordinary 250,83 / MTP 231,94 tok/s;
+llama.cpp Ordinary 238,6 / MTP 271,4 tok/s. Mit ungefähr 70% Akzeptanz liefert
+eine D1-Gruppe etwa 1,7 Tokens. Padras Gruppe kostete 7,34 ms, llama.cpp etwa
+6,32 ms. Padra benötigte damit 1,84 eigene Ordinary-Schritte für 1,70 Outputs;
+llama.cpp etwa 1,51 Schritte für 1,71 Outputs. Der primäre Engpass war die
+Gruppenlaufzeit, nicht die um etwa einen Prozentpunkt niedrigere Akzeptanzrate.
+
+Padra teilte bereits QKV, Experten-Gewichtstiles und die Target-Head-Projektion
+zwischen Verifier-Zeilen. Die Diagnose "keine Gewichts-Wiederverwendung" wäre
+falsch. Residual/Postnorm/Router liefen aber zeilenweise und erzeugten zusätzliche
+Kopien. Attention inklusive Merge/Encoding kostete etwa 1,020 ms/Gruppe,
+Verifier-Experten 2,169 ms, O-Projektion 0,471 ms, Postnorm 0,349 ms,
+Routerprojektion 0,195 ms und Routing 0,192 ms. Der BF16-Target-Head kostete
+0,562 ms, der Draft-Head ebenfalls rund eine halbe Millisekunde.
+
+llama.cpps mmvq-MoE-Pfad verwendet je Token einen Warp im selben CTA und koppelt
+Gate/Up und GLU. Er baut keinen Padra-artigen Experten-Union-Plan auf und muss
+keine EXL3-H128-Transformation ausführen. Sein Attention-Pfad verwendet
+Flash-Attention mit separatem Fixup; sein MTP-Treiber bündelt die Nachführung
+der tatsächlichen Target-Hidden-States. Diese Unterschiede waren konkrete
+Optimierungsansätze, kein direkt übertragbarer Kernel für unser Gewichtsformat.
+Ausführliche ursprüngliche Quellen-/Trace-Analyse: build/analysis/mtp-2026-10-25.
+
+Fünf Schritte und Übernahmeentscheidungen
+=========================================
+1. exact-fusions-v1 qualifiziert und in release-k4 ausgewählt.
+   Natürliche 4K D1: 231,882 -> 238,793 tok/s (+2,98%).
+2. Verifier-Residual/Postnorm/Router/Routing über Zeilen gebündelt; direkte
+   Zielpuffer ersetzen sechs Route-Kopien pro Layer/Gruppe. Bestehende Arenen
+   wiederverwendet, kein zusätzlicher Resident-Speicher.
+   4K: 239,573 -> 253,177 (+5,68%). Übernommen.
+3. EXL3-Input-Vortransformation und echte Gate/Up/SiLU-Fusion getestet.
+   Ganze 4K-Generierung: -4,39%, -0,80% und -0,34%. Numerisch korrekt,
+   aber kein belastbarer Gewinn. Alle drei Varianten verworfen; Belege bleiben
+   in step3/, step3-shared/, step3-fused/ und STEP3_DECISION.json erhalten.
+4. Zwei-Zeilen-Attention samt Merge/Encoding gebündelt. Kompatible Partitionen
+   teilen KV/MMA-Tiles; überschriebenes lokales Ring-History kommt aus dem
+   vorhandenen Snapshot. 4K: 251,099 -> 259,062 (+3,17%);
+   16K: 226,827 -> 239,369 (+5,53%). Übernommen.
+5. Prompt-KV-Nachführung ab vier Zeilen gebündelt, gemeinsam genutzten Q8-Head
+   als explizite Option integriert, danach ausschließlich Draft-Experten nach
+   EXL3 K4 quantisiert und vorhandene EXL3-Kernel angebunden. Übernommen.
+   Der BF16-MMA-Head war langsamer und wurde verworfen. Die frühere private
+   Q8-Draft-Kopie wurde gemäß Nutzeranforderung verworfen und nie übernommen.
+
+Die gebündelte KV-Nachführung verkürzt bei BF16 die 4K-Prefillzeit von
+486,665 auf 440,396 ms und die gesamte Generierung von 2436,629 auf 2400,133 ms.
+Der isolierte BF16-Decode-Median lag in dieser Messung etwa 0,5% niedriger;
+die Übernahme stützt sich auf Prefill und Gesamtlatenz, nicht auf einen
+behaupteten Decode-Gewinn. Der gemeinsame Q8-Head erreichte vor EXL3 bereits
+285,913 tok/s gegenüber Q8-Ordinary 276,065 tok/s auf 4K.
+
+Finale EXL3-Messungen
+====================
+Fixture                     Modus            n     tok/s Prefill ms    Wall ms Akzeptanz
+code-review4096G512         bf16-experts    20   286.962    438.611   2219.750  69.44%
+code-review4096G512         exl3-experts    20   298.520    439.066   2151.152  70.00%
+code-review16384G256        bf16-experts    20   263.886   1971.827   2938.017  66.01%
+code-review16384G256        exl3-experts    20   273.403   1975.807   2908.645  66.01%
+heldout-output              ordinary        10   280.555    226.440   1135.467      —
+heldout-output              bf16-experts    10   315.870    260.773   1068.677  88.89%
+heldout-output              exl3-experts    10   332.544    256.310   1023.360  91.73%
+heldout-runtime             ordinary        10   281.338    206.560   1114.540      —
+heldout-runtime             bf16-experts    10   320.692    234.932   1030.093  91.73%
+heldout-runtime             exl3-experts    10   333.171    232.646    997.893  91.73%
+
+Die beiden Modi bf16-experts und exl3-experts benutzen denselben Q8-Target-Head.
+Die vollständigen Tokenfolgen, finalen Head-/Hidden-Hashes und erfassten
+Commit-/Pending-/Callback-Zustände sind innerhalb dieses Profils identisch.
+D0 wird in der unabhängigen Prompt-Messung zusätzlich direkt verglichen.
+Nicht nur synthetische Wiederholungen: Das Zielbeispiel hat 4096 natürliche
+Prompt-Tokens und volle 512 Ausgabetokens. Die Rate ist (N-1)/decode_seconds;
+Prefill, Ladezeit und HTTP-Transport sind nicht darin enthalten. Wall umfasst
+die native Generate-Ausführung einschließlich Prefill, nicht Modellladen.
+
+Hardware: RTX 5080 Laptop GPU, BF16-KV, Kapazität 32768, Chunk 2048.
+Primary: 3 Warmups + 10 gewertete Requests je Fixture/Kohorte; Reihenfolge
+BF16/EXL3/EXL3/BF16, zweite Hälfte mit umgekehrter Fixture-Reihenfolge.
+104 vollständige Requests, 20 gewertete Samples je Arm/Fixture.
+Held-out: 2 Warmups + 5 gewertete, 6 gegenbalancierte Kohorten mit D0;
+84 vollständige Requests, 10 gewertete je Arm/Fixture. Alle Rohwerte, Token-
+folgen, Binär-Hashes und 200-ms-Leistungs/Takt/Temperatur-Telemetrie sind bewahrt.
+Keine parallelen GPU-Jobs oder CPU-Builds während der Performance-Messungen.
+
+llama.cpp ist der bereits gemessene b11866/Commit
+3f03b17724ad8b69040825f45c43c59b092a0244. Es nutzte GGUF Q4_K_M und Kapazität
+8192, Padra EXL3 K4 und 32768. Die Ausgabeverläufe unterscheiden sich; im
+archivierten llama-Lauf weicht sogar D1 ab Tokenindex 27 vom eigenen Ordinary
+ab. Der externe Wert ist ein Produktziel, kein Nachweis gleicher Modellqualität.
+Diese Arbeit behauptet weder einen neuen aktuellen llama-Benchmark noch gleiche
+Qualität beider Engines. Auch schnelleres Decode garantiert nicht für jede
+Prompt-/Ausgabelänge die niedrigste gesamte Request-Latenz.
+
+Q8 statt FP8: gemessener Tradeoff
+================================
+Q8 benutzt INT8-Blöcke mit 32 Gewichten, BF16-Skalen, entsprechend quantisierte
+Inputs, DP4A, FP32-Akkumulation und BF16-Logits. Konvertierung findet auf dem
+Host vor Upload statt. Head-Gewichte schrumpfen von 452.984.832 auf 240.648.192
+Bytes. Einschließlich 12.240 Byte gemeinsamer Aktivierungs-Workspace sinkt die
+Resident-Belegung um 212.324.400 Bytes (202,49 MiB).
+
+64 vorab festgelegte Teacher-forced-Prüffälle: 16 historische Grenzfälle und
+48 natürliche Code-Präfixe. Referenz-NLL: 1,002655082.
+Modus        mittlere KL   Delta NLL     Top1   Head-us für 1/2/5 Zeilen
+bf16         0.000000000 +0.000000000 64/64  532.326/627.439/946.397
+q8           0.000174329 +0.001008974 64/64  282.965/321.554/463.871
+fp8-a16      0.000697476 +0.005194856 64/64  327.663/721.869/1815.720
+fp8-a8       0.000781662 +0.001149119 64/64  312.678/430.301/894.140
+fp8-mma      0.000781661 +0.001149118 64/64  403.012/453.652/490.501
+
+Q8 war bei allen geprüften Breiten schneller und hatte kleinere mittlere KL
+als die getesteten zeilenskalierten FP8-A16/A8/MMA-Implementierungen. Das gilt
+für diese Implementierungen und GPU, nicht pauschal für jeden FP8-Kernel.
+64/64 übereinstimmende Top1-Entscheidungen sind keine allgemeine Qualitätsgarantie:
+In zwei der 23 separaten kurzen Generierungs-/Sampling-Szenarien änderte Q8 die
+Tokens gegenüber BF16. MTP und Ordinary mit demselben Head stimmen weiterhin
+überein. Deshalb bleibt Q8 eine explizite Option, kein stiller Default-Wechsel.
+Breite Coding-Aufgaben-/Langkontextqualität ist nicht durch diese Stichprobe
+zertifiziert.
+
+EXL3-Draft-Artefakt und Speicher
+===============================
+Nur 192 Gate/Up/Down-Matrizen der 64 Draft-Experten wurden quantisiert. Die
+13 anderen Tensoren sind bytegleich zum ursprünglichen BF16/F32-Draft.
+Bestehender EXL3-K4/H128/Mul1-Pfad mit FP16-Sidecars und MMA; Normen, Router,
+Attention und übrige dichte Gewichte unverändert. Embedding, finaler Target-
+Normvektor und Head bleiben gemeinsam verwendet. Draft-Experten sind eigene
+trainierte Gewichte und werden nicht mit Target-Experten verwechselt.
+
+Routed-Hessian-Kalibrierung: 2237 Draft-Aktivierungssätze aus acht getrennten
+Repository-Code-Prompts; 44 bis 1299 Samples je Experte; Dämpfung 0,025,
+Seed 20261025. Benchmark-/Qualitätspräfixe nicht für diese Kalibrierung benutzt.
+Gate/Up verwenden den tatsächlichen FFN-Input, Down die tatsächlichen aktivierten
+Expertenslots. Vorhandener gepinnter Mellum-EXL3-Producer; Werkzeug-/Quell-Hashes,
+Kalibrierungsdaten und alle 192 Konvertierungsaudits liegen als Beleg vor.
+
+Payload: 857.061.376 -> 263.747.584 Bytes, Einsparung 593.313.792 Bytes
+(565,83 MiB). Zusammen mit dem Q8-Head: 805.638.192 Bytes (768,32 MiB) weniger
+Resident-Speicher bei derselben Runtime-Konfiguration. Keine FP16/BF16-Kopie
+der komprimierten Experten wird auf der GPU angelegt. Gewichte bleiben während
+der Generierung resident: Der Gewinn kommt aus kleinerem GPU-Lesevolumen und
+passenden Kerneln, nicht aus dem Beschleunigen wiederholter PCIe-Gewichtskopien.
+
+Lokales Artefakt:
+/home/sebastian/Development/padra/build/mtp-five-step-2026-10-25/draft-exl3-artifact/native
+SHA-256 weights.bin:
+985312eda174b32499468fb60291584e63da3b930674ccb0c9a59a700d8e2464
+Kalibrierung SHA-256:
+de82774663535c621ac18bbf9c3f9fc5657f74045ed915593700629af6152e81
+Konvertierung: quantize_draft_exl3.py; Kalibrierung: run_calibration.py und
+draft-exl3-calibration/. Reproduktion erfordert die in SOURCE_PINS.json und
+draft-exl3-artifact/PROTOCOL.json bezeichneten lokalen Modelle/Werkzeuge.
+Die abschließende Engine lädt nur exakt identifizierte Artefakte; alternative
+Kalibrierung/Quantisierung erfordert eigene erneute Qualifikation und Pins.
+
+Validierung und produktive Auswahl
+==================================
+Alle 24 Hosttests bestanden, einschließlich Artefakt-/Format-/Speicherverträgen.
+EXL3: 115 native Fälle mit Q8-Target und 115 mit BF16-Target; D0–D4 mit Reset,
+Append, Checkpoint-Restore, Ringgrenzen, Cancellation, Sampling und Penalties.
+18 Operatorfälle gegen unabhängig reduzierten SIMT-Pfad plus exakte Graph-
+Wiederholung; 6 Fälle je memcheck/synccheck/racecheck, keine Fehler/Hazards.
+12.288 Decoder-Stichproben aus allen 192 Matrizen exakt zum CPU-Decoder.
+APIs D0–D4 mit beiden Heads: Chat, Stream, Stop, Sampling, Tools, Responses und
+Continuation. Frühere Schritte haben ihre zusätzlichen Operator-/Grenz- und
+Override-Prüfungen in den jeweiligen Verzeichnissen.
+
+Der tatsächliche Root-Build build/release-k4/padra-server wurde nach Übernahme
+neu gebaut und separat erneut nativ sowie über die Q8/EXL3-API geprüft.
+Übernahmen erfolgten nur nach Bytevergleich mit dem vorherigen gefrorenen Stand.
+Vorbestehende Soul-Änderungen sind erhalten. Kein Commit, Push oder Deployment.
+
+Startkonfiguration (Modell-/Tokenizer-Pfade wie gewohnt setzen):
+  build/release-k4/padra-server "$PADRA_ARTIFACT" "$PADRA_TOKENIZER_JSON" \
+    "$PADRA_TOKENIZER_SHA256" 8080 600000 32768 2048 0 bf16 \
+    --mtp-artifact "$PADRA_MTP_EXL3_ARTIFACT" --mtp-depth 1 \
+    --mtp-draft-experts exl3 --head-format q8
+
+Ohne --head-format q8 bleibt der gemeinsame Head BF16. Ohne Expert-Formatwahl
+bleibt der Draft BF16. MTP selbst bleibt opt-in. D2–D4 sind semantisch geprüft,
+ihre EXL3-Geschwindigkeit und allgemeine Task-Qualität sind nicht qualifiziert.
+
+Belegverzeichnis:
+/home/sebastian/Development/padra/build/mtp-five-step-2026-10-25
+Wesentliche Einstiege: RESULTS.txt, SOURCE_PINS.json, step5-final-q8/DECISION.json,
+step5-draft-exl3/DECISION.json, shared-head-quality/QUALITY_RESULT.json,
+production-exl3/BUILD.json und QUALIFICATION.json. Das lokale Review-Archiv
+enthält Quellen, Varianten, Messprotokolle/Rohdaten, Kalibrierung und Checksummen;
+große Modell-Payloads und Build-Produkte sind separat referenziert.

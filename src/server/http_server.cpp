@@ -130,7 +130,8 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << ",\"build_q8_prefill_profile\":" << json::Quote(kPadraBuildQ8PrefillProfile)
         << ",\"build_exl3_prefill_transport\":" << json::Quote(kPadraBuildExl3PrefillTransport)
         << ",\"kernel_profile\":" << json::Quote(r.kernel_profile)
-        << ",\"math_profile\":" << json::Quote(r.math_profile)
+        << ",\"math_profile\":" << json::Quote(r.math_profile) << ",\"mtp_depth\":" << r.mtp_depth
+        << ",\"mtp_resident_bytes\":" << r.mtp_resident_bytes
         << ",\"test_backend\":" << (r.model_loads == 0 ? "true" : "false") << "}]}";
     response.set_content(out.str(), "application/json");
   });
@@ -149,12 +150,16 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << m.ready << "\nmellum_model_loads_total " << r.model_loads
         << "\nmellum_weight_uploads_total " << r.weight_uploads << "\nmellum_graph_captures_total "
         << r.graph_captures << "\nmellum_resident_device_bytes " << r.resident_bytes
-        << "\nmellum_required_device_bytes " << r.required_bytes
-        << "\nmellum_post_graph_available_device_bytes " << r.post_graph_available_bytes
-        << "\nmellum_admission_available_device_bytes " << r.admission_available_bytes
-        << "\nmellum_device_budget_gib " << r.device_budget_gib << "\nmellum_prefill_chunk "
-        << r.prefill_chunk << "\nmellum_tokenization_seconds_total " << m.tokenize_seconds
-        << "\nmellum_queue_wait_seconds_total " << m.queue_seconds
+        << "\nmellum_required_device_bytes " << r.required_bytes << "\nmellum_mtp_depth "
+        << r.mtp_depth << "\nmellum_mtp_resident_device_bytes " << r.mtp_resident_bytes
+        << "\nmellum_mtp_groups_total " << r.mtp_groups << "\nmellum_mtp_draft_calls_total "
+        << r.mtp_draft_calls << "\nmellum_mtp_proposed_total " << r.mtp_proposed
+        << "\nmellum_mtp_accepted_total " << r.mtp_accepted << "\nmellum_mtp_ordinary_tails_total "
+        << r.mtp_ordinary_tails << "\nmellum_post_graph_available_device_bytes "
+        << r.post_graph_available_bytes << "\nmellum_admission_available_device_bytes "
+        << r.admission_available_bytes << "\nmellum_device_budget_gib " << r.device_budget_gib
+        << "\nmellum_prefill_chunk " << r.prefill_chunk << "\nmellum_tokenization_seconds_total "
+        << m.tokenize_seconds << "\nmellum_queue_wait_seconds_total " << m.queue_seconds
         << "\nmellum_prefill_seconds_total " << m.prefill_seconds
         << "\nmellum_decode_seconds_total " << m.decode_seconds
         << "\nmellum_first_token_seconds_total " << m.first_token_seconds

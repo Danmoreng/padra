@@ -26,6 +26,9 @@ inline std::string ServerExecutionProfile(int capacity, bool chunks,
          (checkpoint ? "-local-checkpoint-bf16-v1" : "");
 }
 struct RuntimeStats {
+  int mtp_depth = 0;
+  std::uint64_t mtp_resident_bytes = 0, mtp_groups = 0, mtp_draft_calls = 0, mtp_proposed = 0,
+                mtp_accepted = 0, mtp_ordinary_tails = 0;
   int capacity = 8192, prefill_chunk = 2048, device_budget_gib = 0, expert_rate = 4;
   std::uint64_t device_total_bytes = 0, device_free_before_bytes = 0, admission_available_bytes = 0,
                 required_bytes = 0, post_graph_available_bytes = 0;
@@ -74,7 +77,8 @@ public:
        bool controlled_chunks = false,
        NativeContextCapacity capacity = NativeContextCapacity::C8192,
        KVCacheFormat kv_format = KVCacheFormat::BF16, int diagnostic_decode_token = -1,
-       int prefill_chunk = 2048, int device_budget_gib = 0, bool enable_checkpoint = false);
+       int prefill_chunk = 2048, int device_budget_gib = 0, bool enable_checkpoint = false,
+       MtpOptions mtp = {}, std::optional<bool> q8_head = std::nullopt);
   explicit ModelRuntime(std::unique_ptr<RuntimeBackend> backend) : backend_(std::move(backend)) {}
   Status PrepareRequestShape(std::span<const int> ids, int outputs, bool capture_logits = false,
                              SamplingOptions sampling = {}) {

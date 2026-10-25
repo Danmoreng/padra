@@ -3,6 +3,7 @@
 #pragma once
 #include "runtime/model_runtime.h"
 #include "runtime/chunk_graph_contract.h"
+#include "runtime/mtp_memory.h"
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -22,6 +23,12 @@ public:
   explicit CudaModelWorker(InferenceOptions profile)
       : options(std::move(profile)), state(options.capacity), prefix(options.capacity) {
     stats.capacity = options.capacity;
+    stats.mtp_depth = options.mtp.artifact.empty() ? 0 : options.mtp.depth;
+    if (stats.mtp_depth)
+      stats.mtp_resident_bytes =
+          MtpDraftResidentBytes(options.mtp.fp8_experts, options.mtp.exl3_experts) +
+          kMtpVerifyResidentBytes + MtpHiddenBytes(options.prefill_chunk) +
+          (options.server_kv_checkpoint ? kMtpCheckpointBytes : 0);
     stats.expert_rate = options.exl3_rate;
     stats.prefill_chunk = options.prefill_chunk;
     stats.device_budget_gib = options.server_device_budget_gib;
@@ -30,6 +37,8 @@ public:
     stats.checkpoint_enabled = options.server_kv_checkpoint;
     stats.checkpoint_bytes =
         options.server_kv_checkpoint ? KVCheckpointLedger::kLocalSnapshotBytes : 0;
+    if (options.server_kv_checkpoint && !options.mtp.artifact.empty())
+      stats.checkpoint_bytes += kMtpCheckpointBytes;
     if (options.server_kv_checkpoint)
       checkpoint.emplace(options.capacity, NewCheckpointRuntimeBinding());
     options.input_ids.resize(options.capacity, 0);
@@ -325,6 +334,11 @@ public:
   }
   void Publish(const InferenceResult &result) {
     std::lock_guard lock(mutex);
+    stats.mtp_groups += result.mtp_groups;
+    stats.mtp_draft_calls += result.mtp_draft_calls;
+    stats.mtp_proposed += result.mtp_proposed;
+    stats.mtp_accepted += result.mtp_accepted;
+    stats.mtp_ordinary_tails += result.mtp_ordinary_tails;
     if (result.cancelled)
       state.Cancel();
     else
