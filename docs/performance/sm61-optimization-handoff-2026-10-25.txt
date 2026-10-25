@@ -1,0 +1,45 @@
+SM61 optimization checkpoint — paused at user request, 2026-10-25
+
+Hardware: GTX 1070 Max-Q, 8 GiB, compute capability 6.1.
+Branch: codex/pascal-sm61-port. Rebased on main e61f329.
+At shutdown origin/main had advanced to b1abeef; that newer main has NOT
+been integrated. Inspect its changes before the next rebase.
+
+Completed:
+1. Exact Q8_0 prefix checkpoint reuse, including MTP state (7cf35c9).
+   Whole 256-token chunk boundaries preserve the SIMT execution contract.
+   2000-token request with 1536 reused tokens: approximately 4.05x faster
+   prepare plus prefill. See sm61-prefix-reuse-2026-10-25 reports.
+2. Optional K3 DP4A prefill, qualified under the recorded engineering gates
+   (d677eb7). Approximately 498/503 tokens/s for uncached 2k/4k prompts,
+   versus previous 292/296. See sm61-k3-dp4a-2026-10-25 reports for quality,
+   executable code tests, memory use, and approximation limitations.
+3. First decode improvement: aligned K3 word loads preserve decoded bits.
+   Three warm runs: median prefill 505.40/511.31 tokens/s and decode
+   51.97/52.09 tokens/s at 2k/4k. Relative to step 2, observed decode gain
+   3.86%/3.71%; measurements were sequential, not interleaved.
+   All 33 CTest tests passed, focused K3-window memcheck reported zero
+   errors, and all six generated benchmark responses match step 2 exactly.
+   See sm61-k3-word-loads-2026-10-25.json.
+
+Still open (do not treat the four-step goal as complete):
+- Confirm the small word-load gain with interleaved controls as needed.
+- Finish step 3: evaluate MTP depth 2/3 against depth 1 under DP4A;
+  retain only reproducible end-to-end improvements within 8 GiB.
+- Step 4: profile attention/Q8 KV movement. A candidate is finer bounded
+  attention graph lengths (especially 2048), reducing masked future keys.
+  Account for graph memory and capture counts; requalify any rounding change.
+- Re-run cumulative prefix/MTP and HTTP contracts after further changes.
+
+Local reproducibility workspace:
+  /srv/agent/workspaces/padra-sm61-opt-20261025
+Contains immutable step1-bin and step2-bin references, bench.py,
+code_eval.py, quality fixtures/results, full benchmark responses and telemetry.
+Current optimized build: /home/sebastian/padra/build/sm61-k3-dp4a
+The global DP4A CMake default remains OFF; this local build enables it.
+Models and local launch/build helpers:
+  /srv/agent/workspaces/padra-mtp-sm61-20261025
+Main K3, stored shared Q8 output head, EXL3 K4 MTP draft, Q8_0 KV,
+capacity 8192, prefill chunk 256, MTP depth 1. No BF16 output-head variant.
+
+No background optimization is intended while paused. Resume explicitly.

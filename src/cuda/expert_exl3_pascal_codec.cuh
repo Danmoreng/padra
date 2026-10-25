@@ -45,9 +45,16 @@ struct Windows {
     rate = fixed_rate ? fixed_rate : matrix.format == 6 ? 3 : 4;
     const auto* p = matrix.data + tile * (32 * rate);
     const unsigned i = lane * 3;
-    word = rate == 3 ? (unsigned(p[i ^ 3]) << 16) |
-        (unsigned(p[(i + 1) ^ 3]) << 8) | unsigned(p[(i + 2) ^ 3]) :
-        reinterpret_cast<const unsigned*>(p)[lane];
+    if(rate==3){
+      // Native K3 tiles contain 24 aligned words. Join the logical byte
+      // stream with two readonly word loads rather than three byte addresses.
+      // Lane31 needs no bytes from another word: clamp its unused second load
+      // so even the last tile never reads beyond the native payload.
+      const auto* words=reinterpret_cast<const unsigned*>(p);
+      const unsigned at=i/4;
+      const unsigned a=__ldg(words+at),b=__ldg(words+min(at+1,23U));
+      word=__funnelshift_l(b,a,(i&3)*8)>>8;
+    }else word=reinterpret_cast<const unsigned*>(p)[lane];
     previous = Previous(word);
   }
   __device__ __forceinline__ unsigned Low(int half) const {

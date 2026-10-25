@@ -1,0 +1,44 @@
+{
+  "hardware": "GTX 1070 Max-Q 8 GiB / SM61",
+  "baseline_commit": "d677eb7",
+  "change": "K3 lane windows use two aligned readonly word loads and a funnel shift; unchanged decoded bits.",
+  "protocol": "Same saved K3 main, shared Q8 head, EXL3 K4 draft, MTP depth 1, Q8_0 KV, capacity 8192, chunk 256. Three warm repetitions per prompt, 1000 generated tokens, zero cached tokens. Baseline and candidate runs sequential, not interleaved.",
+  "results": {
+    "2000": {
+      "baseline": {
+        "prefill_tps": 498.46928320333166,
+        "decode_tps": 50.041809781796985
+      },
+      "candidate": {
+        "prefill_tps": 505.3982068923951,
+        "decode_tps": 51.97282472201957
+      },
+      "percent_change": {
+        "prefill_tps": 1.3900402537415868,
+        "decode_tps": 3.85880316607774
+      }
+    },
+    "4000": {
+      "baseline": {
+        "prefill_tps": 503.41096849528157,
+        "decode_tps": 50.22996973078771
+      },
+      "candidate": {
+        "prefill_tps": 511.3144180439472,
+        "decode_tps": 52.09488717146349
+      },
+      "percent_change": {
+        "prefill_tps": 1.5699796077724315,
+        "decode_tps": 3.712758440172248
+      }
+    }
+  },
+  "validation": {
+    "ctest": "33/33 passed",
+    "focused_memcheck": "K3 windows: 0 errors",
+    "generated_choices": "All six benchmark responses exactly equal to baseline",
+    "model_contract": "13/13 depth-1 requests exactly match step 2: ids, final logits/hidden hashes, callbacks, cancellation and committed/pending state, including prefix restores."
+  },
+  "raw_artifacts": "/srv/agent/workspaces/padra-sm61-opt-20261025",
+  "limitations": "Small speed differences require interleaved confirmation; no new quality approximation introduced by word loads. Whole-model sanitizer completion is not claimed."
+}

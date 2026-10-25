@@ -17,6 +17,33 @@
 namespace mellum16 {namespace {
 #include "cuda/simt_kernels.cuh"
 void Require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
+__global__ void ReadK3Windows(DeviceMatrix matrix,unsigned* output){
+  const unsigned lane=threadIdx.x,tile=blockIdx.x;
+  const exl3_pascal::Windows window(matrix,tile,lane,3);
+  auto* row=output+(tile*32+lane)*6;
+  row[0]=window.word;row[1]=window.previous;row[2]=window.Low(0);
+  row[3]=window.Low(1);row[4]=window.High(0);row[5]=window.High(1);
+}
+void K3Windows(){
+  constexpr unsigned tiles=1024;
+  std::vector<unsigned char> payload(tiles*96);unsigned seed=0x17a2b3;
+  for(auto& byte:payload){seed=1664525U*seed+1013904223U;byte=seed>>24;}
+  Buffer source(payload.size()),output(tiles*32*6*4);
+  Check(cudaMemcpy(source.p,payload.data(),source.bytes,cudaMemcpyHostToDevice));
+  DeviceMatrix matrix{};matrix.data=source.As<unsigned char>();matrix.format=6;
+  ReadK3Windows<<<tiles,32>>>(matrix,output.As<unsigned>());
+  std::vector<unsigned> actual(tiles*32*6);
+  Check(cudaMemcpy(actual.data(),output.p,output.bytes,cudaMemcpyDeviceToHost));
+  for(unsigned tile=0;tile<tiles;++tile)for(unsigned lane=0;lane<32;++lane){
+    const auto load=[&](unsigned l){const auto* bytes=payload.data()+tile*96;const auto at=l*3;
+      return (unsigned(bytes[at^3])<<16)|(unsigned(bytes[(at+1)^3])<<8)|unsigned(bytes[(at+2)^3]);};
+    const unsigned word=load(lane),previous=load((lane+31)%32);
+    const std::array<unsigned,6> expected{word,previous,(previous<<6)|(word>>18),
+      (previous<<12)|(word>>12),(previous<<18)|(word>>6),word};
+    Require(std::equal(expected.begin(),expected.end(),actual.begin()+(tile*32+lane)*6),
+            "K3 lane windows differ from byte-address oracle");
+  }
+}
 __global__ void CompareFP8Codec(int* bad){const unsigned code=threadIdx.x;if(code>=256)return;const auto original=DecodeFP8FourReference(code*0x01010101U),optimized=DecodeFP8Four(code*0x01010101U);if(__float_as_uint(original.x)!=__float_as_uint(optimized.x) || __float_as_uint(original.y)!=__float_as_uint(optimized.y) || __float_as_uint(original.z)!=__float_as_uint(optimized.z) || __float_as_uint(original.w)!=__float_as_uint(optimized.w))atomicAdd(bad,1);}
 __global__ void CompareLookupCodec(int* bad){__shared__ float lookup[1024];exl3_pascal::InitLookup(lookup);const unsigned state=blockIdx.x*256+threadIdx.x;if(__float_as_uint(exl3_pascal::DecodeLookup(state,lookup))!=__float_as_uint(__half2float(exl3_fp16::Mul1(state))))atomicAdd(bad,1);}
 __global__ void ComparePascalCodec(int* bad){const unsigned state=blockIdx.x*256+threadIdx.x;if(state<65536 && __float_as_uint(exl3_pascal::Decode(state))!=__float_as_uint(__half2float(exl3_fp16::Mul1(state))))atomicAdd(bad,1);}
@@ -42,4 +69,4 @@ void Projection(int part,bool benchmark){
   if(benchmark)for(int i=0;i<5;++i){float before,after;if(i%2){after=Time(opt);before=Time(old);}else{before=Time(old);after=Time(opt);}std::cout<<"part="<<part<<" rows="<<rows<<" cols="<<cols<<" rep="<<i<<" original_ms="<<before<<" pascal_ms="<<after<<" speedup="<<before/after<<'\n';}
 }
 }}
-int main(int argc,char**){try{using namespace mellum16;Buffer bad(4);Check(cudaMemset(bad.p,0,4));ComparePascalCodec<<<256,256>>>(bad.As<int>());CompareLookupCodec<<<256,256>>>(bad.As<int>());CompareFP8Codec<<<1,256>>>(bad.As<int>());Check(cudaDeviceSynchronize());int count=0;Check(cudaMemcpy(&count,bad.p,4,cudaMemcpyDeviceToHost));Require(count==0,"Pascal codec differs in exhaustive test");for(int part=0;part<3;++part)Projection(part,argc>1);std::cout<<"All 65536 codec states and distinct real-shape gate/up/down projections are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{using namespace mellum16;K3Windows();if(argc>1 && std::string(argv[1])=="--k3-windows"){std::cout<<"K3 packed lane windows match byte oracle\n";return 0;}Buffer bad(4);Check(cudaMemset(bad.p,0,4));ComparePascalCodec<<<256,256>>>(bad.As<int>());CompareLookupCodec<<<256,256>>>(bad.As<int>());CompareFP8Codec<<<1,256>>>(bad.As<int>());Check(cudaDeviceSynchronize());int count=0;Check(cudaMemcpy(&count,bad.p,4,cudaMemcpyDeviceToHost));Require(count==0,"Pascal codec differs in exhaustive test");for(int part=0;part<3;++part)Projection(part,argc>1);std::cout<<"All 65536 codec states and distinct real-shape gate/up/down projections are bit-identical\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
