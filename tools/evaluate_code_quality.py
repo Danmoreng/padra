@@ -73,10 +73,11 @@ def main():
     parser.add_argument('--base-url', required=True)
     parser.add_argument('--tasks', type=pathlib.Path, required=True)
     parser.add_argument('--output', type=pathlib.Path, required=True)
+    parser.add_argument('--model', default='mellum21-exl3-k4-research')
     args = parser.parse_args()
     records = []
     for task in json.loads(args.tasks.read_text()):
-        body = {'model': 'mellum21-exl3-k4-research', 'messages': [{'role': 'user', 'content': task['prompt']}],
+        body = {'model': args.model, 'messages': [{'role': 'user', 'content': task['prompt']}],
                 'max_completion_tokens': 384, 'temperature': 0, 'enable_thinking': False}
         request = urllib.request.Request(args.base_url.rstrip('/') + '/v1/chat/completions',
                                          json.dumps(body).encode(), {'Content-Type': 'application/json'})
@@ -91,7 +92,7 @@ def main():
         records.append({'name': task['name'], 'language': task['language'], 'passed': passed,
                         'error': error, 'response': completion})
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        result = {'tasks_sha256': hashlib.sha256(args.tasks.read_bytes()).hexdigest(),
+        result = {'model': args.model, 'tasks_sha256': hashlib.sha256(args.tasks.read_bytes()).hexdigest(),
                   'passed': sum(record['passed'] for record in records), 'total': len(records), 'records': records}
         args.output.write_text(json.dumps(result, indent=2))
         print(task['name'], passed, error or '', flush=True)

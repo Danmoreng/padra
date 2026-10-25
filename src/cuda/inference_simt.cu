@@ -109,9 +109,6 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     const bool stored_q8=head_format==internal::WeightFormat::Q8HeadBlock32;
     if(stored_q8!=o.q8_head)
       return Status(StatusCode::kUnsupported,"SIMT Q8 head option must match the stored checkpoint");
-#if PADRA_PASCAL_DP4A_PREFILL
-    if(o.exl3_rate!=4)return Status(StatusCode::kUnsupported,"approximate DP4A prefill currently requires K4; rebuild with PADRA_PASCAL_DP4A_PREFILL=OFF for K3");
-#endif
 #if PADRA_CUDA_SM != 61
     if(!o.mtp.artifact.empty())return Status(StatusCode::kUnsupported,"SIMT MTP is currently implemented for SM61");
 #endif
@@ -368,7 +365,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
               }
             }else if(fast_math){
 #if PADRA_PASCAL_DP4A_PREFILL
-            exl3_pascal_dp4a::Launch(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);
+            exl3_pascal_dp4a::Launch(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s,o.exl3_rate);
 #else
             simt_batch::ExpertsFast(descriptors,l,part,bids,in,out,bt,groups,counts_per_expert,tiles,tile_count,bad,batch,stream.s);
 #endif
@@ -439,6 +436,13 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     if(q8_kv){
       identity.kernel_profile+=";q8_0-kv-pascal-sync-dp4a";
       identity.math_profile="mellum16-pascal-q8_0-v1;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K"+std::to_string(o.exl3_rate)+"-H128-BF16-input/exact-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router";
+#if PADRA_PASCAL_DP4A_PREFILL
+      if(fast_math && batch){
+        identity.math_profile.replace(0,std::string("mellum16-pascal-q8_0-v1").size(),"mellum16-pascal-q8_0-dp4a-v2");
+        const auto at=identity.math_profile.find("exact-codec/FP32-FMA");
+        identity.math_profile.replace(at,std::string("exact-codec/FP32-FMA").size(),"dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA");
+      }
+#endif
     }
     if(draft)identity.kernel_profile+=";draft-exl3-k4";
     if(o.server_kv_checkpoint)identity.kernel_profile+=";prefix-chunk256-bitcopy";

@@ -43,6 +43,10 @@ context is 8192 tokens with 256-token prefill chunks. On SM61, MTP supports
 D1–D4 with the published EXL3 K4 draft and a shared stored Q8 head. The
 SM120 performance profiles above do not describe Pascal performance.
 
+On SM61, `PADRA_PASCAL_DP4A_PREFILL=ON` selects an approximate INT8 compute
+profile for dense K3/K4 prefill. It preserves the stored model format and shared
+Q8 head; see the [SM61 configuration](docs/development/mtp-porting.md).
+
 ```sh
 cmake -S . -B build/sm61 -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DPADRA_CUDA_ARCHITECTURE=61 -DPADRA_CUDA_BACKEND=simt

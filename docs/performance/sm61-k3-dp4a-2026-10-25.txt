@@ -1,0 +1,62 @@
+SM61 native K3 DP4A Prefill, 2026-10-25
+
+The optional PADRA_PASCAL_DP4A_PREFILL=ON profile supports native K3 and K4.
+K3 reads its packed 24-bit lane windows without expanding resident weights.
+Dense expert projections quantize decoded weights and transformed H128
+activation blocks to INT8, use DP4A, and retain the existing FP32 block combine
+and BF16 output boundary. Sparse tails and ordinary/MTP Decode retain the exact
+codec and FP32 arithmetic. The stored shared Q8 head is unchanged.
+
+The compute profile is approximate, disabled by default, and explicitly named
+mellum16-pascal-q8_0-dp4a-v2 in the Q8_0 runtime identity. It also uses the
+existing 1024/4096/8192 bounded Prefill attention graphs at context 8192.
+K3 and K4 dense kernels use 80 registers and 14784 shared bytes with no spills.
+
+GTX 1070 Max-Q, 8 GiB, native K3, shared Q8 head, EXL3-K4 MTP D1, Q8_0 target
+KV, context 8192, chunk 256. Three warm HTTP runs per length, 1000 output tokens,
+no prompt-cache hits. Prefill includes first selection; Decode counts 999 steps.
+
+Input   Earlier FP32 Prefill    DP4A Prefill median [range]     DP4A Decode
+2000    291.99 tok/s            498.47 [498.40,501.52] tok/s     50.04 tok/s
+4000    296.15 tok/s            503.41 [501.85,503.56] tok/s     50.23 tok/s
+
+Prefill latency is 4.012 / 7.946 seconds, about 70% more throughput than the
+previous profile. The baseline is the earlier same-day repeated measurement,
+not an interleaved paired experiment. Decode arithmetic is unchanged; no
+independent Decode kernel speedup is attributed to this change. Outputs can
+differ from the previous profile because Prefill arithmetic changes.
+Peak observed system-wide VRAM is 5999 MiB, including the enabled prefix
+snapshot allocation. Weights, tokenizer and target KV format are unchanged.
+
+Incremental quality against the previous K3/Q8_0 FP32 engine:
+- Frozen corpus: 18 cases, 16 source documents, 2304 teacher-forced tokens,
+  input lengths 128,1024,2000,4000,8000, full 98304-token vocabulary.
+- Mean delta NLL -0.001148 nat/token; document-bootstrap 95% interval
+  [-0.009459,0.007475]. The upper limit passes the existing +0.01 gate.
+- Mean KL(reference||candidate) 0.007591 nats; Top-1 agreement 98.13%.
+- All 24 executable Python/TypeScript/SQL tasks pass on both engines.
+This qualifies the bounded engineering checks, not original-model equivalence
+or unrestricted coding quality. The server remains quality_status=unqualified.
+
+Validation:
+- All 33 CTest cases pass, including K3/K4 sparse/dense boundaries, zero
+  activations, poisoned outputs and the independent small K3 codec oracle.
+- K3 DP4A operator memcheck completes with zero errors.
+- 26 real-model requests preserve exact ordinary/MTP and restore/fresh results
+  within the new profile: tokens, final logits/hidden state, callbacks and state.
+  Cases include seeded sampling with penalties, prefill/decode cancellation,
+  zero generation and extending a retained prefix snapshot.
+
+Reproduction: configure the SM61/SIMT release build with
+-DPADRA_PASCAL_DP4A_PREFILL=ON and -DPADRA_BUILD_TESTS=ON, then build and run CTest.
+The K3 operator sanitizer is:
+compute-sanitizer --tool memcheck --error-exitcode 99 \
+  build/sm61-k3-dp4a/padra-pascal-dp4a-test --sanitize --k3
+The standalone full-shape timing sweep accepts --k3 without --check.
+Use tools/evaluate_code_quality.py --model mellum21-exl3-k3-research for K3.
+
+Build source SHA256:
+a830d717507507644983e22456a7d96f2da3cb86e33049bc76d06f8c04540cda
+Base commit: 7cf35c9
+Detailed measurements and identities: sm61-k3-dp4a-2026-10-25.json
+Evidence directory: /srv/agent/workspaces/padra-sm61-opt-20261025

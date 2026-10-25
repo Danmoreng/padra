@@ -10,8 +10,11 @@ Pascal performance qualification.
 ## SM61 reproduction
 
 Build with `PADRA_CUDA_ARCHITECTURE=61`, `PADRA_CUDA_BACKEND=simt`,
-`PADRA_PASCAL_DP4A_PREFILL=OFF` and native text enabled. The approximate DP4A
-prefill build remains K4-only. Use the current published K3 directory (stored
+and native text enabled. `PADRA_PASCAL_DP4A_PREFILL=OFF` selects the default FP32
+expert arithmetic. Setting it to `ON` selects approximate INT8 DP4A dense
+prefill for K3 and K4; sparse prefill and ordinary/MTP Decode retain the exact
+codec and FP32 arithmetic. Q8_0 runtime identities explicitly identify this
+compute profile. Use the current published K3 directory (stored
 Q8 head) and `MTP-EXL3-K4/native`; no BF16 output head or duplicate draft head
 is uploaded. For an 8 GiB GPU:
 
@@ -28,8 +31,8 @@ weights, and uses the same per-row attention and Q8 head arithmetic as ordinary
 SM61 decoding. Tentative KV rows are backed up in their stored format and
 restored after rejection. Retained draft rows are repaired using actual target
 hidden states. RNG and penalty counts advance only for emitted target samples.
-BF16 session checkpoints also include draft KV and the preceding target hidden
-row. Session snapshots remain unavailable with Q8_0 KV. Q8_0 selects the target
+BF16 and Q8_0 session checkpoints also include draft KV and the preceding target
+hidden row, retaining complete 256-token prefill chunks. Q8_0 selects the target
 cache; the draft retains its native 1024-row BF16 ring (2 MiB). This does not
 allocate a BF16 output head. SIMT uses a fixed verifier dispatch; SM120 research
 flags do not select alternative SIMT kernels.

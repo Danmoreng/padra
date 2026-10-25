@@ -1,0 +1,296 @@
+{
+  "base_commit": "7cf35c9",
+  "build_source_sha256": "a830d717507507644983e22456a7d96f2da3cb86e33049bc76d06f8c04540cda",
+  "binary_sha256": "d5416b8510803990a60478430a4057ab7f299ebf246d5ee267a393a2fbd3015e",
+  "hardware": "GTX 1070 Max-Q SM61 8192 MiB",
+  "profile": "mellum16-pascal-q8_0-dp4a-v2;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+  "protocol": {
+    "target": "EXL3 K3 stored shared Q8 head",
+    "draft": "EXL3 K4",
+    "mtp_depth": 1,
+    "kv": "q8_0",
+    "capacity": 8192,
+    "chunk": 256,
+    "repetitions": 3,
+    "output_tokens": 1000,
+    "cached_tokens": 0,
+    "warmup_excluded": true,
+    "baseline": "Earlier same-day repeated measurements, not an interleaved paired run"
+  },
+  "results": [
+    {
+      "prompt_tokens": 2000,
+      "prefill_tps": 498.46928320333166,
+      "prefill_tps_min": 498.4024069694328,
+      "prefill_tps_max": 501.51934910672367,
+      "decode_tps": 50.041809781796985,
+      "prefill_s": 4.012283339,
+      "baseline_prefill_tps": 291.98582620853864,
+      "baseline_decode_tps": 49.483458777282785
+    },
+    {
+      "prompt_tokens": 4000,
+      "prefill_tps": 503.41096849528157,
+      "prefill_tps_min": 501.851506608684,
+      "prefill_tps_max": 503.56268110541345,
+      "decode_tps": 50.22996973078771,
+      "prefill_s": 7.9457942919999995,
+      "baseline_prefill_tps": 296.15016935324485,
+      "baseline_decode_tps": 50.163541286755205
+    }
+  ],
+  "peak_vram_mib": 5999.0,
+  "quality": {
+    "reference": "/srv/agent/workspaces/padra-sm61-opt-20261025/k3-quality-reference",
+    "candidate": "/srv/agent/workspaces/padra-sm61-opt-20261025/k3-quality-dp4a",
+    "corpus_sha256": "f9e36b7a3b32da431f330bf7ecd48e6f126430023db1b677bf8c6bbf73fee452",
+    "tokens": 2304,
+    "source_documents": 16,
+    "temperature": 1,
+    "units": "nats, except top1 agreement fraction",
+    "bootstrap_seed": 20261013,
+    "bootstrap_unit": "whole source document",
+    "metrics": {
+      "kl_reference_candidate": {
+        "mean": 0.007590924870603634,
+        "p50": 5.8085312138453414e-05,
+        "p95": 0.03743575460178028,
+        "p99": 0.12024578583362812,
+        "max": 0.6826332149519267,
+        "mean_95_ci": [
+          0.003250995969704939,
+          0.01312390914497059
+        ]
+      },
+      "kl_candidate_reference": {
+        "mean": 0.007417379388424257,
+        "p50": 5.786255587373705e-05,
+        "p95": 0.0382671283905081,
+        "p99": 0.1039416425918572,
+        "max": 0.8289174296248362,
+        "mean_95_ci": [
+          0.0031278436988930623,
+          0.012942647940748408
+        ]
+      },
+      "jensen_shannon": {
+        "mean": 0.0018144325174081172,
+        "p50": 1.4286547248666786e-05,
+        "p95": 0.009350733013498978,
+        "p99": 0.027029910664677845,
+        "max": 0.17377381385895435,
+        "mean_95_ci": [
+          0.0007710214917635645,
+          0.003141593021767512
+        ]
+      },
+      "delta_nll": {
+        "mean": -0.0011475520412391987,
+        "p50": -1.5444472740802447e-06,
+        "p95": 0.09518685367081074,
+        "p99": 0.4951223277801007,
+        "max": 1.3892356842951799,
+        "mean_95_ci": [
+          -0.009458825531487856,
+          0.007475474573592322
+        ]
+      },
+      "top1_agreement": {
+        "mean": 0.9813368055555556,
+        "p50": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "max": 1.0,
+        "mean_95_ci": [
+          0.9682904411764706,
+          0.991796875
+        ]
+      }
+    },
+    "cases": [
+      {
+        "name": "tools/benchmark_http.py",
+        "tokens": 128,
+        "kl_reference_candidate": 0.00220786405815439,
+        "kl_candidate_reference": 0.0021618713114132976,
+        "jensen_shannon": 0.0005411546829377366,
+        "delta_nll": -0.008392714908030011,
+        "top1_agreement": 0.9765625
+      },
+      {
+        "name": "tools/compare_benchmark_runs.py",
+        "tokens": 128,
+        "kl_reference_candidate": 0.00014222528898553163,
+        "kl_candidate_reference": 0.0001952261094859604,
+        "jensen_shannon": 3.973589998837091e-05,
+        "delta_nll": 0.0002861403545503457,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "tests/checkpoint_smoke.py",
+        "tokens": 128,
+        "kl_reference_candidate": 0.032903806156642894,
+        "kl_candidate_reference": 0.03461657190266117,
+        "jensen_shannon": 0.008068312214941342,
+        "delta_nll": 0.05020488908927049,
+        "top1_agreement": 0.9375
+      },
+      {
+        "name": "src/cuda/simt_prefill.cuh",
+        "tokens": 128,
+        "kl_reference_candidate": 0.007590068188935327,
+        "kl_candidate_reference": 0.007682240468349312,
+        "jensen_shannon": 0.001867417310731396,
+        "delta_nll": -0.021337654820583543,
+        "top1_agreement": 0.96875
+      },
+      {
+        "name": "src/cuda/expert_exl3_prefill_simt.cuh",
+        "tokens": 128,
+        "kl_reference_candidate": 0.015920401059502105,
+        "kl_candidate_reference": 0.01449998404710997,
+        "jensen_shannon": 0.003688400853269526,
+        "delta_nll": 0.011911686727491438,
+        "top1_agreement": 0.96875
+      },
+      {
+        "name": "src/cuda/simt_attention.cuh",
+        "tokens": 128,
+        "kl_reference_candidate": 0.011697800558023679,
+        "kl_candidate_reference": 0.011217061335803434,
+        "jensen_shannon": 0.0027893721094023978,
+        "delta_nll": -0.00601517623524497,
+        "top1_agreement": 0.96875
+      },
+      {
+        "name": "docs/pascal-sm61-validation.md",
+        "tokens": 128,
+        "kl_reference_candidate": 0.0020777292906859,
+        "kl_candidate_reference": 0.002250782668880101,
+        "jensen_shannon": 0.000499728343596092,
+        "delta_nll": 0.00199240142136596,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "docs/pascal-sm61-performance-results.md",
+        "tokens": 128,
+        "kl_reference_candidate": 0.0002379569094503616,
+        "kl_candidate_reference": 0.00022138052174531814,
+        "jensen_shannon": 4.971742698407071e-05,
+        "delta_nll": -0.0001432238535873457,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "docs/pascal-sm61-performance-plan.md",
+        "tokens": 128,
+        "kl_reference_candidate": 0.018827815993091676,
+        "kl_candidate_reference": 0.018345765644830835,
+        "jensen_shannon": 0.004565066952710321,
+        "delta_nll": 0.017222123156332418,
+        "top1_agreement": 0.953125
+      },
+      {
+        "name": "src/runtime/server_memory.h",
+        "tokens": 128,
+        "kl_reference_candidate": 0.0164570908419739,
+        "kl_candidate_reference": 0.01687648399582707,
+        "jensen_shannon": 0.004085885583972288,
+        "delta_nll": -0.022871531164467114,
+        "top1_agreement": 0.9609375
+      },
+      {
+        "name": "src/runtime/model_runtime.cpp",
+        "tokens": 128,
+        "kl_reference_candidate": 6.781654820771887e-05,
+        "kl_candidate_reference": 5.9200522398745554e-05,
+        "jensen_shannon": 1.5029217031901546e-05,
+        "delta_nll": -4.889219315340763e-05,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "src/runtime/inference.h",
+        "tokens": 128,
+        "kl_reference_candidate": 0.000151275768439941,
+        "kl_candidate_reference": 0.000390531468963601,
+        "jensen_shannon": 4.710107154324986e-05,
+        "delta_nll": 0.00016004824415938063,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "german-cache",
+        "tokens": 128,
+        "kl_reference_candidate": 0.025822172827837612,
+        "kl_candidate_reference": 0.023208221711544262,
+        "jensen_shannon": 0.005917304421061469,
+        "delta_nll": -0.043953921599820624,
+        "top1_agreement": 0.9296875
+      },
+      {
+        "name": "german-performance",
+        "tokens": 128,
+        "kl_reference_candidate": 0.0022914778035819814,
+        "kl_candidate_reference": 0.0015471837421047428,
+        "jensen_shannon": 0.00042689621243417974,
+        "delta_nll": 0.00033001971560055903,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "typescript",
+        "tokens": 128,
+        "kl_reference_candidate": 8.7955650230728e-06,
+        "kl_candidate_reference": 7.61573162663509e-06,
+        "jensen_shannon": 2.0134680719289493e-06,
+        "delta_nll": -2.1332568812649124e-05,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "sql",
+        "tokens": 128,
+        "kl_reference_candidate": 1.2009141361708678e-05,
+        "kl_candidate_reference": 1.1408446903644121e-05,
+        "jensen_shannon": 2.786581490696359e-06,
+        "delta_nll": 6.649449619798342e-06,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "tools/compare_benchmark_runs.py-8k",
+        "tokens": 128,
+        "kl_reference_candidate": 8.887771017827718e-06,
+        "kl_candidate_reference": 9.063355753040451e-06,
+        "jensen_shannon": 2.2067120447621717e-06,
+        "delta_nll": -4.8566956242671515e-06,
+        "top1_agreement": 1.0
+      },
+      {
+        "name": "german-performance-8k",
+        "tokens": 128,
+        "kl_reference_candidate": 0.00021145389994978753,
+        "kl_candidate_reference": 0.0002122360062354941,
+        "jensen_shannon": 5.165625113438602e-05,
+        "delta_nll": 1.940913862795882e-05,
+        "top1_agreement": 1.0
+      }
+    ]
+  },
+  "code_tasks": {
+    "reference": {
+      "passed": 24,
+      "total": 24,
+      "tasks_sha256": "f7d4393c68bfa2bdd24f9ac233a082bb39b23cef13dbba72759c2c4719e5c54e"
+    },
+    "dp4a": {
+      "passed": 24,
+      "total": 24,
+      "tasks_sha256": "f7d4393c68bfa2bdd24f9ac233a082bb39b23cef13dbba72759c2c4719e5c54e"
+    }
+  },
+  "validation": {
+    "ctest_passed": 33,
+    "ctest_failed": 0,
+    "operator_memcheck_errors": 0,
+    "restore_fresh_and_ordinary_mtp_exact_requests": 26,
+    "nll_preservation_gate": 0.01,
+    "nll_preservation_passed": true
+  },
+  "evidence_directory": "/srv/agent/workspaces/padra-sm61-opt-20261025"
+}
