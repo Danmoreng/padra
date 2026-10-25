@@ -21,12 +21,12 @@ template<int N=128,int K=16,int R=(N==128?4:2)> __global__ void ProjectionFast(c
     // Eight native K16/N16 codec tiles, one per warp.
     const int kt=warp/(N/16),nt=warp%(N/16),ki=(lane&3)*2,col=lane/4;
     const std::uint64_t at=std::uint64_t(base/16+kt)*(matrix.rows/16)+first/16+nt;
-    const unsigned word=reinterpret_cast<const unsigned*>(matrix.data+at*128)[lane];
-    const unsigned previous=exl3_pascal::Previous(word);
+    const exl3_pascal::Windows windows(matrix,at,lane);
+
     #pragma unroll
     for(int half=0;half<2;++half){const int k=ki+half*8;
-      const float2 lo=exl3_pascal::PairLookup(__funnelshift_r(word,previous,half==0?24:16),codec);
-      const float2 hi=exl3_pascal::PairLookup(half==0?__funnelshift_r(word,word,8):word,codec);
+      const float2 lo=exl3_pascal::PairLookup(windows.Low(half),codec,windows.rate);
+      const float2 hi=exl3_pascal::PairLookup(windows.High(half),codec,windows.rate);
       weights[kt*16+k][nt*16+col]=lo.x;
       weights[kt*16+k+1][nt*16+col]=lo.y;
       weights[kt*16+k][nt*16+col+8]=hi.x;

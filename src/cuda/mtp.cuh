@@ -175,6 +175,7 @@ struct Draft {
   Buffer workspace{kWorkspaceBytes};
   Buffer ids{8 * sizeof(int)};
   DeviceMatrix embedding, head;
+  float *simtScratch = nullptr;
   unsigned char *headInput; // Shared scratch, no duplicate head weights.
   const internal::MtpModel &model;
   const float *rope;
@@ -185,9 +186,9 @@ struct Draft {
 
   Draft(const internal::MtpModel &source, DeviceMatrix sharedEmbedding, DeviceMatrix sharedHead,
         const float *localRope, int ropeCapacity, cudaStream_t stream,
-        unsigned char *sharedHeadInput = nullptr)
+        unsigned char *sharedHeadInput = nullptr, float *sharedSimtScratch = nullptr)
       : weights(source.weights.size()), embedding(sharedEmbedding), head(sharedHead),
-        headInput(sharedHeadInput), model(source), rope(localRope), capacity(ropeCapacity) {
+        simtScratch(sharedSimtScratch), headInput(sharedHeadInput), model(source), rope(localRope), capacity(ropeCapacity) {
     if (embedding.format != 0 || (head.format != 0 && head.format != 7) ||
         (head.format == 7 && !headInput) || embedding.rows != kVocabulary ||
         head.rows != kVocabulary || embedding.cols != kHidden || head.cols != kHidden ||
@@ -368,6 +369,11 @@ struct Draft {
     Route<<<1, 1, 0, s>>>(routing, ids.As<int>(), routingWeights, bad);
     Record(capture, "routing_weights", routingWeights, 8);
     const bool exl3 = Matrix("ffn_gate_exps").format == 3;
+#if defined(PADRA_MTP_SIMT)
+    if(!exl3 || !simtScratch)throw std::runtime_error("SIMT MTP requires EXL3 draft experts and scratch");
+    exl3_selected::Launch(descriptors.As<DeviceMatrix>(),0,0,ids.As<int>(),normalized,gate,simtScratch,8,bad,s,false,4);
+    exl3_selected::Launch(descriptors.As<DeviceMatrix>(),0,1,ids.As<int>(),normalized,up,simtScratch,8,bad,s,false,4);
+#else
     if (exl3)
       exl3_mma_dual::Projection<4><<<dim3(7, 8, 2), 256, 0, s>>>(
           descriptors.As<DeviceMatrix>(), 0, 0, ids.As<int>(), normalized, gate, up, 8, bad);
@@ -377,16 +383,21 @@ struct Draft {
       ExpertWarp<<<dim3(224, 8), 128, 0, s>>>(descriptors.As<DeviceMatrix>(), 0, 1, ids.As<int>(),
                                               normalized, up, bad);
     }
+#endif
     Record(capture, "gate", gate, 8 * 896);
     Record(capture, "up", up, 8 * 896);
     Activate<<<56, 128, 0, s>>>(gate, up);
     Record(capture, "activated", gate, 8 * 896);
+#if defined(PADRA_MTP_SIMT)
+    exl3_selected::Launch(descriptors.As<DeviceMatrix>(),0,2,ids.As<int>(),gate,down,simtScratch,8,bad,s,false,4);
+#else
     if (exl3)
       exl3_mma_dual::Projection<4><<<dim3(18, 8), 256, 0, s>>>(
           descriptors.As<DeviceMatrix>(), 0, 2, ids.As<int>(), gate, down, nullptr, 8, bad);
     else
       ExpertWarp<<<dim3(576, 8), 128, 0, s>>>(descriptors.As<DeviceMatrix>(), 0, 2, ids.As<int>(),
                                               gate, down, bad);
+#endif
     Record(capture, "down", down, 8 * 2304);
     Combine<<<18, 128, 0, s>>>(x, down, routingWeights, bad);
     Record(capture, "residual", x, 2304);

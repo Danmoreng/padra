@@ -37,10 +37,11 @@ the pinned native K3/K4/K6 artifact identities.
 ## Pascal / portable SIMT backend
 
 The separate SIMT backend supports SM61 and newer, including the GTX 1070,
-with CUDA Toolkit 12.x for Pascal. It uses the pinned EXL3 K4 artifact,
-BF16 KV and an 8192-token default context with 256-token chunks. MTP,
-Q8/Q8_0 KV and the stored shared Q8 head require additional SIMT porting;
-the SM120 GPU profiles above do not enable these features on Pascal.
+with CUDA Toolkit 12.x for Pascal. It accepts pinned EXL3 K3/K4 artifacts,
+including stored shared Q8 heads, with BF16 or native Q8_0 KV. The default
+context is 8192 tokens with 256-token prefill chunks. On SM61, MTP supports
+D1–D4 with the published EXL3 K4 draft and a shared stored Q8 head. The
+SM120 performance profiles above do not describe Pascal performance.
 
 ```sh
 cmake -S . -B build/sm61 -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -55,7 +56,8 @@ Pascal; use a CUDA 12.x compiler and toolkit.
 SIMT prefill runs by layer in batches of up to 256 rows, with staged local KV
 and reusable decode graphs. Offline captures, operator timing and teacher replay
 are available through `PADRA_BUILD_DIAGNOSTICS=ON`. See the
-[Pascal performance report](docs/pascal-sm61-performance-results.md) for measurements.
+[Pascal performance report](docs/pascal-sm61-performance-results.md) for measurements
+and [MTP reproduction notes](docs/development/mtp-porting.md) for the SM61 configuration.
 
 ## Build
 

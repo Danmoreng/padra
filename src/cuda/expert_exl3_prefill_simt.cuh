@@ -30,7 +30,7 @@ __global__ void InputHad(const DeviceMatrix* matrices,int layer,int part,const i
   for(int j=0;j<4;++j){const float value=B(values[j]);transformed[pair*m.cols+first+j]=value;Finite(value,bad);}
 }
 // Weights decode once per eight expert rows. Original K16/eight-warp FMA order.
-template<bool SparseOnly=false,int DenseTail=0> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,const float* input,float* output,int* bad){
+template<bool SparseOnly=false,int DenseTail=0,int Rows=8,int Rate=0> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,const float* input,float* output,int* bad){
   if(blockIdx.y>=static_cast<unsigned>(*total))return;
   const auto tile=tiles[blockIdx.y];const auto m=matrices[(layer*64+tile.expert)*3+part];
   if constexpr(SparseOnly){
@@ -38,33 +38,35 @@ template<bool SparseOnly=false,int DenseTail=0> __global__ void Projection(const
     else if(counts[tile.expert]>=32)return;
   }
   const int lane=threadIdx.x&31,warp=threadIdx.x/32,base=blockIdx.x*128,col=lane/4,ki=(lane&3)*2;
-  __shared__ int pairs[8];
-  if(threadIdx.x<8)pairs[threadIdx.x]=tile.begin+threadIdx.x<counts[tile.expert]?groups[tile.expert*kSimtBatch+tile.begin+threadIdx.x]:-1;
+  __shared__ float codec[Rows<=5?1024:1];
+  if constexpr(Rows<=5)exl3_pascal::InitLookup(codec);
+  __shared__ int pairs[Rows];
+  if(threadIdx.x<Rows)pairs[threadIdx.x]=tile.begin+threadIdx.x<counts[tile.expert]?groups[tile.expert*kSimtBatch+tile.begin+threadIdx.x]:-1;
   __syncthreads();
-  __shared__ float transformed[8][128],raw[8][128];float low[8]={},high[8]={};
+  __shared__ float transformed[Rows][128],raw[Rows][128];float low[Rows]={},high[Rows]={};
   for(int at=0;at<m.cols;at+=128){
-    for(int i=threadIdx.x;i<8*128;i+=256){const int r=i/128,c=i%128;transformed[r][c]=pairs[r]>=0?input[pairs[r]*m.cols+at+c]:0.f;}__syncthreads();
+    for(int i=threadIdx.x;i<Rows*128;i+=256){const int r=i/128,c=i%128;transformed[r][c]=pairs[r]>=0?input[pairs[r]*m.cols+at+c]:0.f;}__syncthreads();
     #pragma unroll
     for(int k=0;k<128;k+=16){
       const std::uint64_t offset=std::uint64_t((at+k)/16)*(m.rows/16)+base/16+warp;
-      const unsigned word=reinterpret_cast<const unsigned*>(m.data+offset*128)[lane];
-      const unsigned previous=exl3_pascal::Previous(word);
+      const exl3_pascal::Windows windows(m,offset,lane,Rate);
+
       #pragma unroll
       for(int half=0;half<2;++half){const int index=ki+half*8;
-        const float2 a=exl3_pascal::Pair(__funnelshift_r(word,previous,half==0?24:16));
-        const float2 b=exl3_pascal::Pair(half==0?__funnelshift_r(word,word,8):word);
+        const float2 a=Rows<=5?exl3_pascal::PairLookup(windows.Low(half),codec,windows.rate):exl3_pascal::Pair(windows.Low(half),windows.rate);
+        const float2 b=Rows<=5?exl3_pascal::PairLookup(windows.High(half),codec,windows.rate):exl3_pascal::Pair(windows.High(half),windows.rate);
         #pragma unroll
-        for(int r=0;r<8;++r)if(pairs[r]>=0){const float x=transformed[r][k+index],y=transformed[r][k+index+1];low[r]=__fmaf_rn(x,a.x,low[r]);low[r]=__fmaf_rn(y,a.y,low[r]);high[r]=__fmaf_rn(x,b.x,high[r]);high[r]=__fmaf_rn(y,b.y,high[r]);}
+        for(int r=0;r<Rows;++r)if(pairs[r]>=0){const float x=transformed[r][k+index],y=transformed[r][k+index+1];low[r]=__fmaf_rn(x,a.x,low[r]);low[r]=__fmaf_rn(y,a.y,low[r]);high[r]=__fmaf_rn(x,b.x,high[r]);high[r]=__fmaf_rn(y,b.y,high[r]);}
       }
     }
     __syncthreads();
   }
   #pragma unroll
-  for(int r=0;r<8;++r){for(int d=1;d<=2;d*=2){low[r]=__fadd_rn(low[r],__shfl_xor_sync(0xffffffffU,low[r],d));high[r]=__fadd_rn(high[r],__shfl_xor_sync(0xffffffffU,high[r],d));}if((lane&3)==0){raw[r][warp*16+col]=low[r];raw[r][warp*16+col+8]=high[r];}}
+  for(int r=0;r<Rows;++r){for(int d=1;d<=2;d*=2){low[r]=__fadd_rn(low[r],__shfl_xor_sync(0xffffffffU,low[r],d));high[r]=__fadd_rn(high[r],__shfl_xor_sync(0xffffffffU,high[r],d));}if((lane&3)==0){raw[r][warp*16+col]=low[r];raw[r][warp*16+col+8]=high[r];}}
   __syncthreads();
   if(!warp){
     #pragma unroll
-    for(int r=0;r<8;++r){float values[4];
+    for(int r=0;r<Rows;++r){float values[4];
       #pragma unroll
       for(int j=0;j<4;++j)values[j]=raw[r][lane*4+j];
       exl3_fp16::H128(values);
@@ -78,5 +80,14 @@ inline void Experts(const DeviceMatrix* matrices,int layer,int part,const int* i
   const int cols=part==2?896:2304,rows=part==2?2304:896;
   InputHad<<<dim3(cols/128,kSimtBatch*2),128,0,stream>>>(matrices,layer,part,ids,input,transformed,bad,batch);
   Projection<<<dim3(rows/128,kExpertTiles),256,0,stream>>>(matrices,layer,part,groups,counts,tiles,total,transformed,output,bad);
+}
+}
+
+namespace simt_batch {
+template<int Rows,int Rate=0> inline void ExpertsSmall(const DeviceMatrix* matrices,int layer,int part,const int* ids,const float* input,float* output,float* transformed,const int* groups,const int* counts,const ExpertTile* tiles,const int* total,int* bad,const SimtBatch* batch,cudaStream_t stream){
+  static_assert(Rows>=2 && Rows<=5);
+  const int cols=part==2?896:2304,rows=part==2?2304:896;
+  InputHad<<<dim3(cols/128,Rows*2),128,0,stream>>>(matrices,layer,part,ids,input,transformed,bad,batch);
+  Projection<false,0,Rows,Rate><<<dim3(rows/128,64),256,0,stream>>>(matrices,layer,part,groups,counts,tiles,total,transformed,output,bad);
 }
 }

@@ -20,13 +20,13 @@ __device__ __forceinline__ __half2 DecodePair(unsigned word,unsigned input,unsig
   return __hfma2(__halves2half2(__ushort_as_half(0x6400+a),__ushort_as_half(0x6400+b)),
     __half2half2(__ushort_as_half(0x1eee)),__half2half2(__ushort_as_half(0xc931)));
 }
-template<bool Reference=false> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* ids,
+template<bool Reference=false,int Rate=0> __global__ void Projection(const DeviceMatrix* matrices,int layer,int part,const int* ids,
     const float* input,float* output,int pairs,int* bad,const int* active_pairs=nullptr){
   const int pair=blockIdx.y,lane=threadIdx.x&31,warp=threadIdx.x/32;
   if(active_pairs && pair>=*active_pairs*8)return;
   const auto m=exl3_expert::Matrix(matrices,layer,part,ids,pair,bad);
   const int base=blockIdx.x*128,col=lane/4,ki=(lane%4)*2;
-  if(pair>=pairs||m.format!=3||base+128>m.rows||m.cols%16){if(!threadIdx.x)atomicExch(bad,1);return;}
+  if(pair>=pairs||(m.format!=3 && m.format!=6)||base+128>m.rows||m.cols%16){if(!threadIdx.x)atomicExch(bad,1);return;}
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
   __shared__ float codec[1024];if constexpr(!Reference)exl3_pascal::InitLookup(codec);
 #endif
@@ -37,9 +37,10 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
   float low=0,high=0;
   for(int k=0;k<m.cols;k+=16){
     const std::uint64_t tile=std::uint64_t(k/16)*std::uint64_t(m.rows/16)+base/16+warp;
-    const unsigned word=reinterpret_cast<const unsigned*>(m.data+tile*128)[lane];
+    const exl3_pascal::Windows windows(m,tile,lane,Rate);
+    const unsigned word=windows.word;
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
-    const unsigned previous=Reference?0:exl3_pascal::Previous(word);
+
 #endif
     #pragma unroll
     for(int half=0;half<2;++half){
@@ -47,11 +48,14 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
       float2 a,b;
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 610
       if constexpr(!Reference){
-        a=exl3_pascal::PairLookup(__funnelshift_r(word,previous,half==0?24:16),codec);
-        b=exl3_pascal::PairLookup(half==0?__funnelshift_r(word,word,8):word,codec);
+        a=exl3_pascal::PairLookup(windows.Low(half),codec,windows.rate);
+        b=exl3_pascal::PairLookup(windows.High(half),codec,windows.rate);
       }else
 #endif
-      {a=__half22float2(DecodePair(word,index,col));b=__half22float2(DecodePair(word,index,col+8));}
+      {if(m.format==6){
+        a=make_float2(exl3_expert::Weight(m,k+index,base+warp*16+col),exl3_expert::Weight(m,k+index+1,base+warp*16+col));
+        b=make_float2(exl3_expert::Weight(m,k+index,base+warp*16+col+8),exl3_expert::Weight(m,k+index+1,base+warp*16+col+8));
+      }else{a=__half22float2(DecodePair(word,index,col));b=__half22float2(DecodePair(word,index,col+8));}}
       low=__fmaf_rn(x,a.x,low);low=__fmaf_rn(y,a.y,low);
       high=__fmaf_rn(x,b.x,high);high=__fmaf_rn(y,b.y,high);
     }
@@ -65,7 +69,7 @@ template<bool Reference=false> __global__ void Projection(const DeviceMatrix* ma
     for(int j=0;j<4;++j){const int i=base+index+j;const float value=B(__fmul_rn(v[j],__half2float(__ushort_as_half(m.svh[i]))));if(!isfinite(value))atomicExch(bad,1);output[pair*m.rows+i]=value;}}
 }
 inline void Launch(const DeviceMatrix* matrices,int layer,int part,const int* ids,
-    const float* input,float* output,float* scratch,int pairs,int* bad,cudaStream_t stream,bool reference=false){
+    const float* input,float* output,float* scratch,int pairs,int* bad,cudaStream_t stream,bool reference=false,int rate=0){
   const int rows=part==2?2304:896,cols=part==2?896:2304;
 #if defined(PADRA_CUDA_SM) && PADRA_CUDA_SM == 61
   if(!reference)exl3_pascal::InputHad<<<dim3(cols/128,(pairs+3)/4),128,0,stream>>>(matrices,layer,part,ids,input,scratch,pairs,bad);
@@ -73,6 +77,8 @@ inline void Launch(const DeviceMatrix* matrices,int layer,int part,const int* id
 #endif
   exl3_expert::InputHad<<<dim3(cols/128,pairs),128,0,stream>>>(matrices,layer,part,ids,input,scratch,pairs,bad);
   if(reference)Projection<true><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
+  else if(rate==3)Projection<false,3><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
+  else if(rate==4)Projection<false,4><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
   else Projection<false><<<dim3(rows/128,pairs),256,0,stream>>>(matrices,layer,part,ids,scratch,output,pairs,bad);
 }
 }

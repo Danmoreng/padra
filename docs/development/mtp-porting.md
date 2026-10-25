@@ -1,11 +1,46 @@
 # MTP porting and reproduction
 
-The MTP CUDA implementation requires SM120/SM120a. The 8 GB profile is a
-memory/precision configuration, not Pascal MTP support. This branch contains a
-separate SM61 SIMT backend for ordinary K4 decoding, but its draft/verifier,
-shared Q8 head and Q8/Q8_0 KV paths still need porting. These options fail
-explicitly on SIMT; changing only `PADRA_CUDA_ARCHITECTURE` is insufficient.
-MTP operator probes are restricted to the SM120 backend.
+MTP has separate SM120 and SM61 CUDA implementations. The SM61 backend uses
+SIMT FP32 expert projections, a shared stored Q8 head and the pinned EXL3 K4
+draft. Target artifacts may be K3 or K4. BF16 and native rotated Q8_0 KV are
+supported; the different legacy `q8` head-scale cache layout is rejected.
+CUDA 12.x is required to build for Pascal. The SM120 8 GB profile is not a
+Pascal performance qualification.
+
+## SM61 reproduction
+
+Build with `PADRA_CUDA_ARCHITECTURE=61`, `PADRA_CUDA_BACKEND=simt`,
+`PADRA_PASCAL_DP4A_PREFILL=OFF` and native text enabled. The approximate DP4A
+prefill build remains K4-only. Use the current published K3 directory (stored
+Q8 head) and `MTP-EXL3-K4/native`; no BF16 output head or duplicate draft head
+is uploaded. For an 8 GiB GPU:
+
+```sh
+build/sm61/padra-server /models/K3/native /models/K3/tokenizer.json \
+  58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a \
+  8080 600000 8192 256 8 q8_0 \
+  --head-format q8 --mtp-artifact /models/MTP-EXL3-K4/native \
+  --mtp-draft-experts exl3 --mtp-depth 1
+```
+
+The verifier batches 2–5 target rows, shares FP8 weight reads and grouped EXL3
+weights, and uses the same per-row attention and Q8 head arithmetic as ordinary
+SM61 decoding. Tentative KV rows are backed up in their stored format and
+restored after rejection. Retained draft rows are repaired using actual target
+hidden states. RNG and penalty counts advance only for emitted target samples.
+BF16 session checkpoints also include draft KV and the preceding target hidden
+row. Session snapshots remain unavailable with Q8_0 KV. Q8_0 selects the target
+cache; the draft retains its native 1024-row BF16 ring (2 MiB). This does not
+allocate a BF16 output head. SIMT uses a fixed verifier dispatch; SM120 research
+flags do not select alternative SIMT kernels.
+
+Enable `PADRA_BUILD_DIAGNOSTICS=ON` for `padra-simt-qualify`, or
+`PADRA_ENABLE_MTP_PROBES=ON` for the artifact-backed `padra-mtp-probe` on either
+backend. CTest's `simt-k3-experts`, `simt-verifier` and `simt-mtp-operators`
+exercise the independent expert/projection references, encoded-cache attention
+oracle and byte-level ring rollback. `padra-mtp-operators` below remains an
+SM120-specific operator probe. GPU performance depends on speculation depth and
+acceptance; enabled MTP is not a speed guarantee.
 
 ## Relevant execution paths
 

@@ -158,3 +158,65 @@ the chosen 1.20 ms default; eight-query Prefill is about 7.43 ms versus 5.61 ms.
 These later candidate measurements are in `attention-padded-direct-comparison.txt`.
 The five paired serving measurements above identify the unchanged chosen
 production path at `640c662`, independently of this experimental update.
+
+
+## Native K3, shared Q8 head and MTP on SM61 (2026-10-25)
+
+The native K3 package and matching EXL3-K4 draft run on the GTX 1070 Max-Q
+with the stored Q8 head shared between target and draft. The target uses native
+Q8_0 KV; the draft retains its 2 MiB BF16 ring. Context capacity is 8192,
+physical prefill batch 256 and device budget 8 GiB. CUDA 12.4, GCC 13 and driver
+580.178.04 were used. The native weights total 5,757,078,016 bytes (5.362 GiB).
+The measured peak GPU allocation, including CUDA overhead, is 5941 MiB.
+
+The published package is
+`danmoreng/Mellum2.1-12B-A2.5B-Thinking-Padra-EXL3`, revision
+`c9029d1ace9e891ab41bee380f05f0a61c99bb79`. The K3 weight SHA256 is
+`bfa5157b1bcf8919399023f9f943129044835844cc8354cb58ec9dada65299a9`
+and the EXL3 draft weight SHA256 is
+`985312eda174b32499468fb60291584e63da3b930674ccb0c9a59a700d8e2464`.
+
+Three warm HTTP repetitions with D1 use the same frozen 2000/4000-token prompts
+as the earlier llama.cpp measurements, greedy sampling and exactly 1000 output
+tokens. Every request reports zero cached prompt tokens. No compilation or other
+GPU work runs concurrently with these measurements. Decode counts 999 forward
+steps; prefill includes first selection. D0 and D2 are single-run long controls.
+
+| Engine / configuration | Runs | 2000 input: prefill tok/s | 2000 input: decode tok/s | 4000 input: prefill tok/s | 4000 input: decode tok/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Padra K3, Q8 head, Q8_0 target KV, ordinary | 1 | 310.14 | 44.51 | 314.56 | 43.82 |
+| Padra K3, Q8 head, EXL3 MTP D1 | 3 | 291.99 | 49.48 | 296.15 | 50.16 |
+| Padra K3, Q8 head, EXL3 MTP D2 | 1 | 291.80 | 50.97 | 296.10 | 47.93 |
+| llama.cpp IQ3_XS, Q8_0 MTP | 3 | 805.59 | 64.14 | 823.03 | 62.48 |
+| llama.cpp IQ4_XS, Q8_0 MTP | 3 | 836.49 | 76.40 | 846.61 | 74.15 |
+
+D1 decode ranges are 49.45–49.62 and 50.16–50.23 tok/s. Median HTTP totals are
+27.042 and 33.429 seconds. D1 improves native decode by about 11–14% over the
+single ordinary controls. D2 is slightly faster on the shorter control and slower
+on the longer one; D1 is the balanced launch-script default. **The llama.cpp
+speed target remains unmet.** The native expert projections remain the largest
+measured verifier cost. These are different quantizations, not a quality-equivalent
+comparison. The llama.cpp figures come from the earlier same-day three-run study
+at commit `2280f0fd163b03d4331d49e08460f66502e35854`, not an interleaved experiment.
+
+All 31 host/GPU tests pass. Artifact-backed tests cover 45 Q8_0 requests over
+D0–D4, another nine final D2 requests, and 22 BF16-KV requests over D0/D2 including
+checkpoint restore. Tokens, final logits, final hidden rows, callbacks and
+committed/pending state match the corresponding ordinary run exactly. This also
+covers seeded sampling, penalties, local-ring boundaries, cancellation and append.
+The long HTTP outputs match across D0/D1/D2 and all repeated D1 runs. A natural-EOS
+HTTP fixture returns the same three-token `OK.` response with and without MTP.
+CUDA Memcheck reports zero errors in a native Q8/MTP model run. The Q8 attention
+and encoded rollback tests pass Racecheck and Synccheck; their independent oracles
+use FP64 attention on encoded data and byte comparisons respectively. Broader
+model-quality qualification remains open. SM120 was not rebuilt with CUDA 12.4.
+
+The complete local evidence is in
+`/srv/agent/workspaces/padra-mtp-sm61-20261025/`: `RESULTS.txt`, `summary.json`,
+`full-initial/`, `final-repeated/`, contract results, sanitizer logs and test logs.
+Every benchmark server's source identity is stored in its `models.json`. The
+repeated D1 build source SHA256 is
+`bebe10a4dad3ffc473a8a520bfc1032c0aab6d96aaaaac294f34d6cd319b6800`.
+`launch-padra-mtp-q8.sh [PORT] [DEPTH]` starts the measured configuration, and
+`build-padra-sm61.sh` reproduces the local build. See the
+[MTP reproduction notes](development/mtp-porting.md) for portable commands.

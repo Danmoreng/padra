@@ -52,7 +52,7 @@ __device__ __forceinline__ int Load4(const signed char *p) {
 template <bool Controlled = false>
 __global__ void EncodeKV(const float *k, const float *v, CacheRow *kc, CacheRow *vc, int tokens,
                          int *bad, const DecodeState *state = nullptr, int cap = 0,
-                         int maximum = 8192) {
+                         int maximum = 8192, const int* active_rows = nullptr) {
   if (!k || !v || !kc || !vc || !bad || tokens < 1 || tokens > 2048 || blockDim.x != Threads ||
       blockDim.y != 1 || blockDim.z != 1 || gridDim.x != unsigned(tokens) || gridDim.y != 1 ||
       gridDim.z != 1 ||
@@ -62,6 +62,7 @@ __global__ void EncodeKV(const float *k, const float *v, CacheRow *kc, CacheRow 
       atomicExch(bad, 1);
     return;
   }
+  if(active_rows && blockIdx.x>=unsigned(*active_rows))return;
   const int row = blockIdx.x, lane = threadIdx.x % 32, head = threadIdx.x / 32;
   const int target = Controlled ? state->position % cap : row;
   float a[4], b[4];
@@ -152,10 +153,14 @@ __device__ __forceinline__ int SharedIndex(int r) {
   return r * 32 + (r / 4) * 4;
 }
 __device__ __forceinline__ void CopyAsync16(void *dst, const void *src, int bytes) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   asm volatile("cp.async.ca.shared.global [%0], [%1], 16, %2;" ::"r"(
                    unsigned(__cvta_generic_to_shared(dst))),
                "l"(src), "r"(bytes)
                : "memory");
+#else
+  *static_cast<uint4*>(dst)=bytes?*static_cast<const uint4*>(src):make_uint4(0,0,0,0);
+#endif
 }
 template <bool Local>
 __device__ __forceinline__ void StageAsync(const CacheRow *kc, const CacheRow *vc, int *keys,
@@ -177,7 +182,9 @@ __device__ __forceinline__ void StageAsync(const CacheRow *kc, const CacheRow *v
     CopyAsync16(keys + SharedIndex(r) + c, k, valid ? 16 : 0);
     CopyAsync16(values + SharedIndex(r) + c, v, valid ? 16 : 0);
   }
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
   asm volatile("cp.async.commit_group;" ::: "memory");
+#endif
 }
 
 template <bool Local>
@@ -222,7 +229,9 @@ __launch_bounds__(128, 5) __global__
     for (int slice = 0; slice < 4; ++slice) {
 
       const int slot = slice % 2;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
       asm volatile("cp.async.wait_group 0;" ::: "memory");
+#endif
       __syncthreads();
       if (tile * 4 + slice + 1 < end * 4)
         StageAsync<Local>(kc, vc, keys[1 - slot], values[1 - slot], ks[1 - slot], vs[1 - slot],
@@ -382,7 +391,7 @@ __global__ void DequantizePrefix(const CacheRow *k, const CacheRow *v, __nv_bflo
     outV[i] = __float2bfloat16_rn(static_cast<float>(vb.qs[i % 512]) * vd);
   }
 }
-template <bool InverseValue> __global__ void RotateRows(float *data, int tokens, int *bad) {
+template <bool InverseValue> __global__ void RotateRows(float *data, int tokens, int *bad, const int* active_rows = nullptr) {
   if (!data || !bad || tokens < 1 || tokens > 2048 || blockDim.x != Threads || blockDim.y != 1 ||
       blockDim.z != 1 || gridDim.x != unsigned(tokens * 8) || gridDim.y != 1 || gridDim.z != 1) {
     if (!threadIdx.x && bad)
@@ -390,7 +399,7 @@ template <bool InverseValue> __global__ void RotateRows(float *data, int tokens,
     return;
   }
   const int headRow = blockIdx.x * 4 + threadIdx.x / 32, lane = threadIdx.x % 32;
-  if (headRow >= tokens * 32)
+  if (headRow >= (active_rows?*active_rows:tokens) * 32)
     return;
   float x[4];
 #pragma unroll

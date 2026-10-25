@@ -14,7 +14,8 @@ int main(int argc,char** argv){try{
   auto ids=[](const mellum16::json::Value* value){std::vector<int> result;if(value)for(const auto& v:value->as_array())result.push_back(static_cast<int>(v.as_integer()));return result;};
   auto o=mellum16::SelectedServerOptions(argv[1],argv[2]);o.capacity=number("capacity",8192);o.prefill_chunk=number("chunk",256);o.server_device_budget_gib=8;o.controlled_chunk_graphs=true;
   o.input_ids={0};o.generate=0;o.capture_logits=true;o.simt_eager=flag("eager");o.simt_capture_tensors=!flag("events_only");o.simt_reference_attention=!flag("split_attention");o.simt_reference_codec=flag("reference_codec");o.simt_reference_prefill=flag("reference_prefill");
-  o.simt_reference_math=flag("reference_math");
+  o.simt_reference_math=flag("reference_math");o.exl3_rate=number("expert_rate",4);o.q8_head=flag("q8_head");if(flag("q8_kv"))o.kv_cache_format=mellum16::KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
+  if(const auto* mtp=root.find("mtp_artifact")){o.mtp.artifact=mtp->as_string();o.mtp.depth=number("mtp_depth",1);o.mtp.exl3_experts=true;}
   const std::filesystem::path output(argv[4]);std::filesystem::create_directories(output);
   if(flag("diagnostics"))o.simt_diagnostics=output/"tensors";
   o.simt_diagnostic_layer=number("layer",0);o.simt_diagnostic_positions=ids(root.find("positions"));o.simt_teacher_tokens=ids(root.find("teacher_tokens"));
@@ -32,7 +33,7 @@ int main(int argc,char** argv){try{
     const double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
     report<<"{\"request\":"<<index<<",\"prefill_tokens\":"<<prompt.size()<<",\"generated_ids\":[";
     for(std::size_t i=0;i<r.generated_ids.size();++i){if(i)report<<',';report<<r.generated_ids[i];}
-    report<<"],\"decode_steps\":"<<r.decode_steps<<",\"prefill_seconds\":"<<r.prefill_seconds<<",\"decode_seconds\":"<<r.decode_seconds<<",\"wall_seconds\":"<<wall<<",\"math_profile\":"<<mellum16::json::Quote(r.math_profile)<<",\"kernel_profile\":"<<mellum16::json::Quote(r.kernel_profile)<<",\"resident_bytes\":"<<stats.resident_bytes<<",\"post_graph_free_bytes\":"<<stats.post_graph_available_bytes<<"}\n";report.flush();
+    report<<"],\"mtp_proposed\":"<<r.mtp_proposed<<",\"mtp_accepted\":"<<r.mtp_accepted<<",\"mtp_groups\":"<<r.mtp_groups<<",\"decode_steps\":"<<r.decode_steps<<",\"prefill_seconds\":"<<r.prefill_seconds<<",\"decode_seconds\":"<<r.decode_seconds<<",\"wall_seconds\":"<<wall<<",\"math_profile\":"<<mellum16::json::Quote(r.math_profile)<<",\"kernel_profile\":"<<mellum16::json::Quote(r.kernel_profile)<<",\"resident_bytes\":"<<stats.resident_bytes<<",\"post_graph_free_bytes\":"<<stats.post_graph_available_bytes<<"}\n";report.flush();
     std::ofstream logits(output/("logits-"+std::to_string(index++)+".f32"),std::ios::binary);logits.write(reinterpret_cast<const char*>(r.logits.data()),r.logits.size()*4);
     std::cerr<<"prefill="<<r.prefill_seconds<<" decode="<<r.decode_seconds<<" generated="<<r.generated_ids.size()<<'\n';
     if(!report || !logits)throw std::runtime_error("cannot write qualification results");

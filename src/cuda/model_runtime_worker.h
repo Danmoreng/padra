@@ -378,12 +378,14 @@ public:
     std::lock_guard lock(mutex);
     stats.post_graph_available_bytes = available;
   }
-  void RecordLoad(std::uint64_t bytes) {
+  void RecordLoad(std::uint64_t bytes, std::uint64_t mtp_bytes = 0) {
     std::lock_guard lock(mutex);
     ++stats.model_loads;
     ++stats.weight_uploads;
     ++stats.static_initializations;
     stats.resident_bytes = bytes;
+    if (mtp_bytes)
+      stats.mtp_resident_bytes = mtp_bytes;
   }
   void RecordIdentity(const std::string &math, const std::string &kernel,
                       const std::string &weights, const std::string &manifest) {

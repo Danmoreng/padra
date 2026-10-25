@@ -52,3 +52,26 @@ __global__ void FP8ExactTile(DeviceMatrix matrix,const unsigned char* input,cons
 }
 inline void FP8Tiled(DeviceMatrix matrix,const unsigned char* input,const float* scales,float* output,int* bad,const SimtBatch* batch,cudaStream_t stream){FP8ExactTile<<<dim3(matrix.rows/32,32),256,0,stream>>>(matrix,input,scales,output,bad,batch);}
 }
+namespace simt_batch {
+// Verifier rows fit in cache. Keep one accumulator per row and reuse each
+// decoded weight without a block barrier for every 128 input channels.
+template<int Rows> __global__ void FP8Small(DeviceMatrix matrix,const unsigned char* input,const float* scales,float* output,int* bad,const SimtBatch* batch){
+  const int lane=threadIdx.x&31,row=blockIdx.x*4+threadIdx.x/32;
+  __shared__ float table[256];InitFP8Lookup(table);
+  float sums[Rows]={};
+  for(int c=lane*4;c<matrix.cols;c+=128){
+    const auto w=DecodeFP8Lookup(Load32(matrix.data+row*matrix.cols+c),table);
+    #pragma unroll
+    for(int r=0;r<Rows;++r){
+      const auto a=DecodeFP8Lookup(Load32(input+r*matrix.cols+c),table);
+      sums[r]=__fmaf_rn(a.x,w.x,sums[r]);sums[r]=__fmaf_rn(a.y,w.y,sums[r]);
+      sums[r]=__fmaf_rn(a.z,w.z,sums[r]);sums[r]=__fmaf_rn(a.w,w.w,sums[r]);
+    }
+  }
+  #pragma unroll
+  for(int r=0;r<Rows;++r){
+    for(int d=16;d;d/=2)sums[r]=__fadd_rn(sums[r],__shfl_down_sync(0xffffffffU,sums[r],d));
+    if(!lane){const float v=B(__fmul_rn(__fmul_rn(sums[r],scales[r]),BF(matrix.scales,row)));output[r*matrix.rows+row]=v;Finite(v,bad);}
+  }
+}
+}
