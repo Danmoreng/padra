@@ -100,13 +100,16 @@ __global__ void EncodeKV(const float *k, const float *v, CacheRow *kc, CacheRow 
   }
 }
 
-__global__ void EncodeQuery(const float *q, QueryBlock *out, int *bad) {
+template <int Rows = 1> __global__ void EncodeQuery(const float *q, QueryBlock *out, int *bad) {
+  static_assert(Rows == 1 || Rows == 2);
   if (!q || !out || !bad || blockDim.x != Threads || blockDim.y != 1 || blockDim.z != 1 ||
-      gridDim.x != 8 || gridDim.y != 1 || gridDim.z != 1) {
+      gridDim.x != 8 || gridDim.y != 1 || gridDim.z != Rows) {
     if (!threadIdx.x && bad)
       atomicExch(bad, 1);
     return;
   }
+  q += blockIdx.z * 4096;
+  out += blockIdx.z * 128;
   const int head = blockIdx.x * 4 + threadIdx.x / 32, lane = threadIdx.x % 32;
   float x[4];
   bool invalid = false;
@@ -157,22 +160,29 @@ __device__ __forceinline__ void CopyAsync16(void *dst, const void *src, int byte
                "l"(src), "r"(bytes)
                : "memory");
 }
-template <bool Local>
-__device__ __forceinline__ void StageAsync(const CacheRow *kc, const CacheRow *vc, int *keys,
-                                           unsigned *values, float *ks, float *vs, int chunk, int n,
-                                           int first, int kv) {
+template <bool Local, bool Saved = false>
+__device__ __forceinline__ void
+StageAsync(const CacheRow *kc, const CacheRow *vc, int *keys, unsigned *values, float *ks,
+           float *vs, int chunk, int n, int first, int kv, const CacheRow *oldSecondRow = nullptr,
+           int oldPosition = -1) {
   const int r = threadIdx.x / 4, b = threadIdx.x % 4, offset = chunk * 32 + r,
             row = Local ? ((first + offset) & 1023) : first + offset;
-  ks[r * 5 + b] = offset < n ? __half2float(kc[row].d[kv * 4 + b]) : 0.f;
-  vs[r * 4 + b] = offset < n ? __half2float(vc[row].d[kv * 4 + b]) : 0.f;
+  const bool saved = Saved && offset < n && first + offset == oldPosition;
+  const auto *keyRow = saved ? oldSecondRow : kc + row;
+  const auto *valueRow = saved ? oldSecondRow + 1 : vc + row;
+  ks[r * 5 + b] = offset < n ? __half2float(keyRow->d[kv * 4 + b]) : 0.f;
+  vs[r * 4 + b] = offset < n ? __half2float(valueRow->d[kv * 4 + b]) : 0.f;
 #pragma unroll
   for (int i = threadIdx.x; i < 256; i += 128) {
     const int r = i / 8, c = (i % 8) * 4, offset = chunk * 32 + r,
               row = Local ? ((first + offset) & 1023) : first + offset;
     const bool valid = offset < n;
-    const void *k = valid ? static_cast<const void *>(kc[row].qs + kv * 128 + c * 4)
+    const bool saved = Saved && valid && first + offset == oldPosition;
+    const auto *keyRow = saved ? oldSecondRow : kc + row;
+    const auto *valueRow = saved ? oldSecondRow + 1 : vc + row;
+    const void *k = valid ? static_cast<const void *>(keyRow->qs + kv * 128 + c * 4)
                           : static_cast<const void *>(kc);
-    const void *v = valid ? static_cast<const void *>(vc[row].qs + kv * 128 + c * 4)
+    const void *v = valid ? static_cast<const void *>(valueRow->qs + kv * 128 + c * 4)
                           : static_cast<const void *>(vc);
     CopyAsync16(keys + SharedIndex(r) + c, k, valid ? 16 : 0);
     CopyAsync16(values + SharedIndex(r) + c, v, valid ? 16 : 0);
@@ -180,21 +190,31 @@ __device__ __forceinline__ void StageAsync(const CacheRow *kc, const CacheRow *v
   asm volatile("cp.async.commit_group;" ::: "memory");
 }
 
-template <bool Local>
+template <bool Local, int Rows = 1>
 __launch_bounds__(128, 5) __global__
     void Split(const QueryBlock *__restrict__ q, const CacheRow *__restrict__ kc,
                const CacheRow *__restrict__ vc, float *__restrict__ partial,
                float *__restrict__ lse, const DecodeState *state, int cap, int splits, int *bad,
-               int maximum) {
+               int maximum, const CacheRow *oldSecondRow = nullptr) {
+  static_assert(Rows == 1 || Rows == 2);
   if (!DecodeReadyAtLimit(state, maximum) ||
+      (Rows == 2 && (!DecodeReadyAtLimit(state + 1, maximum) ||
+                     state[1].position != state[0].position + 1 || (Local && !oldSecondRow))) ||
       (Local ? cap != 1024 || state->capacity < 1024 : cap != state->capacity) || !q || !kc ||
       !vc || !partial || !lse || !bad || splits < 1 || splits > 32 || blockDim.x != 128 ||
       blockDim.y != 1 || blockDim.z != 1 || gridDim.x != 8 || gridDim.y != unsigned(splits) ||
-      gridDim.z != 1) {
+      gridDim.z != Rows) {
     if (!threadIdx.x && bad)
       atomicExch(bad, 1);
     return;
   }
+  const int token = blockIdx.z, workspace = splits * 32 * 129;
+  const int oldPosition =
+      Rows == 2 && Local && token == 0 && state[1].position >= cap ? state[1].position - cap : -1;
+  state += token;
+  q += token * 128;
+  partial += token * workspace;
+  lse += token * workspace;
   const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, sub = lane % 4,
             head = blockIdx.x * 4 + warp, kv = blockIdx.x / 2;
   const int n = Local ? min(state->position + 1, 1024) : state->position + 1,
@@ -216,7 +236,8 @@ __launch_bounds__(128, 5) __global__
   __shared__ float ks[2][32 * 5], vs[2][32 * 4];
   __shared__ __align__(16) unsigned values[2][32 * 33];
   float accum[4][4] = {}, mx[4] = {-INFINITY, -INFINITY, -INFINITY, -INFINITY}, den[4] = {};
-  StageAsync<Local>(kc, vc, keys[0], values[0], ks[0], vs[0], begin * 4, n, first, kv);
+  StageAsync<Local, Local && Rows == 2>(kc, vc, keys[0], values[0], ks[0], vs[0], begin * 4, n,
+                                        first, kv, oldSecondRow, oldPosition);
   for (int tile = begin; tile < end; ++tile) {
 #pragma unroll
     for (int slice = 0; slice < 4; ++slice) {
@@ -225,8 +246,9 @@ __launch_bounds__(128, 5) __global__
       asm volatile("cp.async.wait_group 0;" ::: "memory");
       __syncthreads();
       if (tile * 4 + slice + 1 < end * 4)
-        StageAsync<Local>(kc, vc, keys[1 - slot], values[1 - slot], ks[1 - slot], vs[1 - slot],
-                          tile * 4 + slice + 1, n, first, kv);
+        StageAsync<Local, Local && Rows == 2>(kc, vc, keys[1 - slot], values[1 - slot],
+                                              ks[1 - slot], vs[1 - slot], tile * 4 + slice + 1, n,
+                                              first, kv, oldSecondRow, oldPosition);
       float own = -INFINITY;
 #pragma unroll
       for (int j = 0; j < 4; ++j) {
@@ -294,16 +316,24 @@ __launch_bounds__(128, 5) __global__
     lse[split * 32 + head] = maximumLse + logf(total);
 }
 
-template <bool Local, class Output = __nv_bfloat16>
+template <bool Local, class Output = __nv_bfloat16, int Rows = 1>
 __global__ void Merge(const float *partial, const float *lse, Output *out, const DecodeState *state,
                       int splits, int *bad, int maximum) {
-  if (!DecodeReadyAtLimit(state, maximum) || !partial || !lse || !out || !bad || splits < 1 ||
-      splits > 32 || blockDim.x != Threads || blockDim.y != 1 || blockDim.z != 1 ||
-      gridDim.x != 8 || gridDim.y != 1 || gridDim.z != 1) {
+  static_assert(Rows == 1 || Rows == 2);
+  if (!DecodeReadyAtLimit(state, maximum) ||
+      (Rows == 2 &&
+       (!DecodeReadyAtLimit(state + 1, maximum) || state[1].position != state[0].position + 1)) ||
+      !partial || !lse || !out || !bad || splits < 1 || splits > 32 || blockDim.x != Threads ||
+      blockDim.y != 1 || blockDim.z != 1 || gridDim.x != 8 || gridDim.y != 1 || gridDim.z != Rows) {
     if (threadIdx.x == 0 && bad)
       atomicExch(bad, 1);
     return;
   }
+  const int token = blockIdx.z, workspace = splits * 32 * 129;
+  state += token;
+  partial += token * workspace;
+  lse += token * workspace;
+  out += token * 4096;
   const int head = blockIdx.x * 4 + threadIdx.x / 32, lane = threadIdx.x % 32;
   const int n = Local ? min(state->position + 1, 1024) : state->position + 1;
   const int active = min(splits, (n + Tile - 1) / Tile);

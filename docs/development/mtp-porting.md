@@ -35,9 +35,19 @@ On a supported CUDA device, configure the ordinary release build with
 `-DPADRA_ENABLE_MTP_PROBES=ON`. This adds two diagnostics, not automatic CTest
 jobs. Supply real admitted artifacts and an explicit process time/memory bound.
 
+Reuse the canonical weight artifacts and a single candidate build directory.
+After accepting or rejecting a candidate, retain its source revision or patch,
+build options, binary hashes, test protocol and compact results; remove obsolete
+build trees and binary copies. Keep full tensor dumps only while investigating
+a numerical difference, then retain the derived metrics and input identities.
+Do not duplicate weights in each test or upload-staging directory. Measure disk
+usage with hardlinks counted once (`du -sh build`), rather than summing file sizes.
+
 ```sh
 build/release/padra-mtp-operators /path/to/K3/native 3
 build/release/padra-mtp-operators --checkpoint
+build/release/padra-mtp-operators --q8-attention
+compute-sanitizer --tool racecheck build/release/padra-mtp-operators --q8-attention-sanitize
 compute-sanitizer --tool memcheck build/release/padra-mtp-operators /path/to/K3/native 3
 build/release/padra-mtp-probe /path/to/K3/native /path/to/MTP-EXL3-K4/native \
   /path/to/requests.json /path/to/results.jsonl
@@ -77,6 +87,11 @@ The output includes `cached_tokens`, snapshot bytes, capture/restore counts and
 `prepare_s`, which includes restore copies. The `--checkpoint` operator probe
 checks encoded snapshots against a chronological byte oracle and exercises graph
 replay and invalid-command guards without loading model weights.
+The `--q8-attention` probe compares batched Q8_0 verification against sequential
+attention through 131K, including FP8 codes/scales and graph replay. The
+`--q8-attention-sanitize` subset covers tile/ring transitions and repeated async
+buffer reuse for the more expensive racecheck instrumentation. The native probe
+accepts `paired_attention: false` in its first request as a sequential control.
 Use identical prompts and target precision for ordinary/MTP comparisons; join
 all GPU jobs, retain warmups separately, and record graph/driver memory too.
 The probe is a diagnostic executable, not a hardened input-facing service.
@@ -86,6 +101,8 @@ The current measured scope and identities are recorded in
 [the MTP optimization report](../performance/mtp-2026-10-25.txt).
 The [prefix reuse report](../performance/prefix-reuse-2026-10-25.txt) records
 the Q8 checkpoint tests, full-context memory and replay/reuse comparison.
+The [Q8_0 verification report](../performance/q8-mtp-verify-2026-10-25.txt)
+records batched attention validation and its paired throughput measurements.
 
 For a fresh-replay comparison at chunk and ring boundaries, run
 `tests/cuda/prefix_reuse.py --probe /path/to/padra-mtp-probe --artifact /path/to/target

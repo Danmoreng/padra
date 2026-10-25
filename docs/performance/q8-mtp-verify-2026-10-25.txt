@@ -1,0 +1,74 @@
+Q8_0 MTP verification batching — 2026-10-25
+
+Base: e61f329 (encoded prefix reuse already enabled). RTX 5080 Laptop, SM120a.
+Build: Release; exact-fusions-v1, global-matrix-v1, async64-v1, packed-chunk-v1.
+Target: stored shared Q8 head, EXL3 K3/K6 experts. Draft: pinned EXL3 K4 experts.
+Q8_0 KV, 131072 capacity, chunk256, MTP D1. Admission ceilings: 8 GiB K3 / 12 GiB K6.
+These ceilings on a 16 GB GPU do not qualify physical 8/12 GB cards.
+
+Change: batch query encoding, DP4A attention, merge and FP8 encoding for two-row
+verification. Each row retains the ordinary partition, DP4A accumulation, softmax
+and rotation order. FP8 encoding uses the existing exact reciprocal implementation
+with division at rounding boundaries. The overwritten local ring row comes from
+its encoded rollback snapshot. Existing dead QKV/logit/gate arenas provide scratch.
+No new resident buffer, cache shadow, head copy, weight format or numerical profile.
+Plain Q8 and larger verification groups retain their sequential attention path.
+
+Paired timing: six AB/BA process pairs per profile. Each process has one unretained
+warm-up and one retained request. Natural 4096-token coding input, 512 generated
+outputs. Decode rate=decode_steps/decode_s, including draft, verification, selection
+and state repair; prefill and model initialization are separate. Actual output IDs,
+final logit/hidden hashes, callbacks, state, proposals and acceptance match in all
+48 requests. Telemetry and per-request results are retained.
+
+Profile     Old tok/s   New tok/s   Gain       Old/new prefill ms   Old/new request ms
+K3 Q8_0     257.667     279.005    8.28%      710.373/716.724         2694.250/2548.649
+  Resident bytes unchanged: 7340423196; post-graph headroom: 945.0625 MiB. Reserve 700 MiB retained.
+K6 Q8_0     231.321     247.014    6.78%      728.932/727.743         2938.010/2797.305
+  Resident bytes unchanged: 11502221340; post-graph headroom: 1073.0625 MiB. Reserve 700 MiB retained.
+
+Qualification:
+- 576 real-model cases: K3/K6 Q8_0 D0-D4, plus K3 plain Q8 and K6 BF16 D1 controls.
+ Every case matches the saved pre-change reference; includes cancellation, seeds,
+ penalties, append, ring wrap, restore/recapture and output-budget boundaries.
+- 90 additional unaligned-prefix cases across D0/D1/D4 remain exact.
+- 30 attention operator cases at local/global positions 0 through 131070 plus 60 graph
+ replays: exact merged values and FP8 bytes/scales against sequential execution.
+- Memcheck, synccheck and initcheck pass the full operator set with zero errors.
+ Full racecheck exceeded its 150-second time bound; no completed result is claimed.
+ A dedicated subset of 6 cases and 12 replays covers tile/ring transitions and repeated async
+ staging-buffer reuse; racecheck passes it with zero hazards.
+- 24 host tests and real Chat/Responses HTTP checks for K3/K6 Q8_0 pass, including
+ positive cached_tokens and cache-miss replay.
+- Production rebuild matches candidate outputs and passes its HTTP smoke.
+
+Quality scope: this is an execution change, not a new quantization. Exactness is
+checked against the same selected Q8_0 target. Existing Q8-head/KV quality caveats
+relative to BF16 remain unchanged. Operator tests cover 131K attention positions;
+these throughput measurements use 4K actual prompts with 131K allocated capacity.
+
+Baseline profile evidence: 32 generated tokens, CUDA graph node trace. This is
+for attribution, not the throughput benchmark. Q8 attention/encoding previously
+ran separately per verifier row; batching removes four launches per layer/group
+and replaces narrow output encoding with the existing wide exact implementation.
+The 32-output trace has 12043 baseline versus 10251 candidate kernel launches;
+Q8 query/split/merge launches decrease 2772->1428; narrow FP8 encoding 924->28,
+with 448 wide batched encodings instead. Target experts remain the largest category.
+
+Baseline and candidate benchmark binary SHA256:
+{
+  "baseline": "e0d2b937970015d2fb046c0e44fdc54178628037986c4032b6dbfc1a627a28a8",
+  "candidate": "34e0a9d9232c6ff42d6f38988ab08bb9e5c8720a4e5ce774b51b04f10d90d1e8"
+}
+Production identities:
+{
+  "padra-mtp-probe": "893c661064a5e2e456fb441e0bc87acce92ad6def2d6b7c19bae3067a0a40b3c",
+  "padra-server": "e9b236097e1bc5560143e8ca2990ed39881d3868f92cf0fe8681a222013fb157",
+  "padra-mtp-operators": "8e85c889ea0361611e2ad6f30ca7c4c854c29a53d835f5d9b183a3eb4de256bb"
+}
+
+Evidence: build/q8-mtp-verify-2026-10-25. Canonical weights are reused. Keep one
+candidate build during development; remove its regenerable tree after promotion.
+Completed build cleanup is documented in build/cleanup-2026-10-25/RESULT.json:
+38.88 GiB allocated became 23.09 GiB; 15.79 GiB genuinely freed. Logical hardlink
+counting had reported 129.56 GiB. Existing model payloads and compact evidence remain.

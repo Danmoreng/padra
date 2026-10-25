@@ -278,4 +278,29 @@ inline void Launch(const float *queries, const __nv_bfloat16 *key, const __nv_bf
   }
   QuantizeRows<<<2, 512, 0, stream>>>(merged, encoded, scales, bad);
 }
+// Q8_0 D1: retain each row's exact DP4A/softmax partition while batching
+// launches. Row zero reads its one overwritten ring entry from the rollback
+// snapshot, whose Q8 codes/scales are unchanged. No cache copy or allocation.
+inline void LaunchQ8Native(const float *queries, const q8_native::CacheRow *key,
+                           const q8_native::CacheRow *value, q8_native::QueryBlock *encodedQueries,
+                           __nv_bfloat16 *merged, unsigned char *encoded, float *scales,
+                           const DecodeState *states, int cap, bool local, float *scratch,
+                           const q8_native::CacheRow *oldSecondRow, int *bad, cudaStream_t stream,
+                           int maximum) {
+  const int splits = local ? 16 : 32;
+  auto *lse = scratch + splits * 32 * 128;
+  q8_native::EncodeQuery<2><<<dim3(8, 1, 2), 128, 0, stream>>>(queries, encodedQueries, bad);
+  if (local) {
+    q8_native::Split<true, 2><<<dim3(8, splits, 2), 128, 0, stream>>>(
+        encodedQueries, key, value, scratch, lse, states, cap, splits, bad, maximum, oldSecondRow);
+    q8_native::Merge<true, __nv_bfloat16, 2>
+        <<<dim3(8, 1, 2), 128, 0, stream>>>(scratch, lse, merged, states, splits, bad, maximum);
+  } else {
+    q8_native::Split<false, 2><<<dim3(8, splits, 2), 128, 0, stream>>>(
+        encodedQueries, key, value, scratch, lse, states, cap, splits, bad, maximum);
+    q8_native::Merge<false, __nv_bfloat16, 2>
+        <<<dim3(8, 1, 2), 128, 0, stream>>>(scratch, lse, merged, states, splits, bad, maximum);
+  }
+  QuantizeRows<<<2, 512, 0, stream>>>(merged, encoded, scales, bad);
+}
 } // namespace mtp_attention

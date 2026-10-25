@@ -181,9 +181,13 @@ projection, attention and expert arithmetic retain the ordinary per-row
 contract. Packed Q/K/V projections and shared expert tiles reuse
 weights across verifier rows. Residual/post-normalization, router projection and
 routing process the verifier rows in batched launches, writing directly into
-existing verifier buffers. With BF16 target KV, two-row verification batches attention split, merge
-and encoding. Q8 and Q8_0 use the ordinary per-row attention path. Adjacent rows share a KV/MMA tile when their causal partitions
-match; other positions retain the ordinary independent partitions. Overwritten
+existing verifier buffers. With BF16 target KV, two-row verification batches
+attention split, merge and encoding. Adjacent BF16 rows share a KV/MMA tile when
+their causal partitions match; other positions retain independent partitions.
+Q8_0 batches query encoding, DP4A attention, merge and FP8 output encoding for
+two-row verification while preserving each row's ordinary partitions and
+arithmetic. It reuses the verifier's existing scratch buffers. Plain Q8 and
+larger verification groups retain the ordinary per-row attention path. Overwritten
 local history is read from the pre-group snapshot, so a later row's ring writes
 cannot affect an earlier row's attention. Rejected rows are restored before the next group;
 retained draft KV is repaired with the actual target hidden states. Q8 rollback

@@ -29,6 +29,8 @@ on that GPU; they do not establish performance or driver overhead on physical
 [the profile report](performance/gpu-profiles-2026-10-25.txt), and current
 snapshot-inclusive memory and reuse timings in
 [the prefix reuse report](performance/prefix-reuse-2026-10-25.txt).
+The [Q8_0 verification report](performance/q8-mtp-verify-2026-10-25.txt)
+records current D1 throughput for the 8/12 GiB profiles.
 Successful execution at 131K does not establish retrieval or coding quality at
 that context length.
 
