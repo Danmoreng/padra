@@ -1,0 +1,132 @@
+{
+  "hardware": "GTX 1070 Max-Q 8192 MiB, SM61",
+  "base_commit": "e987d58",
+  "build_source_sha256": "c56b488fd1a11fa0b99b868d1db47615c6aa1305a05bec4727356e843ac85395",
+  "server_sha256": "bc595830559970ca9fcec395d2f7c0be0537bdc08d882256ddbfe36d4b8e7ecf",
+  "protocol": {
+    "prompt_tokens": 2000,
+    "cached_tokens": 1536,
+    "output_tokens": 256,
+    "mtp_depth": 1,
+    "target": "native EXL3 K3, stored shared Q8 head",
+    "draft": "EXL3 K4",
+    "target_kv": "q8_0",
+    "context": 8192,
+    "chunk": 256,
+    "repetitions": 3,
+    "warmup_excluded": true,
+    "latency": "prepare_s + prefill_s, includes restore copies",
+    "pair_order": "fresh capture then restore"
+  },
+  "fresh_prefill_seconds": {
+    "median": 6.858307314,
+    "min": 6.856864192,
+    "max": 6.866207431
+  },
+  "cached_prefill_seconds": {
+    "median": 1.6936161669999998,
+    "min": 1.691625236,
+    "max": 1.694014036
+  },
+  "latency_speedup": 4.049505104895471,
+  "fresh_decode_tps": 49.365261706958506,
+  "cached_decode_tps": 49.343368426655594,
+  "checkpoint_bytes": 25502720,
+  "exact_prefix_regression": {
+    "exact": true,
+    "differences": [],
+    "rows_by_depth": {
+      "0": 26,
+      "1": 26,
+      "4": 26
+    },
+    "kv_format": "q8_0",
+    "expert_rate": 3,
+    "chunk": 256,
+    "whole_chunks": true,
+    "probe_sha256": "981b21cd9ab9fb2d70a1f9872f97bfb500ef975eddb409d96b5504ba1a06139a",
+    "input_sha256": "980d76420b6a656e9da589fea7959b6c2ef208dbf202a92401cda005859a766b"
+  },
+  "http": {
+    "actual_cuda_model": true,
+    "kv_format": "q8_0_token512_block32_f16scale_rot_k128_v64_v2",
+    "capacity": 8192,
+    "prefill_chunk": 256,
+    "device_budget_gib": 8,
+    "artifact_identity_verified": true,
+    "admin_listener_verified": true,
+    "server_config": {
+      "port": 18463,
+      "admin_port": 39343,
+      "context_capacity": 8192,
+      "request_body_bytes": 524288,
+      "queue": {
+        "requests": 8,
+        "bytes": 67108864,
+        "tokens": 65536,
+        "timeout_ms": 5000,
+        "generation_timeout_ms": 30000,
+        "drain_timeout_ms": 5000
+      },
+      "http": {
+        "preparation_requests": 4,
+        "threads": 16,
+        "queued_connections": 32,
+        "admin_threads": 2,
+        "admin_queued_connections": 8,
+        "send_buffer_bytes": 16384,
+        "keep_alive_seconds": 2,
+        "keep_alive_requests": 16,
+        "read_timeout_ms": 5000,
+        "write_timeout_ms": 2000,
+        "heartbeat_ms": 15000,
+        "poll_ms": 20
+      }
+    },
+    "chat_and_responses_streams": true,
+    "session_followup": true,
+    "chat_cached_tokens": 256,
+    "responses_cached_tokens": 256,
+    "session_cache_miss_replay": true,
+    "mtp_depth": 1,
+    "native_tool_request": true,
+    "native_tool_calls": 1,
+    "independent_stored_responses": 40,
+    "stored_lineage_delete": true,
+    "metrics": true,
+    "build_source_sha256": "c56b488fd1a11fa0b99b868d1db47615c6aa1305a05bec4727356e843ac85395",
+    "build_kernel_profile": "baseline-v1",
+    "math_profile": "mellum16-pascal-q8_0-v1;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/exact-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+    "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa8-fp32-sgemm-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;mtp-simt-verify-small;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+    "scope": "Serving smoke test; not numerical quality, sustained load or speed qualification"
+  },
+  "additional_contracts": {
+    "requests": 13,
+    "checks": [
+      "seeded sampling with penalties",
+      "decode cancellation",
+      "prefill cancellation",
+      "snapshot extension"
+    ],
+    "restore_vs_fresh_exact": true
+  },
+  "evidence_directory": "/srv/agent/workspaces/padra-sm61-opt-20261025",
+  "limits": [
+    "Single resident session snapshot; complete 256-token chunks only.",
+    "No raw cold-prefill or decode speedup is claimed.",
+    "Benchmark is a repeated fixed prompt, not a conversational workload distribution."
+  ],
+  "ctest": {
+    "passed": 31,
+    "failed": 0
+  },
+  "sanitizer": {
+    "complete": false,
+    "note": "Full-model and kernel-filtered memcheck attempts did not complete within their bounded runs. No whole-model sanitizer pass is claimed; see retained logs."
+  },
+  "bf16_kv_compatibility": {
+    "requests": 4,
+    "restore_vs_fresh_exact": true,
+    "head": "stored Q8"
+  }
+}

@@ -4,6 +4,7 @@
 #include "runtime/model_runtime.h"
 #include "runtime/chunk_graph_contract.h"
 #include "runtime/mtp_memory.h"
+#include "runtime/gpu_build_config.h"
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -85,7 +86,7 @@ public:
     if (anchor < 0 || static_cast<std::size_t>(anchor) > ids.size())
       return {StatusCode::kInvalidArgument, "checkpoint anchor outside canonical prompt"};
     if (anchor)
-      anchor = CheckpointCaptureAnchor(anchor, options.prefill_chunk);
+      anchor = CheckpointCaptureAnchor(anchor, PADRA_BUILD_SIMT ? std::min(256, options.prefill_chunk) : options.prefill_chunk, PADRA_BUILD_SIMT);
     if (request_epoch == UINT32_MAX)
       return {StatusCode::kResourceExhausted, "request epoch exhausted; recreate runtime"};
     auto status = state.Prepare(ids, outputs);
@@ -129,7 +130,7 @@ public:
                                             static_cast<std::size_t>(next_anchor) > ids.size())))
       return {StatusCode::kInvalidArgument, "next checkpoint anchor must extend the saved prefix"};
     if (next_anchor)
-      next_anchor = CheckpointCaptureAnchor(next_anchor, options.prefill_chunk);
+      next_anchor = CheckpointCaptureAnchor(next_anchor, PADRA_BUILD_SIMT ? std::min(256, options.prefill_chunk) : options.prefill_chunk, PADRA_BUILD_SIMT);
     if (auto status = ValidateSampling(sampling); !status.ok())
       return status;
     if (request_epoch == UINT32_MAX)

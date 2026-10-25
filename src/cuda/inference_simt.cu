@@ -441,16 +441,19 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       identity.math_profile="mellum16-pascal-q8_0-v1;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K"+std::to_string(o.exl3_rate)+"-H128-BF16-input/exact-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router";
     }
     if(draft)identity.kernel_profile+=";draft-exl3-k4";
+    if(o.server_kv_checkpoint)identity.kernel_profile+=";prefix-chunk256-bitcopy";
     if(o.q8_head){
       const auto head_label=identity.math_profile.find("compensated-router/head");
       if(head_label!=std::string::npos)identity.math_profile.replace(head_label,23,"compensated-router");
       identity.kernel_profile+=";stored-q8-shared-head-dp4a";identity.math_profile+=";head-Q8-block32/BF16-scales/DP4A-FP32";}
     if(worker){worker->RecordLoad(plan.resident,identity.mtp_resident_bytes);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}if(bounded_prefill){worker->RecordCapture();worker->RecordCapture();}if(draft)for(int i=0;i<2*o.mtp.depth;++i)worker->RecordCapture();worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile,model.weights_sha256,model.manifest_sha256);}
     const auto check_numerics=[&]{int value=0;Check(cudaMemcpyAsync(&value,bad,sizeof(value),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));if(value)throw std::runtime_error("nonfinite/invalid SIMT forward; session poisoned");};
-    const auto checkpoint_copy=[&](bool restore){std::size_t offset=0;for(int l=0;l<28;++l)if(l%4!=3){
+    const auto checkpoint_copy=[&](bool restore){
+      const std::size_t plane_bytes=1024ULL*(q8_kv?sizeof(q8_native::CacheRow):512*sizeof(__nv_bfloat16));
+      std::size_t offset=0;for(int l=0;l<28;++l)if(l%4!=3){
       auto* saved=buffer("local_checkpoint").As<unsigned char>()+offset;
-      Check(cudaMemcpyAsync(restore?static_cast<void*>(layers[l].kc):saved,restore?saved:static_cast<void*>(layers[l].kc),1024*1024,cudaMemcpyDeviceToDevice,stream.s));
-      Check(cudaMemcpyAsync(restore?static_cast<void*>(layers[l].vc):saved+1024*1024,restore?saved+1024*1024:static_cast<void*>(layers[l].vc),1024*1024,cudaMemcpyDeviceToDevice,stream.s));offset+=1024*2048;
+      Check(cudaMemcpyAsync(restore?static_cast<void*>(layers[l].kc):saved,restore?saved:static_cast<void*>(layers[l].kc),plane_bytes,cudaMemcpyDeviceToDevice,stream.s));
+      Check(cudaMemcpyAsync(restore?static_cast<void*>(layers[l].vc):saved+plane_bytes,restore?saved+plane_bytes:static_cast<void*>(layers[l].vc),plane_bytes,cudaMemcpyDeviceToDevice,stream.s));offset+=2*plane_bytes;
     }
       if(draft){
         auto* saved=buffer("mtp_checkpoint").As<unsigned char>();
@@ -497,7 +500,8 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       if(batch){
         while(executed<static_cast<int>(o.input_ids.size()) && !result.cancelled){
           if(cancelled()){result.cancelled=true;break;}
-          int rows=std::min({256,o.prefill_chunk,static_cast<int>(o.input_ids.size())-executed});
+          const int chunk=std::min(256,o.prefill_chunk);
+          int rows=std::min(chunk-executed%chunk,static_cast<int>(o.input_ids.size())-executed);
           if(worker && worker->checkpoint_anchor>executed && worker->checkpoint_anchor<executed+rows)rows=worker->checkpoint_anchor-executed;
           diagnostic_batch_base=executed;diagnostic_batch_rows=rows;diagnostics.position=executed+rows-1;diagnostics.phase="prefill";diagnostics.rows=rows;
           diagnostics.active=!o.simt_diagnostics.empty() && std::any_of(o.simt_diagnostic_positions.begin(),o.simt_diagnostic_positions.end(),[&](int pos){return pos>=executed && pos<executed+rows;});

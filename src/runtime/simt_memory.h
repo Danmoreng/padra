@@ -23,7 +23,7 @@ inline ServerMemoryPlan PlanSimtMemory(std::size_t weights,int capacity,std::siz
   add("silu",65536*2);add("attention_scores",admission::Bytes(capacity,32*4));
   add("prompt",admission::Bytes(capacity,4));
   add("sampling",98304*28+16);add("sampling_workspace",sampling_workspace);
-  if(checkpoint)add("local_checkpoint",KVCheckpointLedger::kLocalSnapshotBytes);
+  if(checkpoint)add("local_checkpoint",KVCheckpointLedger::LocalSnapshotBytes(q8_kv?KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2:KVCacheFormat::BF16));
   if(fast_math)add("attention_partials",4*4096*4);
   if(fast_math && batch){
     add("sgemm_weights",4096ULL*2304*4);

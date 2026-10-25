@@ -27,7 +27,7 @@ int main(){try{
   simt.capture_hidden=false;simt.kv_cache_format=mellum16::KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
   Require(mellum16::ValidateSimtFeatures(simt).ok(),"SIMT native Q8_0 KV admission");
   simt.server_kv_checkpoint=true;
-  Require(!mellum16::ValidateSimtFeatures(simt).ok(),"SIMT must reject encoded checkpoints until its ring copier is ported");
+  Require(mellum16::ValidateSimtFeatures(simt).ok(),"SIMT encoded checkpoint admission");
   simt.server_kv_checkpoint=false;
   simt.kv_cache_format=mellum16::KVCacheFormat::Q8TokenHead128F32ScaleV1;
   Require(!mellum16::ValidateSimtFeatures(simt).ok(),"SIMT must reject the different Q8 head-scale layout");
@@ -47,6 +47,12 @@ int main(){try{
   Require(large.buffers.at("kv")-small.buffers.at("kv")==7ULL*8192*2048,"global/local KV inventory");
   Require(large.buffers.at("attention_scores")==32ULL*16384*4,"long attention uses global scores");
   Require(small.buffers.at("local_checkpoint")==42ULL*1024*1024,"snapshot inventory");
+  const auto q8=mellum16::PlanSimtMemory(5493330432ULL,8192,2*1024*1024,true,true,true,true,true);
+  Require(q8.buffers.at("local_checkpoint")==21ULL*1024*1088,"encoded snapshot must include all Q8 codes and scales");
+  for(int anchor:{1,255,256,257,511,512,1023,1024,1025,8191}){
+    const auto saved=mellum16::CheckpointCaptureAnchor(anchor,256,true);
+    Require(saved%256==0 && saved<=anchor && anchor-saved<256,"SIMT restores only complete original expert chunks");
+  }
   const auto fast=mellum16::PlanSimtMemory(7092933120ULL,8192,2*1024*1024,true,true,true);
   Require(fast.resident-small.resident==4096ULL*2304*4+256ULL*4096*4+16ULL*1024*1024+8192ULL*8*(256-32)*4+4ULL*4096*4,"bounded FP32 SGEMM inventory");
   const auto fast16=mellum16::PlanSimtMemory(7092933120ULL,16384,2*1024*1024,true,true,true);

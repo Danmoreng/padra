@@ -179,6 +179,7 @@ int main(int argc, char **argv) {
             << ",\"checkpoint_bytes\":" << stats.checkpoint_bytes
             << ",\"checkpoint_captures\":" << stats.checkpoint_captures
             << ",\"checkpoint_restores\":" << stats.checkpoint_restores
+            << ",\"checkpoint_available\":" << (stats.checkpoint_available ? "true" : "false")
             << ",\"mtp_bytes\":" << r.mtp_resident_bytes
             << ",\"kernel_profile\":" << json::Quote(stats.kernel_profile)
             << ",\"resident_bytes\":" << stats.resident_bytes

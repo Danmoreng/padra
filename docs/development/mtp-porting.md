@@ -131,3 +131,9 @@ For a fresh-replay comparison at chunk and ring boundaries, run
 outputs and state, and preserves all requests and results. Supply at least
 `3 * chunk + 2` input tokens; `--chunk` defaults to 256. Use `--kv-format q8` or
 `bf16` for the other formats. This is an explicit GPU diagnostic, not a host CTest.
+
+For SM61, add `--whole-chunks --chunk 256` and supply at least 1538 input tokens.
+SIMT retains complete expert chunks, so the requested anchor rounds down to a
+multiple of 256. This mode also checks that shorter prefixes produce no snapshot
+and tests restore across the 1024-token local ring. Q8_0 snapshots preserve codes
+and scales; MTP snapshots also preserve the draft ring and target hidden state.

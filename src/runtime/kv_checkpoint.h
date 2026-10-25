@@ -13,10 +13,15 @@ namespace mellum16 {
 // A restored prefix resumes on the original chunk grid. Leave at least four
 // rows in a partial first chunk so it uses the same expert arithmetic as the
 // original full chunk. Retaining up to three fewer tokens avoids a T<4 switch.
-inline int CheckpointCaptureAnchor(int anchor, int chunk) {
+inline int CheckpointCaptureAnchor(int anchor, int chunk, bool whole_chunks = false) {
   if (anchor < 0 || chunk < 4 || chunk > 2048)
     throw std::invalid_argument("invalid checkpoint capture anchor/chunk");
   const int offset = anchor % chunk;
+  // SIMT sparse/dense expert dispatch depends on all routes in the chunk.
+  // Retain complete chunks so reuse cannot change the arithmetic of a suffix.
+  // A prefix shorter than one chunk deliberately produces no snapshot.
+  if (whole_chunks)
+    return anchor - offset;
   return offset > chunk - 4 ? anchor - (offset - (chunk - 4)) : anchor;
 }
 // Keep the original chat-template tokens. Only choose how much of a proven

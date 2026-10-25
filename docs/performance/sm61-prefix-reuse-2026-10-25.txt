@@ -1,0 +1,60 @@
+SM61 Q8_0 prefix reuse, 2026-10-25
+
+The GTX 1070 Max-Q SIMT backend supports native Q8_0 prefix checkpoints,
+including the MTP draft ring and preceding target hidden state. Codes and
+scale bytes are copied directly. No model weights or head precision change.
+
+SIMT retains complete physical 256-token chunks. Its sparse/dense expert
+arithmetic depends on all routes in a chunk; restoring only a suffix of that
+chunk could change results. Requested anchors round down by at most 255 tokens.
+Prefixes below 256 tokens produce no checkpoint. One resident session snapshot
+is retained; a different session or invalid prefix replays history.
+
+Measured setup: native EXL3 K3, stored shared Q8 head, EXL3-K4 MTP D1,
+Q8_0 target KV, context 8192, prefill chunk 256, 8 GiB budget. The draft's existing
+2 MiB BF16 KV ring is unchanged. No BF16 output head is loaded.
+
+Three warm pairs after a separate warmup, each 2000 input/256 output tokens.
+The fresh run captures a 1536-token prefix; the next run restores that prefix
+and recomputes 464 tokens. Reported latency includes Prepare/restore copies
+and Prefill/first selection. Each pair has identical generated tokens, final
+logits, hidden state, callbacks and committed/pending state.
+
+                         Median latency       Range
+Full prefill             6.858307 s        6.856864--6.866207 s
+Cached prefix            1.693616 s        1.691625--1.694014 s
+Latency ratio            4.050x
+Decode, fresh/cached     49.37 / 49.34 tok/s
+
+This is avoided Prefill work, not a raw cold-Prefill throughput improvement.
+No Decode speedup is claimed. Repetitions use one fixed prompt and do not
+establish the distribution of cache hits in a real conversational workload.
+The extra checkpoint allocation is 25,502,720 bytes with MTP: 22.3125 MiB
+for target Q8_0 rings, 2 MiB draft KV and 9216 bytes target hidden state.
+
+Validation:
+- 31 host/GPU CTest cases pass.
+- 78 real-model requests across D0/D1/D4: exact restore/fresh and ordinary/MTP
+  tokens, final-logit/hidden hashes, callbacks, cancellation and state.
+- Chunk anchors 256/257/511/512/1023/1024/1025/1279, short prefixes without a
+  snapshot, and restore after local-ring wrap are exercised.
+- 13 additional requests cover seeded sampling with penalties, cancellation
+  during prefill/decode, zero generation and extending a retained snapshot.
+- Four BF16-KV compatibility requests also preserve snapshot extension/restore
+  exactly, using the same stored Q8 head.
+- Native HTTP tests pass for Chat and Responses cache hits, session cache misses,
+  stored lineage, streaming, tools and metrics. Both cache-hit probes reuse 256
+  tokens; cache misses reproduce fresh responses.
+- Full-model and filtered memcheck attempts were stopped/time-bounded before
+  completion. This report does not claim a complete whole-model sanitizer pass.
+
+Build source SHA256: c56b488fd1a11fa0b99b868d1db47615c6aa1305a05bec4727356e843ac85395
+Server SHA256: bc595830559970ca9fcec395d2f7c0be0537bdc08d882256ddbfe36d4b8e7ecf
+Base commit: e987d58 (main e61f329 plus SM61 port)
+Detailed identities and measurements: sm61-prefix-reuse-2026-10-25.json
+Evidence: /srv/agent/workspaces/padra-sm61-opt-20261025
+
+Reproduce the real-model boundary suite using tests/cuda/prefix_reuse.py with
+--whole-chunks --chunk 256 --expert-rate 3 --kv-format q8_0 and the admitted target,
+draft, probe and fixture paths. Supply at least 1538 input tokens. The evidence directory
+retains all actual requests, JSONL results, HTTP report and timing protocol.

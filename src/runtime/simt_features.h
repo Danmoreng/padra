@@ -14,8 +14,6 @@ inline Status ValidateSimtFeatures(const InferenceOptions &options) {
   }
   if ((options.kv_cache_format != KVCacheFormat::BF16 && options.kv_cache_format != KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2) || options.fp8_kv_cache)
     return {StatusCode::kUnsupported, "SIMT backend requires BF16 or native Q8_0 KV"};
-  if(options.server_kv_checkpoint && options.kv_cache_format!=KVCacheFormat::BF16)
-    return {StatusCode::kUnsupported,"SIMT checkpoints require BF16 KV"};
   if (!options.exl3_experts || (options.exl3_rate != 3 && options.exl3_rate != 4))
     return {StatusCode::kUnsupported, "SIMT backend requires the EXL3 K3 or K4 artifact"};
   return {};

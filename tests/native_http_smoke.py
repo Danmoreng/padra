@@ -124,6 +124,9 @@ with log.open("w") as output:
             "max_completion_tokens": 4,
             "enable_thinking": False,
         }
+        # SIMT retains complete expert chunks. Exercise a cache hit with a
+        # sufficiently long stable prefix rather than assuming sub-chunk reuse.
+        cache_padding = "Remember this context. " * 100 if "simt" in identity["kernel_profile"] else ""
         chat = fetch("/v1/chat/completions", body)
         assert chat["choices"][0]["finish_reason"] in ("stop", "length")
         wire, _ = request(
@@ -176,7 +179,8 @@ with log.open("w") as output:
             assert tool_calls[index]["name"] == call["function"]["name"]
             assert tool_calls[index]["arguments"] == call["function"]["arguments"]
         session = fetch("/v1/sessions", {"model": model})["id"]
-        turn = fetch("/v1/chat/completions", dict(body, session_id=session))
+        turn = fetch("/v1/chat/completions", dict(body, session_id=session,
+                     messages=[{"role": "user", "content": cache_padding + "Say hello."}]))
         assert turn["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
         history = fetch("/v1/sessions/" + session)["messages"]
         assert history[-1]["role"] == "assistant"
@@ -202,7 +206,7 @@ with log.open("w") as output:
                 "/v1/responses",
                 {
                     "model": model,
-                    "input": f"Say {i}.",
+                    "input": (cache_padding if i == 39 else "") + f"Say {i}.",
                     "max_output_tokens": 1,
                     "enable_thinking": False,
                 },
