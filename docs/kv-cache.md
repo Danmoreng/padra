@@ -1,5 +1,11 @@
 # KV cache storage
 
+On the SM61/SIMT backend, native `q8_0` KV supports inference and MTP, but
+encoded prefix checkpoints are not implemented. The server disables checkpoint
+reuse for that format and replays conversation history; `cached_tokens` remains
+zero. SIMT checkpoint capture/restore requires BF16 KV. The encoded checkpoint
+support described below applies to the main SM120 CUDA backend.
+
 The native controlled-chunk server supports BF16 KV and explicitly selected `q8` or
 `q8_0` KV at capacities 8192, 16384, 32768, 65536 and 131072. Context capacity includes
 both input and generated tokens. The default storage format is BF16.

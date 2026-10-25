@@ -26,6 +26,9 @@ int main(){try{
   Require(mellum16::ValidateSimtFeatures(simt).ok(),"SIMT hidden capture admission");
   simt.capture_hidden=false;simt.kv_cache_format=mellum16::KVCacheFormat::Q8Token512Block32F16ScaleRotatedV2;
   Require(mellum16::ValidateSimtFeatures(simt).ok(),"SIMT native Q8_0 KV admission");
+  simt.server_kv_checkpoint=true;
+  Require(!mellum16::ValidateSimtFeatures(simt).ok(),"SIMT must reject encoded checkpoints until its ring copier is ported");
+  simt.server_kv_checkpoint=false;
   simt.kv_cache_format=mellum16::KVCacheFormat::Q8TokenHead128F32ScaleV1;
   Require(!mellum16::ValidateSimtFeatures(simt).ok(),"SIMT must reject the different Q8 head-scale layout");
   simt.kv_cache_format=mellum16::KVCacheFormat::BF16;simt.exl3_rate=3;
