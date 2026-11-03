@@ -20,13 +20,45 @@ Job::Job(ChatRequest input, std::size_t maximum)
     throw std::invalid_argument("invalid request output allocation contract");
   const auto output_budget = admission::Sum(
       {admission::Bytes(request.outputs, admission::Bytes(admission::Sum({maximum, 3}), 3)), 1024});
-  content.reserve(output_budget);
-  reasoning.reserve(output_budget);
+  output_bytes_limit_ = output_budget;
   tool_calls.reserve(8);
   admitted_bytes = admission::Sum({sizeof(Job), request.body.size(), request.adapter_bytes,
                                    admission::Bytes(request.input_ids.size(), sizeof(int)),
                                    admission::Bytes(output_budget, 2),
                                    request.tools.parse ? 16 * kMaximumToolJson + 8192 : 0});
+}
+void Job::AppendOutput(std::string &output, std::string_view text) {
+  const auto used = admission::Sum({content.size(), reasoning.size()});
+  if (used > output_bytes_limit_ || text.size() > output_bytes_limit_ - used)
+    throw std::length_error("decoded output exceeds admitted byte budget");
+  const auto needed = output.size() + text.size();
+  if (needed > output.capacity()) {
+    // Allocate from an empty string so reserve cannot double the old capacity
+    // beyond the admitted ceiling on the last growth step.
+    const auto heap_capacity = [](const std::string &value) {
+      return value.capacity() > std::string{}.capacity() ? value.capacity() : 0;
+    };
+    const auto &other = &output == &content ? reasoning : content;
+    const auto allocated = admission::Sum({heap_capacity(output), heap_capacity(other)});
+    const auto ceiling = admission::Bytes(output_bytes_limit_, 2);
+    if (allocated > ceiling || needed > ceiling - allocated)
+      throw std::length_error("output growth exceeds admitted allocation budget");
+    const auto target = std::min(
+        {output_bytes_limit_, ceiling - allocated, std::max(needed, output.capacity() * 2)});
+    std::string grown;
+    grown.reserve(target);
+    if (grown.capacity() > target)
+      throw std::length_error("output allocator exceeded admitted byte budget");
+    grown.append(output);
+    output.swap(grown);
+  }
+  output.append(text);
+}
+void Job::AppendContent(std::string_view text) {
+  AppendOutput(content, text);
+}
+void Job::AppendReasoning(std::string_view text) {
+  AppendOutput(reasoning, text);
 }
 void Job::Cancel(CancelCause cause) {
   if (transport) {

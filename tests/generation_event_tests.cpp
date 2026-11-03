@@ -32,6 +32,47 @@ void operator delete[](void *p, std::size_t) noexcept {
 
 int main() {
   try {
+    auto large_request = Request("lazy_output");
+    large_request.outputs = 131072;
+    Job lazy(std::move(large_request), 128);
+    Require(lazy.content.capacity() + lazy.reasoning.capacity() < 1024,
+            "unused output budget allocated eagerly");
+    lazy.AppendReasoning("short reasoning");
+    Require(lazy.content.empty() && lazy.reasoning == "short reasoning" &&
+                lazy.content.capacity() + lazy.reasoning.capacity() < 4096,
+            "short output allocated the maximum token budget");
+    auto bounded_request = Request("output_ceiling");
+    Job bounded(std::move(bounded_request), 0);
+    const std::string full(1033, 'x');
+    for (char c : full)
+      bounded.AppendContent(std::string_view(&c, 1));
+    Require(bounded.content == full && bounded.content.capacity() <= full.size(),
+            "incremental growth exceeded admitted capacity or changed bytes");
+    bool rejected = false;
+    try {
+      bounded.AppendContent("x");
+    } catch (const std::length_error &) {
+      rejected = true;
+    }
+    Require(rejected && bounded.content == full, "output ceiling did not reject atomically");
+    auto mixed_request = Request("mixed_output_ceiling");
+    Job mixed(std::move(mixed_request), 0);
+    for (int i = 0; i < 1033; ++i) {
+      if (i % 2)
+        mixed.AppendContent("c");
+      else
+        mixed.AppendReasoning("r");
+    }
+    Require(mixed.content.size() + mixed.reasoning.size() == 1033 &&
+                mixed.content.capacity() + mixed.reasoning.capacity() <= 2066,
+            "mixed output growth changed bytes or exceeded admission");
+    rejected = false;
+    try {
+      mixed.AppendReasoning("r");
+    } catch (const std::length_error &) {
+      rejected = true;
+    }
+    Require(rejected, "mixed channels exceeded the combined decoded byte limit");
     static_assert(std::is_trivially_copyable_v<GenerationEvent>);
     auto request = Request("event_ownership");
     request.stream = true;
