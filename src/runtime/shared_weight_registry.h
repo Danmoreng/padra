@@ -12,7 +12,7 @@ namespace mellum16 {
 // part of the device representation and therefore part of its identity.
 struct SharedWeightKey {
   int device;
-  std::string manifest, weights;
+  std::string manifest, weights, shared_head, diagnostic_attention;
   bool q8_head;
   auto operator<=>(const SharedWeightKey &) const = default;
 };

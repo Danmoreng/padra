@@ -1,20 +1,42 @@
 #include "server/coordinator.h"
 #include "runtime/size_checked.h"
 #include <stdexcept>
+#include <algorithm>
 namespace mellum16::server {
 namespace {
 using Clock = std::chrono::steady_clock;
 }
+namespace {
+std::vector<std::unique_ptr<ModelRuntime>> OneRuntime(std::unique_ptr<ModelRuntime> runtime) {
+  std::vector<std::unique_ptr<ModelRuntime>> result;
+  result.push_back(std::move(runtime));
+  return result;
+}
+} // namespace
 Coordinator::Coordinator(std::unique_ptr<ModelRuntime> runtime, const text::Tokenizer &tokenizer,
                          ServerLimits limits)
-    : runtime_(std::move(runtime)), tokenizer_(tokenizer), limits_(ValidateServerLimits(limits)) {
-  if (!runtime_)
-    throw std::invalid_argument("invalid coordinator runtime");
+    : Coordinator(OneRuntime(std::move(runtime)), tokenizer, limits) {}
+Coordinator::Coordinator(std::vector<std::unique_ptr<ModelRuntime>> runtimes,
+                         const text::Tokenizer &tokenizer, ServerLimits limits)
+    : tokenizer_(tokenizer), limits_(ValidateServerLimits(limits)) {
+  if (runtimes.size() != limits_.running_sequences)
+    throw std::invalid_argument("runtime count must match configured running sequences");
+  for (auto &runtime : runtimes) {
+    if (!runtime)
+      throw std::invalid_argument("invalid coordinator runtime");
+    auto lane = std::make_unique<Lane>();
+    lane->runtime = std::move(runtime);
+    lanes_.push_back(std::move(lane));
+  }
   expiry_worker_ = std::thread([this] { ExpireQueued(); });
   try {
-    worker_ = std::thread([this] { Work(); });
+    for (auto &lane : lanes_)
+      lane->worker = std::thread([this, ptr = lane.get()] { Work(*ptr); });
   } catch (...) {
     BeginDrain();
+    for (auto &lane : lanes_)
+      if (lane->worker.joinable())
+        lane->worker.join();
     expiry_worker_.join();
     throw;
   }
@@ -96,8 +118,10 @@ void Coordinator::BeginDrain(bool graceful) {
     job->Cancel(CancelCause::Shutdown);
   if (!graceful)
     drain_deadline_ = Clock::now();
-  if (active_ && Clock::now() >= *drain_deadline_)
-    active_->Cancel(CancelCause::Shutdown);
+  if (Clock::now() >= *drain_deadline_)
+    for (auto &lane : lanes_)
+      if (lane->active)
+        lane->active->Cancel(CancelCause::Shutdown);
   available_.notify_all();
 }
 bool Coordinator::WaitForDrain() {
@@ -107,7 +131,8 @@ bool Coordinator::WaitForDrain() {
     if (!metrics_.draining || !drain_deadline_)
       return false;
     deadline = *drain_deadline_;
-    if (!available_.wait_until(lock, deadline, [&] { return !active_ && queue_.empty(); }))
+    if (!available_.wait_until(lock, deadline,
+                               [&] { return !AnyActiveLocked() && queue_.empty(); }))
       return false;
   }
   std::unique_lock lock(transport_->mutex);
@@ -116,8 +141,9 @@ bool Coordinator::WaitForDrain() {
 void Coordinator::Shutdown() {
   BeginDrain();
   std::lock_guard shutdown(shutdown_mutex_);
-  if (worker_.joinable())
-    worker_.join();
+  for (auto &lane : lanes_)
+    if (lane->worker.joinable())
+      lane->worker.join();
   if (expiry_worker_.joinable())
     expiry_worker_.join();
 }
@@ -127,7 +153,9 @@ ServerMetrics Coordinator::Metrics() const {
   result.queued = queue_.size();
   result.queued_bytes = bytes_;
   result.queued_tokens = tokens_;
-  result.active = bool(active_);
+  result.active = 0;
+  for (const auto &lane : lanes_)
+    result.active += bool(lane->active);
   {
     std::lock_guard transport_lock(transport_->mutex);
     result.active_transports = transport_->active;
@@ -164,38 +192,67 @@ void Coordinator::RecordRejection(AdmissionCause cause, ApiRoute route) {
   std::lock_guard lock(mutex_);
   RecordRejectionLocked(cause, route);
 }
+bool Coordinator::AnyActiveLocked() const {
+  for (const auto &lane : lanes_)
+    if (lane->active)
+      return true;
+  return false;
+}
+bool Coordinator::CanRunLocked(const Lane &lane, const Job &job) const {
+  if (job.request.session_id.empty())
+    return true;
+  for (const auto &other : lanes_)
+    if (other.get() != &lane && other->gpu_session == job.request.session_id &&
+        other->gpu_owner == job.request.session_owner && other->gpu_checkpoint)
+      return false;
+  return true;
+}
 bool Coordinator::SessionCacheAvailable(const std::string &id, const std::string &owner) const {
   std::lock_guard lock(mutex_);
-  return id == gpu_session_ && owner == gpu_owner_ && gpu_checkpoint_ &&
-         sessions_->Get(id, owner).ok() && runtime_->Checkpoint() == gpu_checkpoint_;
+  if (!sessions_->Get(id, owner).ok())
+    return false;
+  for (const auto &lane : lanes_)
+    if (id == lane->gpu_session && owner == lane->gpu_owner && lane->gpu_checkpoint &&
+        lane->runtime->Checkpoint() == lane->gpu_checkpoint)
+      return true;
+  return false;
 }
 Status Coordinator::DiscardSession(const std::string &id, const std::string &owner) {
   auto status = sessions_->Delete(id, owner);
   std::lock_guard lock(mutex_);
-  if (gpu_session_ == id && gpu_owner_ == owner) {
-    gpu_session_.clear();
-    gpu_owner_.clear();
-    gpu_checkpoint_.reset();
+  for (auto &lane : lanes_) {
+    if (lane->gpu_session == id && lane->gpu_owner == owner) {
+      lane->gpu_session.clear();
+      lane->gpu_owner.clear();
+      lane->gpu_checkpoint.reset();
+    }
+    if (lane->active && lane->active->request.session_id == id &&
+        lane->active->request.session_owner == owner)
+      lane->active->Cancel(CancelCause::SessionDiscard);
   }
-  if (active_ && active_->request.session_id == id && active_->request.session_owner == owner)
-    active_->Cancel(CancelCause::SessionDiscard);
+  available_.notify_all();
   return status;
 }
-void Coordinator::Work() {
+void Coordinator::Work(Lane &lane) {
   for (;;) {
     std::shared_ptr<Job> job;
     {
       std::unique_lock lock(mutex_);
-      available_.wait(lock, [&] { return metrics_.draining || !queue_.empty(); });
-      if (queue_.empty())
+      auto candidate = [&] {
+        return std::find_if(queue_.begin(), queue_.end(),
+                            [&](const auto &item) { return CanRunLocked(lane, *item); });
+      };
+      available_.wait(lock, [&] { return metrics_.draining || candidate() != queue_.end(); });
+      if (metrics_.draining && candidate() == queue_.end())
         return;
-      job = queue_.front();
-      queue_.pop_front();
+      auto it = candidate();
+      job = *it;
+      queue_.erase(it);
       bytes_ -= job->admitted_bytes;
       tokens_ -= job->request.input_ids.size() + job->request.outputs;
-      active_ = job;
+      lane.active = job;
     }
-    Execute(job);
+    Execute(lane, job);
   }
 }
 void Coordinator::CompleteJob(const std::shared_ptr<Job> &job) {
@@ -205,8 +262,9 @@ void Coordinator::CompleteJob(const std::shared_ptr<Job> &job) {
   {
     std::lock_guard lock(mutex_);
     RecordOutcome(*job);
-    if (active_ == job)
-      active_.reset();
+    for (auto &lane : lanes_)
+      if (lane->active == job)
+        lane->active.reset();
     available_.notify_all();
   }
   {
@@ -248,11 +306,14 @@ void Coordinator::ExpireQueued() {
       std::unique_lock lock(mutex_);
       const auto now = Clock::now();
       auto wake = now + std::chrono::milliseconds(20);
-      if (metrics_.draining && active_ && drain_deadline_) {
-        if (now >= *drain_deadline_)
-          active_->Cancel(CancelCause::Shutdown);
-        else
+      if (metrics_.draining && AnyActiveLocked() && drain_deadline_) {
+        if (now >= *drain_deadline_) {
+          for (auto &lane : lanes_)
+            if (lane->active)
+              lane->active->Cancel(CancelCause::Shutdown);
+        } else {
           wake = std::min(wake, *drain_deadline_);
+        }
       }
       for (auto it = queue_.begin(); it != queue_.end();) {
         const auto &job = *it;
@@ -271,7 +332,7 @@ void Coordinator::ExpireQueued() {
         }
       }
       if (expired.empty()) {
-        if (metrics_.draining && queue_.empty() && !active_)
+        if (metrics_.draining && queue_.empty() && !AnyActiveLocked())
           return;
         if (queue_.empty() && !metrics_.draining)
           available_.wait(lock);

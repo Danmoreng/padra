@@ -871,6 +871,65 @@ void TestHttpDrainDeadline(text::Tokenizer &tokenizer) {
               metrics.responses_written + metrics.write_failures == 1,
           "drain deadline leaked job or transport accounting");
 }
+void TestConcurrentLanes(text::Tokenizer &tokenizer) {
+  auto first = std::make_shared<MockState>();
+  auto second = std::make_shared<MockState>();
+  first->block = second->block = true;
+  auto enteredFirst = first->entered.get_future();
+  auto enteredSecond = second->entered.get_future();
+  std::vector<std::unique_ptr<ModelRuntime>> runtimes;
+  runtimes.push_back(Runtime(first));
+  runtimes.push_back(Runtime(second));
+  ServerLimits limits;
+  limits.running_sequences = 2;
+  Coordinator coordinator(std::move(runtimes), tokenizer, limits);
+  ReleaseGuard releaseFirst{first}, releaseSecond{second};
+  auto a = Submit(coordinator, Request("a"));
+  auto b = Submit(coordinator, Request("b"));
+  Require(enteredFirst.wait_for(2s) == std::future_status::ready &&
+              enteredSecond.wait_for(2s) == std::future_status::ready,
+          "two lanes did not generate concurrently");
+  Require(coordinator.Metrics().active == 2, "active sequence count wrong");
+  a->Cancel(CancelCause::Disconnect);
+  first->release.set_value();
+  second->release.set_value();
+  Wait(a);
+  Wait(b);
+  Require(!a->failure.ok() && b->failure.ok(), "lane cancellation leaked to another request");
+  Require(coordinator.Metrics().active == 0, "active lanes did not drain");
+}
+void TestLaneFailureAndDrain(text::Tokenizer &tokenizer) {
+  auto failing = std::make_shared<MockState>();
+  auto blocked = std::make_shared<MockState>();
+  failing->generate_failure = true;
+  failing->block = blocked->block = true;
+  auto enteredFailure = failing->entered.get_future();
+  auto entered = blocked->entered.get_future();
+  std::vector<std::unique_ptr<ModelRuntime>> runtimes;
+  runtimes.push_back(Runtime(failing));
+  runtimes.push_back(Runtime(blocked));
+  ServerLimits limits;
+  limits.running_sequences = 2;
+  Coordinator coordinator(std::move(runtimes), tokenizer, limits);
+  ReleaseGuard release{blocked}, releaseFailure{failing};
+  auto a = Submit(coordinator, Request("a"));
+  auto b = Submit(coordinator, Request("b"));
+  Require(entered.wait_for(2s) == std::future_status::ready &&
+              enteredFailure.wait_for(2s) == std::future_status::ready,
+          "both lanes did not start");
+  failing->release.set_value();
+  const auto until = std::chrono::steady_clock::now() + 2s;
+  while (coordinator.Metrics().ready && std::chrono::steady_clock::now() < until)
+    std::this_thread::yield();
+  Require(!coordinator.Metrics().ready, "lane failure left service ready");
+  coordinator.BeginDrain(false);
+  blocked->release.set_value();
+  Wait(a);
+  Wait(b);
+  coordinator.Shutdown();
+  Require(!a->failure.ok() && !b->failure.ok() && coordinator.Metrics().active == 0,
+          "failure/drain left a lane running");
+}
 int main(int argc, char **argv) {
   try {
     auto loaded = text::Tokenizer::Load({}, {});
@@ -892,6 +951,8 @@ int main(int argc, char **argv) {
     }
     if (argc != 1)
       throw std::runtime_error("unknown test filter");
+    TestConcurrentLanes(tokenizer);
+    TestLaneFailureAndDrain(tokenizer);
     TestQueueDeadline(tokenizer);
     std::cout << "PASS independent queue expiry and resource release\n";
     for (auto cause : {CancelCause::Disconnect, CancelCause::Shutdown, CancelCause::SessionDiscard})

@@ -1,0 +1,68 @@
+{
+  "device": "RTX 5070 Ti 16 GiB",
+  "other_gpu_process": "Paused during test; 2716 MiB remained allocated",
+  "model": "EXL3 K6 Q8 head",
+  "context": 8192,
+  "prefill_chunk": 256,
+  "kv_format": "bf16",
+  "mtp": false,
+  "runtime_lanes": 2,
+  "qualification": "Single short functional run, not a throughput benchmark.",
+  "seeded_overlap": {
+    "peak_active": 2,
+    "seeded_messages_match": true,
+    "serial_seconds": [
+      0.5104523299996799,
+      0.5010169199995289
+    ],
+    "parallel_seconds": [
+      0.7761848779991851,
+      0.7748683250028989
+    ],
+    "serial_usage": [
+      {
+        "prompt_tokens": 249,
+        "completion_tokens": 128,
+        "total_tokens": 377,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      {
+        "prompt_tokens": 249,
+        "completion_tokens": 128,
+        "total_tokens": 377,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    ],
+    "parallel_usage": [
+      {
+        "prompt_tokens": 249,
+        "completion_tokens": 128,
+        "total_tokens": 377,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      {
+        "prompt_tokens": 249,
+        "completion_tokens": 128,
+        "total_tokens": 377,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    ]
+  },
+  "stream_cancel_overlap": {
+    "peak_active": 2,
+    "results": [
+      "closed after token",
+      512
+    ],
+    "cancelled_delta": 1.0,
+    "active_after": 0.0
+  }
+}

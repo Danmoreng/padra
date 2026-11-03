@@ -27,11 +27,14 @@ struct ServerMetrics {
   double tokenize_seconds = 0, queue_seconds = 0, prefill_seconds = 0, decode_seconds = 0,
          first_token_seconds = 0, visible_seconds = 0;
   std::size_t queued = 0, queued_bytes = 0, queued_tokens = 0;
-  bool active = false, ready = true, draining = false;
+  std::size_t active = 0;
+  bool ready = true, draining = false;
 };
 class Coordinator {
 public:
   Coordinator(std::unique_ptr<ModelRuntime>, const text::Tokenizer &, ServerLimits = {});
+  Coordinator(std::vector<std::unique_ptr<ModelRuntime>>, const text::Tokenizer &,
+              ServerLimits = {});
   ~Coordinator();
   Result<std::shared_ptr<Job>> Submit(ChatRequest, SubmissionContext = {});
   void BeginDrain(bool graceful = false);
@@ -44,7 +47,16 @@ public:
   AdmissionDecision CheckAdmission() const;
   void RecordRejection(AdmissionCause, ApiRoute);
   RuntimeStats RuntimeMetrics() const {
-    return runtime_->Stats();
+    return lanes_.front()->runtime->Stats();
+  }
+  std::vector<RuntimeStats> RuntimeLaneMetrics() const {
+    std::vector<RuntimeStats> result;
+    for (const auto &lane : lanes_)
+      result.push_back(lane->runtime->Stats());
+    return result;
+  }
+  std::size_t RuntimeCount() const {
+    return lanes_.size();
   }
   SessionStore &Sessions() {
     return *sessions_;
@@ -55,28 +67,35 @@ public:
 private:
   AdmissionDecision CheckAdmissionLocked() const;
   void RecordRejectionLocked(AdmissionCause, ApiRoute);
-  void Work();
+  struct Lane {
+    std::unique_ptr<ModelRuntime> runtime;
+    std::shared_ptr<Job> active;
+    std::string gpu_session, gpu_owner;
+    std::optional<KVCheckpointHandle> gpu_checkpoint;
+    std::thread worker;
+  };
+  bool AnyActiveLocked() const;
+  bool CanRunLocked(const Lane &, const Job &) const;
+  void Work(Lane &);
   void ExpireQueued();
-  void Execute(const std::shared_ptr<Job> &);
-  void PrepareExecution(Job &, std::chrono::steady_clock::time_point, bool &runtime_touched);
-  void CommitHistory(Job &);
+  void Execute(Lane &, const std::shared_ptr<Job> &);
+  void PrepareExecution(Lane &, Job &, std::chrono::steady_clock::time_point,
+                        bool &runtime_touched);
+  void CommitHistory(Lane &, Job &);
   void CompleteJob(const std::shared_ptr<Job> &);
   void RecordOutcome(const Job &); // Caller holds the coordinator mutex.
-  std::unique_ptr<ModelRuntime> runtime_;
+  std::vector<std::unique_ptr<Lane>> lanes_;
   const text::Tokenizer &tokenizer_;
   const ServerLimits limits_;
   std::shared_ptr<SessionStore> sessions_ = std::make_shared<SessionStore>();
-  std::string gpu_session_, gpu_owner_;
-  std::optional<KVCheckpointHandle> gpu_checkpoint_;
   mutable std::mutex mutex_;
   std::condition_variable available_;
   std::deque<std::shared_ptr<Job>> queue_;
-  std::shared_ptr<Job> active_;
   std::mutex shutdown_mutex_;
   std::optional<std::chrono::steady_clock::time_point> drain_deadline_;
   std::shared_ptr<TransportCounters> transport_ = std::make_shared<TransportCounters>();
   std::size_t bytes_ = 0, tokens_ = 0;
   ServerMetrics metrics_;
-  std::thread worker_, expiry_worker_;
+  std::thread expiry_worker_;
 };
 } // namespace mellum16::server
