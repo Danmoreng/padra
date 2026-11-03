@@ -24,6 +24,8 @@ struct Job : GenerationResult {
   std::shared_ptr<TransportCounters> transport;
   std::atomic<bool> disconnect_recorded{false}, backpressure_recorded{false};
   void ObserveOutput(OutputKind, std::size_t tool = 0);
+  void AppendContent(std::string_view);
+  void AppendReasoning(std::string_view);
   ChatRequest request;
   const std::uint64_t created_at;
   std::atomic<CancelCause> cancellation{CancelCause::None};
@@ -53,5 +55,9 @@ struct Job : GenerationResult {
   bool StreamDrained() const {
     return complete && count == 0 && ending_head == ending_count;
   }
+
+private:
+  void AppendOutput(std::string &, std::string_view);
+  std::size_t output_bytes_limit_ = 0;
 };
 } // namespace mellum16::server
