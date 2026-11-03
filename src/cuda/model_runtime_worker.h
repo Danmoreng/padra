@@ -378,10 +378,10 @@ public:
     std::lock_guard lock(mutex);
     stats.post_graph_available_bytes = available;
   }
-  void RecordLoad(std::uint64_t bytes) {
+  void RecordLoad(std::uint64_t bytes, bool uploaded) {
     std::lock_guard lock(mutex);
     ++stats.model_loads;
-    ++stats.weight_uploads;
+    stats.weight_uploads += uploaded;
     ++stats.static_initializations;
     stats.resident_bytes = bytes;
   }
