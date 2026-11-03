@@ -170,7 +170,8 @@ __global__ void StoreDraft(const float *k, const float *v, __nv_bfloat16 *keys,
 #include "mtp_prime.cuh"
 
 struct Draft {
-  Buffer weights, descriptors{192 * sizeof(DeviceMatrix)};
+  std::shared_ptr<Buffer> weights;
+  Buffer descriptors{192 * sizeof(DeviceMatrix)};
   Buffer kv{2 * kWindow * 512 * sizeof(__nv_bfloat16)};
   Buffer workspace{kWorkspaceBytes};
   Buffer ids{8 * sizeof(int)};
@@ -185,16 +186,16 @@ struct Draft {
 
   Draft(const internal::MtpModel &source, DeviceMatrix sharedEmbedding, DeviceMatrix sharedHead,
         const float *localRope, int ropeCapacity, cudaStream_t stream,
-        unsigned char *sharedHeadInput = nullptr)
-      : weights(source.weights.size()), embedding(sharedEmbedding), head(sharedHead),
+        std::shared_ptr<Buffer> sharedWeights, unsigned char *sharedHeadInput = nullptr)
+      : weights(std::move(sharedWeights)), embedding(sharedEmbedding), head(sharedHead),
         headInput(sharedHeadInput), model(source), rope(localRope), capacity(ropeCapacity) {
     if (embedding.format != 0 || (head.format != 0 && head.format != 7) ||
         (head.format == 7 && !headInput) || embedding.rows != kVocabulary ||
         head.rows != kVocabulary || embedding.cols != kHidden || head.cols != kHidden ||
         !embedding.data || !head.data || !rope || capacity < 1)
       throw std::runtime_error("MTP shared target/position binding mismatch");
-    Check(cudaMemcpyAsync(weights.p, source.weights.data(), weights.bytes, cudaMemcpyHostToDevice,
-                          stream));
+    if (!weights || weights->bytes != source.weights.size())
+      throw std::runtime_error("MTP shared weight arena size mismatch");
     Check(cudaMemsetAsync(kv.p, 0, kv.bytes, stream));
     auto *cursor = workspace.As<float>();
     const auto take = [&](int n) {
@@ -248,21 +249,21 @@ struct Draft {
       throw std::runtime_error("MTP BF16 matrix binding mismatch");
     const auto rank = t.shape.size();
     DeviceMatrix m;
-    m.data = weights.As<unsigned char>() + t.offset;
+    m.data = weights->As<unsigned char>() + t.offset;
     m.rows = int(t.shape[rank - 2]);
     m.cols = int(t.shape[rank - 1]);
     if (t.exl3) {
       if (rank != 3 || t.shape[0] != 64 || t.f32 || t.fp8)
         throw std::runtime_error("MTP EXL3 expert binding mismatch");
       m.format = 3;
-      m.suh = reinterpret_cast<const std::uint16_t *>(weights.As<unsigned char>() + t.suh_offset);
-      m.svh = reinterpret_cast<const std::uint16_t *>(weights.As<unsigned char>() + t.svh_offset);
+      m.suh = reinterpret_cast<const std::uint16_t *>(weights->As<unsigned char>() + t.suh_offset);
+      m.svh = reinterpret_cast<const std::uint16_t *>(weights->As<unsigned char>() + t.svh_offset);
     }
     if (t.fp8) {
       if (rank != 3 || t.shape[0] != 64 || t.f32 || t.scale_offset < t.offset)
         throw std::runtime_error("MTP FP8 expert binding mismatch");
       m.format = 1;
-      m.scales = weights.As<unsigned char>() + t.scale_offset;
+      m.scales = weights->As<unsigned char>() + t.scale_offset;
     }
     return m;
   }
@@ -270,10 +271,10 @@ struct Draft {
     const auto &t = model.tensors.at(std::string("blk.28.") + name + ".weight");
     if (!t.f32)
       throw std::runtime_error("MTP F32 binding mismatch");
-    return reinterpret_cast<const float *>(weights.As<unsigned char>() + t.offset);
+    return reinterpret_cast<const float *>(weights->As<unsigned char>() + t.offset);
   }
   std::size_t ResidentBytes() const {
-    return weights.bytes + descriptors.bytes + kv.bytes + workspace.bytes + ids.bytes;
+    return weights->bytes + descriptors.bytes + kv.bytes + workspace.bytes + ids.bytes;
   }
   void Project(const char *name, const float *input, float *output, int *bad, cudaStream_t s) {
     const auto m = Matrix(name);

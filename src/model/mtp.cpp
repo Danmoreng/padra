@@ -225,10 +225,12 @@ Result<MtpModel> LoadMtpModel(const std::filesystem::path &directory, bool fp8_e
     result.weights = OpenRegular(directory / "weights.bin");
     Require(result.weights.size() == (exl3_experts  ? kMtpExl3WeightsBytes
                                       : fp8_experts ? kMtpFp8WeightsBytes
-                                                    : kMtpWeightsBytes) &&
-                Hash(result.weights) == (exl3_experts  ? kMtpExl3WeightsSha256
-                                         : fp8_experts ? kMtpFp8WeightsSha256
-                                                       : kMtpWeightsSha256),
+                                                    : kMtpWeightsBytes),
+            "MTP payload size/SHA-256 mismatch");
+    result.weights_sha256 = Hash(result.weights);
+    Require(result.weights_sha256 == (exl3_experts  ? kMtpExl3WeightsSha256
+                                      : fp8_experts ? kMtpFp8WeightsSha256
+                                                    : kMtpWeightsSha256),
             "MTP payload size/SHA-256 mismatch");
     result.tensors = std::move(parsed).value();
     result.manifest_sha256 = compiler::Sha256Hex(manifest.data(), manifest.size());

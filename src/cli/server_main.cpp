@@ -153,25 +153,31 @@ int main(int argc, char **argv) {
       throw std::runtime_error(validated.status().message());
     auto config = std::move(validated).value();
     limits = config.generation();
+    if (limits.session_cache_entries &&
+        (kv_format != mellum16::KVCacheFormat::BF16 || !mtp.artifact.empty()))
+      throw std::runtime_error("session cache requires BF16 KV without MTP");
     auto text = mellum16::text::Tokenizer::Load(argv[2], argv[3]);
     if (!text.ok())
       throw std::runtime_error(text.status().message());
     auto tokenizer = std::move(text).value();
-    std::unique_ptr<mellum16::ModelRuntime> runtime;
-    auto loaded = mellum16::ModelRuntime::Load(argv[1], tokenizer->sha256(), true, context.value(),
-                                               kv_format, -1, chunk, budget, true, mtp, q8_head);
-    if (!loaded.ok())
-      throw std::runtime_error(loaded.status().message());
-    runtime = std::move(loaded).value();
-    // Prepare startup graphs without claiming model inference; discard request.
-    const std::array<int, 1> primer{0};
-    auto prepared = runtime->PrepareRequestShape(primer, 0);
-    if (!prepared.ok())
-      throw std::runtime_error(prepared.message());
-    auto reset = runtime->Reset();
-    if (!reset.ok())
-      throw std::runtime_error(reset.message());
-    mellum16::server::Coordinator coordinator(std::move(runtime), *tokenizer, limits);
+    std::vector<std::unique_ptr<mellum16::ModelRuntime>> runtimes;
+    for (unsigned lane = 0; lane < limits.running_sequences; ++lane) {
+      auto loaded =
+          mellum16::ModelRuntime::Load(argv[1], tokenizer->sha256(), true, context.value(),
+                                       kv_format, -1, chunk, budget, true, mtp, q8_head);
+      if (!loaded.ok())
+        throw std::runtime_error(loaded.status().message());
+      auto runtime = std::move(loaded).value();
+      const std::array<int, 1> primer{0};
+      auto prepared = runtime->PrepareRequestShape(primer, 0);
+      if (!prepared.ok())
+        throw std::runtime_error(prepared.message());
+      auto reset = runtime->Reset();
+      if (!reset.ok())
+        throw std::runtime_error(reset.message());
+      runtimes.push_back(std::move(runtime));
+    }
+    mellum16::server::Coordinator coordinator(std::move(runtimes), *tokenizer, limits);
     mellum16::server::HttpServer http(coordinator, *tokenizer, config);
     if (http.Bind() <= 0)
       throw std::runtime_error("API/admin loopback bind failed");

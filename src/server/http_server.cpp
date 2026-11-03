@@ -114,7 +114,10 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
                                               r.expert_rate))
         << ",\"prefill_chunk\":" << r.prefill_chunk
         << ",\"device_budget_gib\":" << r.device_budget_gib
-        << ",\"active_gpu_sessions\":1,\"logical_session_limit\":32,\"session_ttl_seconds\":1800,"
+        << ",\"active_gpu_sessions\":" << coordinator_.RuntimeCount()
+        << ",\"active_gpu_sequences\":" << coordinator_.Metrics().active
+        << ",\"runtime_lanes\":" << coordinator_.RuntimeCount()
+        << ",\"logical_session_limit\":32,\"session_ttl_seconds\":1800,"
            "\"native_kv_reuse\":"
         << (r.checkpoint_enabled && r.model_loads ? "true" : "false")
         << ",\"checkpoint_snapshot_bytes\":" << r.checkpoint_bytes
@@ -145,11 +148,13 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << "\nmellum_requests_cancelled_total " << m.cancelled << "\nmellum_queue_rejected_total "
         << m.rejected << "\nmellum_disconnects_total " << m.disconnects
         << "\nmellum_backpressure_total " << m.backpressure << "\nmellum_queue_requests "
-        << m.queued << "\nmellum_queue_bytes " << m.queued_bytes << "\nmellum_queue_tokens "
-        << m.queued_tokens << "\nmellum_active_requests " << m.active << "\nmellum_ready "
-        << m.ready << "\nmellum_model_loads_total " << r.model_loads
-        << "\nmellum_weight_uploads_total " << r.weight_uploads << "\nmellum_graph_captures_total "
-        << r.graph_captures << "\nmellum_resident_device_bytes " << r.resident_bytes
+        << m.queued << "\nmellum_session_cache_entries " << m.session_cache_entries
+        << "\nmellum_session_cache_bytes " << m.session_cache_bytes << "\nmellum_queue_bytes "
+        << m.queued_bytes << "\nmellum_queue_tokens " << m.queued_tokens
+        << "\nmellum_active_requests " << m.active << "\nmellum_ready " << m.ready
+        << "\nmellum_model_loads_total " << r.model_loads << "\nmellum_weight_uploads_total "
+        << r.weight_uploads << "\nmellum_graph_captures_total " << r.graph_captures
+        << "\nmellum_resident_device_bytes " << r.resident_bytes
         << "\nmellum_required_device_bytes " << r.required_bytes << "\nmellum_mtp_depth "
         << r.mtp_depth << "\nmellum_mtp_resident_device_bytes " << r.mtp_resident_bytes
         << "\nmellum_mtp_groups_total " << r.mtp_groups << "\nmellum_mtp_draft_calls_total "
@@ -167,6 +172,19 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
     out << "mellum_output_tokens_total " << m.output_tokens << "\nmellum_prefill_chunks_total "
         << r.prefill_chunks << "\nmellum_prefill_eager_chunks_total " << r.eager_tail_chunks
         << '\n';
+    auto lanes = coordinator_.RuntimeLaneMetrics();
+    out << "padra_runtime_lanes " << lanes.size() << '\n';
+    for (std::size_t i = 0; i < lanes.size(); ++i) {
+      const auto label = "{lane=\"" + std::to_string(i) + "\"} ";
+      out << "padra_lane_weight_uploads_total" << label << lanes[i].weight_uploads << '\n'
+          << "padra_lane_mtp_weight_uploads_total" << label << lanes[i].mtp_weight_uploads << '\n'
+          << "padra_lane_mtp_weight_bytes" << label << lanes[i].mtp_weight_bytes << '\n'
+          << "padra_lane_mtp_groups_total" << label << lanes[i].mtp_groups << '\n'
+          << "padra_lane_mtp_proposed_total" << label << lanes[i].mtp_proposed << '\n'
+          << "padra_lane_mtp_accepted_total" << label << lanes[i].mtp_accepted << '\n'
+          << "padra_lane_prefill_chunks_total" << label << lanes[i].prefill_chunks << '\n'
+          << "padra_lane_requests_total" << label << lanes[i].requests << '\n';
+    }
     m.queue_latency.Write(out, "mellum_queue_wait_seconds");
     m.tokenization_latency.Write(out, "mellum_tokenization_seconds");
     m.prefill_latency.Write(out, "mellum_prefill_seconds");

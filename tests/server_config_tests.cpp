@@ -11,13 +11,21 @@ int main() {
                 defaults.value().http().heartbeat == 15s,
             "resolved configuration borrowed mutable inputs");
     auto custom = ServerConfig::Parse(
-        R"({"queue":{"requests":2,"tokens":128,"timeout_ms":60,"generation_timeout_ms":80,"drain_timeout_ms":0},"http":{"preparation_requests":1,"threads":2,"queued_connections":4,"admin_port":8081,"heartbeat_ms":25,"poll_ms":1,"read_timeout_ms":100,"write_timeout_ms":200}})",
+        R"({"execution":{"running_sequences":2},"queue":{"requests":2,"tokens":128,"timeout_ms":60,"generation_timeout_ms":80,"drain_timeout_ms":0},"http":{"preparation_requests":1,"threads":2,"queued_connections":4,"admin_port":8081,"heartbeat_ms":25,"poll_ms":1,"read_timeout_ms":100,"write_timeout_ms":200}})",
         options);
     Require(custom.ok() && custom.value().generation().queued_requests == 2 &&
+                custom.value().generation().running_sequences == 2 &&
                 custom.value().generation().generation_timeout == 80ms &&
                 custom.value().http().heartbeat == 25ms &&
                 custom.value().http().admin_port == 8081 && custom.value().port() == 8080,
             "configuration overrides/defaults were not resolved");
+    auto cache =
+        ServerConfig::Parse(R"({"session_cache":{"entries":2,"bytes":100000000}})", options);
+    Require(cache.ok() && cache.value().generation().session_cache_entries == 2 &&
+                cache.value().generation().session_cache_bytes == 100000000,
+            "session cache config not parsed");
+    Require(!ServerConfig::Parse(R"({"session_cache":{"entries":2}})", options).ok(),
+            "unbounded session cache accepted");
     const auto encoded = json::Parse(custom.value().Json(8080, 8081));
     Require(encoded.ok() &&
                 encoded.value().find("queue")->find("generation_timeout_ms")->as_integer() == 80,
@@ -27,6 +35,9 @@ int main() {
                               "",
                               "{} trailing",
                               R"({"unknown":1})",
+                              R"({"execution":{"running_sequences":2},"session_cache":{"entries":1,"bytes":1024}})",
+                              R"({"execution":{"running_sequences":0}})",
+                              R"({"execution":{"running_sequences":5}})",
                               R"({"queue":null})",
                               R"({"http":{"threads":0}})",
                               R"({"http":{"threads":65}})",

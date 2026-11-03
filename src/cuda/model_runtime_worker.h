@@ -40,8 +40,10 @@ public:
                                  : 0;
     if (options.server_kv_checkpoint && !options.mtp.artifact.empty())
       stats.checkpoint_bytes += kMtpCheckpointBytes;
-    if (options.server_kv_checkpoint)
-      checkpoint.emplace(options.capacity, NewCheckpointRuntimeBinding(), options.kv_cache_format);
+    if (options.server_kv_checkpoint) {
+      checkpoint_binding = NewCheckpointRuntimeBinding();
+      checkpoint.emplace(options.capacity, checkpoint_binding, options.kv_cache_format);
+    }
     options.input_ids.resize(options.capacity, 0);
     options.generate = 0;
     options.capture_logits = true;
@@ -177,6 +179,80 @@ public:
     checkpoint_restore_pending = false;
     ++stats.checkpoint_restores;
   }
+  Result<KVSessionSnapshot> SaveSession(std::size_t budget) override {
+    std::unique_lock api(api_mutex, std::try_to_lock);
+    if (!api.owns_lock())
+      return Busy();
+    std::unique_lock lock(mutex);
+    if (failed)
+      return fault;
+    if (!checkpoint || !checkpoint->handle() || options.kv_cache_format != KVCacheFormat::BF16 ||
+        !options.mtp.artifact.empty())
+      return Status{StatusCode::kUnsupported, "snapshot requires BF16 checkpoint without MTP"};
+    if (state.phase() != SessionPhase::Completed && state.phase() != SessionPhase::Cancelled)
+      return Status{StatusCode::kInvalidArgument, "snapshot requires completed session"};
+    const auto handle = *checkpoint->handle();
+    const std::size_t bytes =
+        KVCheckpointLedger::LocalSnapshotBytes(KVCacheFormat::BF16) + 7ULL * handle.anchor * 2048;
+    const std::size_t total = bytes + static_cast<std::size_t>(handle.anchor) * sizeof(int);
+    if (total > budget)
+      return Status{StatusCode::kResourceExhausted, "session snapshot exceeds cache budget"};
+    KVSessionSnapshot snapshot;
+    snapshot.binding = handle.runtime_binding;
+    snapshot.anchor = handle.anchor;
+    try {
+      snapshot.prefix = checkpoint->prefix();
+      snapshot.bytes.resize(bytes);
+    } catch (const std::bad_alloc &) {
+      return Status{StatusCode::kResourceExhausted, "session snapshot allocation failed"};
+    }
+    if (snapshot.Size() > budget)
+      return Status{StatusCode::kResourceExhausted,
+                    "session snapshot allocation exceeds cache budget"};
+    transfer = &snapshot;
+    transferred = false;
+    command = Command::Save;
+    cv.notify_all();
+    cv.wait(lock, [&] { return transferred || failed; });
+    transfer = nullptr;
+    if (failed)
+      return fault;
+    return snapshot;
+  }
+  Status LoadSession(const KVSessionSnapshot &snapshot) override {
+    std::unique_lock api(api_mutex, std::try_to_lock);
+    if (!api.owns_lock())
+      return Busy();
+    std::unique_lock lock(mutex);
+    if (failed)
+      return fault;
+    if (!checkpoint || options.kv_cache_format != KVCacheFormat::BF16 ||
+        !options.mtp.artifact.empty())
+      return {StatusCode::kUnsupported, "snapshot requires BF16 checkpoint without MTP"};
+    if (state.phase() != SessionPhase::Ready || snapshot.binding != checkpoint_binding ||
+        snapshot.anchor < 1 || snapshot.anchor > options.capacity ||
+        snapshot.prefix.size() != static_cast<std::size_t>(snapshot.anchor) ||
+        snapshot.bytes.size() != KVCheckpointLedger::LocalSnapshotBytes(KVCacheFormat::BF16) +
+                                     7ULL * snapshot.anchor * 2048)
+      return {StatusCode::kInvalidArgument, "invalid session snapshot binding or extent"};
+    transfer = const_cast<KVSessionSnapshot *>(&snapshot);
+    transferred = false;
+    command = Command::Load;
+    cv.notify_all();
+    cv.wait(lock, [&] { return transferred || failed; });
+    transfer = nullptr;
+    if (failed)
+      return fault;
+    auto status = checkpoint->Capture(snapshot.prefix, snapshot.anchor);
+    if (status.ok())
+      state.AdoptCheckpoint(snapshot.anchor);
+    return status;
+  }
+  void TransferDone() {
+    std::lock_guard lock(mutex);
+    transferred = true;
+    cv.notify_all();
+  }
   Status Append(std::span<const int> ids, int outputs, bool logits,
                 SamplingOptions sampling = {}) override {
     if (options.diagnostic_decode_token >= 0)
@@ -289,15 +365,19 @@ public:
     result.cached_tokens = append_base;
     return result;
   }
-  bool AwaitPrepare() {
+  int AwaitPrepare() {
     std::unique_lock lock(mutex);
     loaded = true;
     cv.notify_all();
-    cv.wait(lock, [&] { return command == Command::Prepare || command == Command::Shutdown; });
+    cv.wait(lock, [&] {
+      return command == Command::Prepare || command == Command::Shutdown ||
+             command == Command::Save || command == Command::Load;
+    });
     if (command == Command::Shutdown)
-      return false;
+      return 0;
+    const int result = command == Command::Prepare ? 1 : command == Command::Save ? 2 : 3;
     command = Command::None;
-    return true;
+    return result;
   }
   bool AwaitGenerate() {
     std::unique_lock lock(mutex);
@@ -366,6 +446,11 @@ public:
       checkpoint->Invalidate();
     cv.notify_all();
   }
+  void RecordDraftWeight(bool uploaded, std::size_t bytes) {
+    std::lock_guard lock(mutex);
+    stats.mtp_weight_uploads = uploaded ? 1 : 0;
+    stats.mtp_weight_bytes = bytes;
+  }
   void RecordAdmission(std::size_t total, std::size_t free, std::size_t available,
                        std::size_t required) {
     std::lock_guard lock(mutex);
@@ -378,10 +463,10 @@ public:
     std::lock_guard lock(mutex);
     stats.post_graph_available_bytes = available;
   }
-  void RecordLoad(std::uint64_t bytes) {
+  void RecordLoad(std::uint64_t bytes, bool uploaded) {
     std::lock_guard lock(mutex);
     ++stats.model_loads;
-    ++stats.weight_uploads;
+    stats.weight_uploads += uploaded;
     ++stats.static_initializations;
     stats.resident_bytes = bytes;
   }
@@ -416,9 +501,12 @@ public:
   std::optional<KVCheckpointLedger> checkpoint;
   int checkpoint_anchor = 0;
   bool checkpoint_restore_pending = false;
+  std::uint64_t checkpoint_binding = 0;
+  KVSessionSnapshot *transfer = nullptr;
+  bool transferred = false;
 
 private:
-  enum class Command { None, Prepare, Generate, Discard, Shutdown };
+  enum class Command { None, Prepare, Generate, Discard, Save, Load, Shutdown };
   Command command = Command::None;
   std::mutex api_mutex;
   TokenCallback token_callback;

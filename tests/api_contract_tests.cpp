@@ -75,6 +75,34 @@ void TextNormalization(text::Tokenizer &tokenizer) {
                               std::string::npos,
           "content normalization reordered original function schema bytes");
 }
+void PreparationReuse(text::Tokenizer &tokenizer, httplib::Client &client) {
+  const std::string body =
+      R"({"model":"mellum21-exl3-k4-research","input":"hello €","store":false,"tools":[{"type":"function","name":"lookup","parameters":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"number"}}}}]})";
+  auto tree = json::Parse(body);
+  Require(tree.ok(), "valid Responses JSON rejected");
+  auto ordinary = ParseResponseRequest(body);
+  auto reused = ParseResponseRequestValidated(body, tree.value(), "[]", kModelId);
+  Require(ordinary.ok() && reused.ok() && ordinary.value().chat_body == reused.value().chat_body &&
+              ordinary.value().history == reused.value().history &&
+              ordinary.value().tools == reused.value().tools,
+          "reused Responses tree changed translation or schema order");
+  auto response = client.Post("/v1/responses", body, "application/json");
+  Require(response && response->status == 200, "valid Responses HTTP request failed");
+  for (const std::string &malformed : {
+           std::string(R"({"model":"mellum21-exl3-k4-research","input":"a","input":"b"})"),
+           std::string("{\"model\":\"mellum21-exl3-k4-research\",\"input\":\"") + char(0xff) +
+               "\"}",
+           std::string(R"({"model":"mellum21-exl3-k4-research","input":)"),
+       }) {
+    auto reply = client.Post("/v1/responses", malformed, "application/json");
+    Require(reply && reply->status == 400, "Responses boundary accepted malformed JSON");
+  }
+  const std::string chat =
+      R"({"model":"mellum21-exl3-k4-research","messages":[{"role":"user","content":"hello €"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"z":{"type":"string"},"a":{"type":"number"}}}}}]})";
+  auto unchanged = ParseChatRequest(chat, tokenizer, 8192, "unchanged");
+  Require(unchanged.ok() && unchanged.value().body == chat,
+          "unchanged history lost source bytes or schema order");
+}
 void SamplingForwarding(text::Tokenizer &tokenizer) {
   auto state = std::make_shared<MockState>();
   state->tokens = {0, 28};
@@ -151,6 +179,7 @@ int main(int argc, char **argv) {
       auto reply = client.Post(route, "{}", "application/json");
       Require(reply && reply->status == 404, "unsupported endpoint silently accepted");
     }
+    PreparationReuse(*tokenizer.value(), client);
     SamplingForwarding(*tokenizer.value());
     TextNormalization(*tokenizer.value());
     ResponseCompatibility(*tokenizer.value());

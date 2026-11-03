@@ -1,0 +1,16 @@
+{
+  "queue": {
+    "requests": 16,
+    "bytes": 67108864,
+    "tokens": 1048576,
+    "timeout_ms": 600000,
+    "generation_timeout_ms": 600000
+  },
+  "http": {
+    "preparation_requests": 8,
+    "threads": 24
+  },
+  "execution": {
+    "running_sequences": 1
+  }
+}

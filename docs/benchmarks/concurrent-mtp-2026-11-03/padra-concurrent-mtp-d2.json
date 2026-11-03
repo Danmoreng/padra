@@ -1,0 +1,32 @@
+{
+  "mtp_depth": 2,
+  "peak_active": 2,
+  "serial_parallel_match": [
+    true,
+    true
+  ],
+  "cancelled": {
+    "closed_after_token": true
+  },
+  "recovery_matches": true,
+  "survivor_completion_tokens": 1024,
+  "draft_weight_uploads": [
+    1.0,
+    0.0
+  ],
+  "mtp_proposed_delta": 1584.0,
+  "mtp_accepted_delta": 863.0,
+  "lane_groups": [
+    709.0,
+    83.0
+  ],
+  "active_after": 0.0,
+  "serial_seconds": [
+    0.5063796680005908,
+    0.4696441669984779
+  ],
+  "parallel_seconds": [
+    0.7562811700008751,
+    0.7403517909988295
+  ]
+}

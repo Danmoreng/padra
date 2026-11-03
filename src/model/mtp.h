@@ -21,7 +21,7 @@ struct MtpTensor {
 struct MtpModel {
   MappedFile weights;
   std::map<std::string, MtpTensor, std::less<>> tensors;
-  std::string manifest_sha256;
+  std::string manifest_sha256, weights_sha256;
 };
 using MtpTensorTable = std::map<std::string, MtpTensor, std::less<>>;
 // Validate metadata without opening a payload (also used by host contract tests).

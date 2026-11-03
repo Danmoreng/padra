@@ -1,6 +1,197 @@
 #include "compiler/sha256.h"
 #include "server_test_support.h"
 
+// Exercises coordinator ownership and eviction using a deterministic snapshot backend.
+class SnapshotBackend final : public RuntimeBackend {
+public:
+  KVCheckpointLedger ledger{8192, 77};
+  std::vector<int> prompt;
+  int anchor = 0, cached = 0;
+  int loads = 0;
+  std::function<void()> on_save, on_load;
+  Status Prepare(std::span<const int> ids, int, bool, SamplingOptions) override {
+    prompt.assign(ids.begin(), ids.end());
+    anchor = 0;
+    cached = 0;
+    return {};
+  }
+  Status Append(std::span<const int>, int, bool, SamplingOptions) override {
+    return {};
+  }
+  Status PrepareCheckpoint(std::span<const int> ids, int n, int a, bool b,
+                           SamplingOptions o) override {
+    auto status = Prepare(ids, n, b, o);
+    anchor = a;
+    return status;
+  }
+  Status RestoreCheckpoint(std::span<const int> ids, int, const KVCheckpointHandle &h, int a, bool,
+                           SamplingOptions) override {
+    auto base = ledger.RestoreBase(ids, h);
+    if (!base.ok())
+      return base.status();
+    prompt.assign(ids.begin(), ids.end());
+    anchor = a;
+    cached = base.value();
+    return {};
+  }
+  std::optional<KVCheckpointHandle> Checkpoint() const override {
+    return ledger.handle();
+  }
+  Result<KVSessionSnapshot> SaveSession(std::size_t budget) override {
+    if (on_save)
+      on_save();
+    const auto h = *ledger.handle();
+    KVSessionSnapshot snapshot;
+    snapshot.binding = h.runtime_binding;
+    snapshot.anchor = h.anchor;
+    snapshot.prefix = ledger.prefix();
+    const auto bytes =
+        KVCheckpointLedger::LocalSnapshotBytes(KVCacheFormat::BF16) + 7ULL * h.anchor * 2048;
+    if (bytes + snapshot.prefix.size() * sizeof(int) > budget)
+      return Status{StatusCode::kResourceExhausted, "budget"};
+    snapshot.bytes.resize(bytes);
+    return snapshot;
+  }
+  Status LoadSession(const KVSessionSnapshot &snapshot) override {
+    if (on_load)
+      on_load();
+    if (snapshot.binding != 77)
+      return {StatusCode::kInvalidArgument, "binding"};
+    ++loads;
+    return ledger.Capture(snapshot.prefix, snapshot.anchor);
+  }
+  Result<InferenceResult> Generate(TokenCallback callback, PrefillCallback) override {
+    if (anchor) {
+      auto status = ledger.Capture(prompt, anchor);
+      if (!status.ok())
+        return status;
+    }
+    InferenceResult result;
+    result.generated_ids = {0};
+    if (callback)
+      callback(0);
+    return result;
+  }
+  Status Reset() override {
+    ledger.Invalidate();
+    cached = 0;
+    return {};
+  }
+  void Cancel() override {}
+  RuntimeStats Stats() const override {
+    RuntimeStats stats;
+    stats.checkpoint_enabled = true;
+    stats.cached_tokens = cached;
+    return stats;
+  }
+};
+void TestSessionSnapshotCache(text::Tokenizer &tokenizer) {
+  ServerLimits limits;
+  limits.session_cache_entries = 2;
+  limits.session_cache_bytes = 100 * 1024 * 1024;
+  auto backend = std::make_unique<SnapshotBackend>();
+  auto *probe = backend.get();
+  Coordinator coordinator(std::make_unique<ModelRuntime>(std::move(backend)), tokenizer, limits);
+  auto a = coordinator.Sessions().Create("owner").value().id;
+  auto b = coordinator.Sessions().Create("owner").value().id;
+  auto c = coordinator.Sessions().Create("owner").value().id;
+  auto run = [&](const std::string &id, int first = 1) {
+    auto request = Request("snapshot");
+    request.session_id = id;
+    request.session_owner = "owner";
+    request.body = R"({"messages":[]})";
+    request.input_ids = {first, 2, 3, 4, 5, 6};
+    request.checkpoint_anchor = 2;
+    auto job = Submit(coordinator, std::move(request));
+    Wait(job);
+    Require(job->failure.ok(), "snapshot request failed");
+    return job->cached_tokens;
+  };
+  Require(run(a) == 0 && run(b) == 0 && run(a) == 2, "A-B-A did not restore");
+  Require(probe->loads == 1, "expected one imported snapshot");
+  Require(!coordinator.SessionCacheAvailable(a, "other"), "owner isolation failed");
+  Require(run(c) == 0 && !coordinator.SessionCacheAvailable(b, "owner"), "LRU eviction failed");
+  Require(run(a, 9) == 0, "changed prefix reused snapshot");
+  Require(coordinator.DiscardSession(a, "owner").ok() &&
+              !coordinator.SessionCacheAvailable(a, "owner"),
+          "deletion retained snapshot");
+}
+void TestSnapshotDeletionDuringTransfer(text::Tokenizer &tokenizer, bool during_save) {
+  ServerLimits limits;
+  limits.session_cache_entries = 2;
+  limits.session_cache_bytes = 100 * 1024 * 1024;
+  auto backend = std::make_unique<SnapshotBackend>();
+  auto *probe = backend.get();
+  Coordinator coordinator(std::make_unique<ModelRuntime>(std::move(backend)), tokenizer, limits);
+  auto a = coordinator.Sessions().Create("owner").value().id;
+  auto b = coordinator.Sessions().Create("owner").value().id;
+  auto submit = [&](const std::string &id) {
+    auto request = Request("snapshot-race");
+    request.session_id = id;
+    request.session_owner = "owner";
+    request.body = R"({"messages":[]})";
+    request.input_ids = {1, 2, 3, 4, 5, 6};
+    request.checkpoint_anchor = 2;
+    return Submit(coordinator, std::move(request));
+  };
+  if (!during_save) {
+    auto first = submit(a);
+    Wait(first);
+    auto second = submit(b);
+    Wait(second);
+  }
+  std::promise<void> entered, release;
+  auto released = release.get_future().share();
+  auto pause = [&] {
+    entered.set_value();
+    released.wait();
+  };
+  if (during_save)
+    probe->on_save = pause;
+  else
+    probe->on_load = pause;
+  auto active = submit(a);
+  Require(entered.get_future().wait_for(2s) == std::future_status::ready,
+          "snapshot transfer did not start");
+  const auto bytes_before = coordinator.Metrics().session_cache_bytes;
+  auto discarded =
+      std::async(std::launch::async, [&] { return coordinator.DiscardSession(a, "owner"); });
+  const bool responsive = discarded.wait_for(1s) == std::future_status::ready;
+  const bool deleted = responsive && discarded.get().ok();
+  const auto bytes_during = coordinator.Metrics().session_cache_bytes;
+  release.set_value();
+  Require(deleted, "deletion blocked by snapshot transfer");
+  Wait(active);
+  if (!during_save) {
+    Require(bytes_during == bytes_before && bytes_before > 0,
+            "pinned snapshot lost its byte charge during import");
+    Require(coordinator.Metrics().session_cache_bytes < bytes_during,
+            "deleted snapshot retained its byte charge after import");
+  }
+  Require(!coordinator.SessionCacheAvailable(a, "owner"), "deleted session was reinserted");
+}
+void TestSnapshotBudget(text::Tokenizer &tokenizer) {
+  ServerLimits limits;
+  limits.session_cache_entries = 2;
+  limits.session_cache_bytes = KVCheckpointLedger::LocalSnapshotBytes(KVCacheFormat::BF16) +
+                               7ULL * 2 * 2048 + 2 * sizeof(int) - 1;
+  Coordinator coordinator(std::make_unique<ModelRuntime>(std::make_unique<SnapshotBackend>()),
+                          tokenizer, limits);
+  auto a = coordinator.Sessions().Create("owner").value().id;
+  auto b = coordinator.Sessions().Create("owner").value().id;
+  for (const auto &id : {a, b}) {
+    auto request = Request("budget");
+    request.session_id = id;
+    request.session_owner = "owner";
+    request.body = R"({"messages":[]})";
+    request.input_ids = {1, 2, 3, 4, 5, 6};
+    request.checkpoint_anchor = 2;
+    auto job = Submit(coordinator, std::move(request));
+    Wait(job);
+    Require(job->failure.ok(), "budget miss should fall back to replay");
+  }
+  Require(!coordinator.SessionCacheAvailable(a, "owner"), "snapshot exceeded byte budget");
+}
 void TestQueueDeadline(text::Tokenizer &tokenizer) {
   auto state = std::make_shared<MockState>();
   state->block = true;
@@ -871,6 +1062,65 @@ void TestHttpDrainDeadline(text::Tokenizer &tokenizer) {
               metrics.responses_written + metrics.write_failures == 1,
           "drain deadline leaked job or transport accounting");
 }
+void TestConcurrentLanes(text::Tokenizer &tokenizer) {
+  auto first = std::make_shared<MockState>();
+  auto second = std::make_shared<MockState>();
+  first->block = second->block = true;
+  auto enteredFirst = first->entered.get_future();
+  auto enteredSecond = second->entered.get_future();
+  std::vector<std::unique_ptr<ModelRuntime>> runtimes;
+  runtimes.push_back(Runtime(first));
+  runtimes.push_back(Runtime(second));
+  ServerLimits limits;
+  limits.running_sequences = 2;
+  Coordinator coordinator(std::move(runtimes), tokenizer, limits);
+  ReleaseGuard releaseFirst{first}, releaseSecond{second};
+  auto a = Submit(coordinator, Request("a"));
+  auto b = Submit(coordinator, Request("b"));
+  Require(enteredFirst.wait_for(2s) == std::future_status::ready &&
+              enteredSecond.wait_for(2s) == std::future_status::ready,
+          "two lanes did not generate concurrently");
+  Require(coordinator.Metrics().active == 2, "active sequence count wrong");
+  a->Cancel(CancelCause::Disconnect);
+  first->release.set_value();
+  second->release.set_value();
+  Wait(a);
+  Wait(b);
+  Require(!a->failure.ok() && b->failure.ok(), "lane cancellation leaked to another request");
+  Require(coordinator.Metrics().active == 0, "active lanes did not drain");
+}
+void TestLaneFailureAndDrain(text::Tokenizer &tokenizer) {
+  auto failing = std::make_shared<MockState>();
+  auto blocked = std::make_shared<MockState>();
+  failing->generate_failure = true;
+  failing->block = blocked->block = true;
+  auto enteredFailure = failing->entered.get_future();
+  auto entered = blocked->entered.get_future();
+  std::vector<std::unique_ptr<ModelRuntime>> runtimes;
+  runtimes.push_back(Runtime(failing));
+  runtimes.push_back(Runtime(blocked));
+  ServerLimits limits;
+  limits.running_sequences = 2;
+  Coordinator coordinator(std::move(runtimes), tokenizer, limits);
+  ReleaseGuard release{blocked}, releaseFailure{failing};
+  auto a = Submit(coordinator, Request("a"));
+  auto b = Submit(coordinator, Request("b"));
+  Require(entered.wait_for(2s) == std::future_status::ready &&
+              enteredFailure.wait_for(2s) == std::future_status::ready,
+          "both lanes did not start");
+  failing->release.set_value();
+  const auto until = std::chrono::steady_clock::now() + 2s;
+  while (coordinator.Metrics().ready && std::chrono::steady_clock::now() < until)
+    std::this_thread::yield();
+  Require(!coordinator.Metrics().ready, "lane failure left service ready");
+  coordinator.BeginDrain(false);
+  blocked->release.set_value();
+  Wait(a);
+  Wait(b);
+  coordinator.Shutdown();
+  Require(!a->failure.ok() && !b->failure.ok() && coordinator.Metrics().active == 0,
+          "failure/drain left a lane running");
+}
 int main(int argc, char **argv) {
   try {
     auto loaded = text::Tokenizer::Load({}, {});
@@ -892,6 +1142,12 @@ int main(int argc, char **argv) {
     }
     if (argc != 1)
       throw std::runtime_error("unknown test filter");
+    TestSessionSnapshotCache(tokenizer);
+    TestSnapshotBudget(tokenizer);
+    TestSnapshotDeletionDuringTransfer(tokenizer, true);
+    TestSnapshotDeletionDuringTransfer(tokenizer, false);
+    TestConcurrentLanes(tokenizer);
+    TestLaneFailureAndDrain(tokenizer);
     TestQueueDeadline(tokenizer);
     std::cout << "PASS independent queue expiry and resource release\n";
     for (auto cause : {CancelCause::Disconnect, CancelCause::Shutdown, CancelCause::SessionDiscard})

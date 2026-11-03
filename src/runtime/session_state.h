@@ -41,6 +41,11 @@ public:
   // This transition alone provides no KV proof: the worker must first validate
   // a completed snapshot identity/prefix, then restore its local rings before
   // returning Prepared. Ordinary append's no-rollback contract is unchanged.
+  void AdoptCheckpoint(int base) {
+    committed_ = base;
+    phase_ = SessionPhase::Completed;
+    pending_.reset();
+  }
   Status PrepareCheckpointRestore(std::span<const int> ids, int outputs, int base) {
     if (phase_ != SessionPhase::Completed && phase_ != SessionPhase::Cancelled)
       return Fail("checkpoint restore requires completed/cancelled session");

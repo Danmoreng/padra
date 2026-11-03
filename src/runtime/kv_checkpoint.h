@@ -86,6 +86,9 @@ public:
       return Invalid("canonical history changed before retained checkpoint");
     return handle.anchor;
   }
+  const std::vector<int> &prefix() const {
+    return prefix_;
+  }
   void Invalidate() {
     handle_.reset();
     prefix_.clear();

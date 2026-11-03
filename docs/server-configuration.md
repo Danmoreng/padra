@@ -8,7 +8,7 @@ padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT \
   [--config server.json]
 ```
 
-The optional JSON file overrides the included queue/HTTP settings after positional
+The optional JSON file overrides the included execution, queue and HTTP settings after positional
 defaults are resolved. Omitted fields retain those defaults. It cannot change the
 model, tokenizer, context or numerical execution profile. Invalid types, unknown
 fields, unsupported values, duplicate keys and files above 64 KiB are rejected
@@ -23,6 +23,7 @@ Example:
 
 ```json
 {
+  "execution": {"running_sequences": 1},
   "queue": {
     "requests": 8,
     "bytes": 67108864,
@@ -54,6 +55,21 @@ times the selected context. The embedded coordinator defaults are 30000 ms,
 8192 context in the HTTP constructor, and 65536 queued tokens. Other defaults are
 shown above. An explicit positional generation timeout retains its meaning;
 `queue.generation_timeout_ms`, if supplied, overrides it.
+
+`execution.running_sequences` selects 1–4 independent runtime lanes (default 1).
+Each lane owns its own KV cache, sampling state, scratch buffers and CUDA graphs;
+the immutable target and MTP draft weights are shared. MTP draft KV, verifier
+backup and rollback state remain lane-local. Startup allocates and admits every
+lane against available device memory and the selected device budget. These lanes
+run independent streams: they do not batch kernels across
+requests or provide a batched-token budget or prefill/decode fairness scheduler.
+The active sequence count is exposed as `mellum_active_requests` and in
+`/v1/models`. Per-lane request, prefill chunk and weight upload counters are
+exposed as `padra_lane_*` metrics, including draft weight uploads and MTP
+proposal/acceptance counts. Per-lane draft weight bytes are logical bytes; the
+corresponding upload counter identifies the lane that allocated the shared arena.
+Existing runtime allocation and graph metrics
+refer to the first lane. A session checkpoint stays bound to its owning lane.
 
 Queue/preparation limits bound admitted work separately from HTTP connection
 limits. Request-body allowance is derived from context and reported as
@@ -108,3 +124,13 @@ cooperation govern final teardown, so drain is not a hard process-exit deadline.
 Stop is idempotent, including before Bind/Listen and concurrent startup. A stopped
 server object is not restarted in place; create a new server/runtime or process.
 Sessions, response retention and KV identity are volatile and absent after restart.
+
+## Optional session snapshot cache
+
+Add `"session_cache": {"entries": 2, "bytes": 268435456}` to the configuration
+root to retain up to two physical KV snapshots within a 256 MiB host-memory payload
+budget. Both values default to zero and must either both be zero or both be positive.
+Entries are evicted least-recently-used, and snapshots larger than the budget are
+skipped. The opt-in currently requires BF16 KV without MTP and exactly one runtime
+lane. This is separate from the logical session-history store and does not reserve extra VRAM. See
+[KV cache storage](kv-cache.md) for memory accounting and limitations.
