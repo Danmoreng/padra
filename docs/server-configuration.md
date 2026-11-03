@@ -108,3 +108,13 @@ cooperation govern final teardown, so drain is not a hard process-exit deadline.
 Stop is idempotent, including before Bind/Listen and concurrent startup. A stopped
 server object is not restarted in place; create a new server/runtime or process.
 Sessions, response retention and KV identity are volatile and absent after restart.
+
+## Optional session snapshot cache
+
+Add `"session_cache": {"entries": 2, "bytes": 268435456}` to the configuration
+root to retain up to two physical KV snapshots within a 256 MiB host-memory payload
+budget. Both values default to zero and must either both be zero or both be positive.
+Entries are evicted least-recently-used, and snapshots larger than the budget are
+skipped. The opt-in currently requires BF16 KV without MTP. This is separate from
+the logical session-history store and does not reserve extra VRAM. See
+[KV cache storage](kv-cache.md) for memory accounting and limitations.

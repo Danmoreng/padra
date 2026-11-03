@@ -153,6 +153,9 @@ int main(int argc, char **argv) {
       throw std::runtime_error(validated.status().message());
     auto config = std::move(validated).value();
     limits = config.generation();
+    if (limits.session_cache_entries &&
+        (kv_format != mellum16::KVCacheFormat::BF16 || !mtp.artifact.empty()))
+      throw std::runtime_error("session cache requires BF16 KV without MTP");
     auto text = mellum16::text::Tokenizer::Load(argv[2], argv[3]);
     if (!text.ok())
       throw std::runtime_error(text.status().message());

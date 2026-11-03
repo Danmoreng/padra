@@ -44,7 +44,9 @@ ServerLimits ValidateServerLimits(ServerLimits limits) {
   if (!limits.queued_requests || limits.queued_requests > 1024 || !limits.queued_bytes ||
       limits.queued_bytes > (std::uint64_t{1} << 40) || !limits.queued_tokens ||
       limits.queued_tokens > (std::uint64_t{1} << 31) || !Duration(limits.queue_timeout) ||
-      !Duration(limits.generation_timeout) || !Duration(limits.drain_timeout, true))
+      !Duration(limits.generation_timeout) || !Duration(limits.drain_timeout, true) ||
+      ((limits.session_cache_entries == 0) != (limits.session_cache_bytes == 0)) ||
+      limits.session_cache_entries > 1024 || limits.session_cache_bytes > (std::uint64_t{1} << 40))
     throw std::invalid_argument("invalid queue, generation or drain limits");
   return limits;
 }
@@ -77,7 +79,12 @@ Result<ServerConfig> ServerConfig::Parse(std::string_view body, ServerOptions de
     return parsed.status();
   try {
     const auto &root = parsed.value();
-    Known(root, {"queue", "http"});
+    Known(root, {"queue", "http", "session_cache"});
+    if (const auto *c = root.find("session_cache")) {
+      Known(*c, {"entries", "bytes"});
+      Read(*c, "entries", defaults.generation.session_cache_entries);
+      Read(*c, "bytes", defaults.generation.session_cache_bytes);
+    }
     if (const auto *q = root.find("queue")) {
       Known(*q, {"requests", "bytes", "tokens", "timeout_ms", "generation_timeout_ms",
                  "drain_timeout_ms"});
@@ -118,6 +125,8 @@ std::string ServerConfig::Json(int port, int admin_port) const {
   return "{\"port\":" + std::to_string(port) + ",\"admin_port\":" + std::to_string(admin_port) +
          ",\"context_capacity\":" + std::to_string(options_.capacity) +
          ",\"request_body_bytes\":" + std::to_string(RequestBodyLimit(options_.capacity)) +
+         ",\"session_cache\":{\"entries\":" + std::to_string(q.session_cache_entries) +
+         ",\"bytes\":" + std::to_string(q.session_cache_bytes) + "}" +
          ",\"queue\":{\"requests\":" + std::to_string(q.queued_requests) +
          ",\"bytes\":" + std::to_string(q.queued_bytes) +
          ",\"tokens\":" + std::to_string(q.queued_tokens) +
