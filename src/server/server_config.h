@@ -7,6 +7,7 @@ namespace mellum16::server {
 struct ServerLimits {
   std::size_t queued_requests = 8, queued_bytes = 64 * 1024 * 1024, queued_tokens = 65536;
   std::chrono::milliseconds queue_timeout{5000}, generation_timeout{30000}, drain_timeout{5000};
+  unsigned running_sequences = 1;
   bool operator==(const ServerLimits &) const = default;
 };
 ServerLimits ValidateServerLimits(ServerLimits);

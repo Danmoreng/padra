@@ -1,5 +1,6 @@
 // Experimental fully resident Mellum forward with explicit activation/dispatch profiles.
 #include "runtime/inference.h"
+#include "runtime/shared_weight_registry.h"
 #include "runtime/build_identity.h"
 #include "runtime/native_artifacts.h"
 #include "runtime/mtp_schedule.h"
@@ -692,6 +693,7 @@ struct Buffer {
     return static_cast<T *>(p);
   }
 };
+SharedWeightRegistry<Buffer> sharedWeights;
 struct TimingEvent {
   cudaEvent_t value = nullptr;
   TimingEvent() {
@@ -1363,6 +1365,19 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     }
     if (o.q8_head)
       internal::ApplySharedHeadQ8(model);
+    // Serialize lookup, admission and publication so a second worker cannot
+    // observe an incomplete upload or race another allocation of the weights.
+    std::optional<SharedWeightRegistry<Buffer>::Lock> weightLock;
+    std::shared_ptr<Buffer> sharedArena;
+    int weightDevice = 0;
+    Check(cudaGetDevice(&weightDevice));
+    const SharedWeightKey weightKey{weightDevice, model.manifest_sha256, model.weights_sha256,
+                                    model.shared_head_sha256, model.diagnostic_attention_sha256,
+                                    o.q8_head};
+    if (worker) {
+      weightLock.emplace(sharedWeights.Acquire());
+      sharedArena = sharedWeights.Find(weightKey, *weightLock);
+    }
     std::size_t free = 0, total = 0;
     Check(cudaMemGetInfo(&free, &total));
     const auto weightsbytes =
@@ -1499,7 +1514,8 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                         samplerBytes,
                         samplerTempBytes});
     const auto available = ServerAvailableBytes(free, total, o.server_device_budget_gib);
-    const auto required = admission::Sum({plannedResident, 700ULL * 1024 * 1024});
+    const auto required = admission::Sum({plannedResident - (sharedArena ? weightsbytes : 0),
+                                          700ULL * 1024 * 1024});
     if (worker)
       worker->RecordAdmission(total, free, available, required);
     if (required > available)
@@ -1511,13 +1527,16 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                         " capacity=" + std::to_string(o.capacity));
     Stream stream;
     TimingEvent promptStarted, promptLogitsReady;
-    Buffer arena(static_cast<std::size_t>(weightsbytes));
+    const bool uploadWeights = !sharedArena;
+    if (!sharedArena)
+      sharedArena = std::make_shared<Buffer>(static_cast<std::size_t>(weightsbytes));
+    auto &arena = *sharedArena;
     Buffer headInput(o.q8_head ? head_q8::kWorkspaceBytes : 0);
     Buffer deviceState(o.device_decode ? sizeof(DecodeState) : 4);
-    if (model.uploads.empty())
+    if (uploadWeights && model.uploads.empty())
       Check(cudaMemcpyAsync(arena.p, model.weights.data(), static_cast<std::size_t>(weightsbytes),
                             cudaMemcpyHostToDevice, stream.s));
-    else
+    else if (uploadWeights)
       for (const auto &r : model.uploads)
         Check(cudaMemcpyAsync(arena.As<unsigned char>() + r.device_offset,
                               (r.shared_head
@@ -1526,6 +1545,14 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                              : model.weights.data()) +
                                   r.source_offset,
                               r.bytes, cudaMemcpyHostToDevice, stream.s));
+    if (worker && uploadWeights) {
+      // Publish only after the upload event completes; consumers use independent streams.
+      TimingEvent uploaded;
+      Check(cudaEventRecord(uploaded.value, stream.s));
+      Check(cudaEventSynchronize(uploaded.value));
+      sharedWeights.Publish(weightKey, sharedArena, *weightLock);
+    }
+    weightLock.reset();
     Buffer packedChunk(packedChunkBytes);
     auto *packedChunkK = packedChunk.As<__nv_bfloat16>();
     auto *packedChunkV = o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
@@ -2208,7 +2235,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                            mtpEnabled, o.mtp.fp8_experts, o.q8_head, o.mtp.exl3_experts);
       if (admission::Sum({plan.resident, prefillCommand.bytes}) != result.resident_buffer_bytes)
         throw std::runtime_error("persistent memory inventory mismatch");
-      worker->RecordLoad(result.resident_buffer_bytes);
+      worker->RecordLoad(result.resident_buffer_bytes, uploadWeights);
     }
     if (worker) { // Prime every sampler/CUB kernel before capture, outside Generate.
       for (const auto kernel : {reinterpret_cast<const void *>(gpu_sampling::CountPrompt),

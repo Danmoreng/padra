@@ -41,7 +41,8 @@ void Known(const json::Value &object, std::initializer_list<std::string_view> ke
 }
 } // namespace
 ServerLimits ValidateServerLimits(ServerLimits limits) {
-  if (!limits.queued_requests || limits.queued_requests > 1024 || !limits.queued_bytes ||
+  if (!limits.running_sequences || limits.running_sequences > 4 || !limits.queued_requests ||
+      limits.queued_requests > 1024 || !limits.queued_bytes ||
       limits.queued_bytes > (std::uint64_t{1} << 40) || !limits.queued_tokens ||
       limits.queued_tokens > (std::uint64_t{1} << 31) || !Duration(limits.queue_timeout) ||
       !Duration(limits.generation_timeout) || !Duration(limits.drain_timeout, true))
@@ -77,7 +78,11 @@ Result<ServerConfig> ServerConfig::Parse(std::string_view body, ServerOptions de
     return parsed.status();
   try {
     const auto &root = parsed.value();
-    Known(root, {"queue", "http"});
+    Known(root, {"queue", "http", "execution"});
+    if (const auto *e = root.find("execution")) {
+      Known(*e, {"running_sequences"});
+      Read(*e, "running_sequences", defaults.generation.running_sequences);
+    }
     if (const auto *q = root.find("queue")) {
       Known(*q, {"requests", "bytes", "tokens", "timeout_ms", "generation_timeout_ms",
                  "drain_timeout_ms"});
@@ -118,7 +123,8 @@ std::string ServerConfig::Json(int port, int admin_port) const {
   return "{\"port\":" + std::to_string(port) + ",\"admin_port\":" + std::to_string(admin_port) +
          ",\"context_capacity\":" + std::to_string(options_.capacity) +
          ",\"request_body_bytes\":" + std::to_string(RequestBodyLimit(options_.capacity)) +
-         ",\"queue\":{\"requests\":" + std::to_string(q.queued_requests) +
+         ",\"execution\":{\"running_sequences\":" + std::to_string(q.running_sequences) +
+         "},\"queue\":{\"requests\":" + std::to_string(q.queued_requests) +
          ",\"bytes\":" + std::to_string(q.queued_bytes) +
          ",\"tokens\":" + std::to_string(q.queued_tokens) +
          ",\"timeout_ms\":" + std::to_string(q.queue_timeout.count()) +
