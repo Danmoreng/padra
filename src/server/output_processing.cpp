@@ -92,8 +92,8 @@ void GenerateOutput(ModelRuntime &runtime, const text::Tokenizer &tokenizer, Job
     auto visible = tools.Push(output.content);
     if (!visible.empty() && job.visible_seconds == 0)
       job.visible_seconds = std::chrono::duration<double>(Clock::now() - started).count();
-    job.content.append(visible);
-    job.reasoning.append(output.reasoning);
+    job.AppendContent(visible);
+    job.AppendReasoning(output.reasoning);
     events.Delta(visible, output.reasoning);
     tools.FlushDeltas();
     if (tools.delivery_failed())
@@ -137,7 +137,7 @@ void GenerateOutput(ModelRuntime &runtime, const text::Tokenizer &tokenizer, Job
   accept_output(thinking.Push(stops.Finish()));
   accept_output(thinking.Finish());
   auto visible = tools.Finish();
-  job.content.append(visible);
+  job.AppendContent(visible);
   if (!visible.empty() && job.visible_seconds == 0)
     job.visible_seconds = std::chrono::duration<double>(Clock::now() - started).count();
   events.Delta(visible, {});
