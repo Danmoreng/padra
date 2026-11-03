@@ -10,6 +10,10 @@ Coordinator::Coordinator(std::unique_ptr<ModelRuntime> runtime, const text::Toke
     : runtime_(std::move(runtime)), tokenizer_(tokenizer), limits_(ValidateServerLimits(limits)) {
   if (!runtime_)
     throw std::invalid_argument("invalid coordinator runtime");
+  if (limits_.session_cache_entries &&
+      (!runtime_->Stats().checkpoint_enabled ||
+       runtime_->Stats().kv_format != KVCacheFormat::BF16 || runtime_->Stats().mtp_depth))
+    throw std::invalid_argument("session cache requires BF16 checkpoint runtime without MTP");
   expiry_worker_ = std::thread([this] { ExpireQueued(); });
   try {
     worker_ = std::thread([this] { Work(); });
@@ -124,6 +128,8 @@ void Coordinator::Shutdown() {
 ServerMetrics Coordinator::Metrics() const {
   std::lock_guard lock(mutex_);
   auto result = metrics_;
+  result.session_cache_entries = session_cache_.size();
+  result.session_cache_bytes = session_cache_bytes_;
   result.queued = queue_.size();
   result.queued_bytes = bytes_;
   result.queued_tokens = tokens_;
@@ -164,14 +170,32 @@ void Coordinator::RecordRejection(AdmissionCause cause, ApiRoute route) {
   std::lock_guard lock(mutex_);
   RecordRejectionLocked(cause, route);
 }
+void Coordinator::RemoveCached(const std::string &id, const std::string &owner) {
+  for (auto it = session_cache_.begin(); it != session_cache_.end();) {
+    if (it->id == id && it->owner == owner) {
+      session_cache_bytes_ -= it->snapshot->Size();
+      it = session_cache_.erase(it);
+    } else
+      ++it;
+  }
+}
 bool Coordinator::SessionCacheAvailable(const std::string &id, const std::string &owner) const {
   std::lock_guard lock(mutex_);
-  return id == gpu_session_ && owner == gpu_owner_ && gpu_checkpoint_ &&
-         sessions_->Get(id, owner).ok() && runtime_->Checkpoint() == gpu_checkpoint_;
+  if (!sessions_->Get(id, owner).ok())
+    return false;
+  if (id == gpu_session_ && owner == gpu_owner_ && gpu_checkpoint_ &&
+      runtime_->Checkpoint() == gpu_checkpoint_)
+    return true;
+  for (const auto &entry : session_cache_)
+    if (entry.id == id && entry.owner == owner)
+      return true;
+  return false;
 }
 Status Coordinator::DiscardSession(const std::string &id, const std::string &owner) {
   auto status = sessions_->Delete(id, owner);
   std::lock_guard lock(mutex_);
+  if (status.ok())
+    RemoveCached(id, owner);
   if (gpu_session_ == id && gpu_owner_ == owner) {
     gpu_session_.clear();
     gpu_owner_.clear();

@@ -18,6 +18,13 @@ int main() {
                 custom.value().http().heartbeat == 25ms &&
                 custom.value().http().admin_port == 8081 && custom.value().port() == 8080,
             "configuration overrides/defaults were not resolved");
+    auto cache =
+        ServerConfig::Parse(R"({"session_cache":{"entries":2,"bytes":100000000}})", options);
+    Require(cache.ok() && cache.value().generation().session_cache_entries == 2 &&
+                cache.value().generation().session_cache_bytes == 100000000,
+            "session cache config not parsed");
+    Require(!ServerConfig::Parse(R"({"session_cache":{"entries":2}})", options).ok(),
+            "unbounded session cache accepted");
     const auto encoded = json::Parse(custom.value().Json(8080, 8081));
     Require(encoded.ok() &&
                 encoded.value().find("queue")->find("generation_timeout_ms")->as_integer() == 80,

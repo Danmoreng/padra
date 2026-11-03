@@ -50,6 +50,16 @@ struct RuntimeStats {
 };
 using TokenCallback = std::function<bool(int)>;
 using PrefillCallback = std::function<bool(int)>;
+// Opaque to callers: bytes are owned by the runtime binding that exported them.
+struct KVSessionSnapshot {
+  std::uint64_t binding = 0;
+  int anchor = 0;
+  std::vector<int> prefix;
+  std::vector<unsigned char> bytes;
+  std::size_t Size() const {
+    return bytes.capacity() + prefix.capacity() * sizeof(int);
+  }
+};
 class RuntimeBackend {
 public:
   virtual ~RuntimeBackend() = default;
@@ -64,6 +74,12 @@ public:
   }
   virtual std::optional<KVCheckpointHandle> Checkpoint() const {
     return {};
+  }
+  virtual Result<KVSessionSnapshot> SaveSession(std::size_t) {
+    return Status{StatusCode::kUnsupported, "session snapshots unavailable"};
+  }
+  virtual Status LoadSession(const KVSessionSnapshot &) {
+    return {StatusCode::kUnsupported, "session snapshots unavailable"};
   }
   virtual Result<InferenceResult> Generate(TokenCallback, PrefillCallback) = 0;
   virtual Status Reset() = 0;
@@ -101,6 +117,12 @@ public:
   }
   std::optional<KVCheckpointHandle> Checkpoint() const {
     return backend_->Checkpoint();
+  }
+  Result<KVSessionSnapshot> SaveSession(std::size_t budget) {
+    return backend_->SaveSession(budget);
+  }
+  Status LoadSession(const KVSessionSnapshot &snapshot) {
+    return backend_->LoadSession(snapshot);
   }
   Result<InferenceResult> Generate(TokenCallback callback = {}, PrefillCallback progress = {}) {
     return backend_->Generate(std::move(callback), std::move(progress));

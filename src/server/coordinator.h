@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <deque>
 #include <memory>
+#include <list>
 #include <mutex>
 #include <thread>
 namespace mellum16::server {
@@ -27,6 +28,7 @@ struct ServerMetrics {
   double tokenize_seconds = 0, queue_seconds = 0, prefill_seconds = 0, decode_seconds = 0,
          first_token_seconds = 0, visible_seconds = 0;
   std::size_t queued = 0, queued_bytes = 0, queued_tokens = 0;
+  std::size_t session_cache_entries = 0, session_cache_bytes = 0;
   bool active = false, ready = true, draining = false;
 };
 class Coordinator {
@@ -68,6 +70,13 @@ private:
   std::shared_ptr<SessionStore> sessions_ = std::make_shared<SessionStore>();
   std::string gpu_session_, gpu_owner_;
   std::optional<KVCheckpointHandle> gpu_checkpoint_;
+  struct CachedSession {
+    std::string owner, id;
+    std::shared_ptr<const KVSessionSnapshot> snapshot;
+  };
+  std::list<CachedSession> session_cache_;
+  std::size_t session_cache_bytes_ = 0;
+  void RemoveCached(const std::string &, const std::string &);
   mutable std::mutex mutex_;
   std::condition_variable available_;
   std::deque<std::shared_ptr<Job>> queue_;
