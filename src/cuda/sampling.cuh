@@ -138,6 +138,7 @@ inline void PrepareLaunch(const float *logits, float *adjusted, int *ids, const 
     Prepare<false><<<(n + Threads - 1) / Threads, Threads, 0, stream>>>(logits, adjusted, ids,
                                                                         counts, n, bad, 0, 0, 1);
 }
+template <bool ShortScan = true>
 inline void Launch(const float *logits, float *adjusted, float *sorted, int *ids, int *sortedIds,
                    double *cumulative, State *state, Control *chosen, int *bad, void *temp,
                    std::size_t bytes, cudaStream_t stream, SamplingOptions options,
@@ -145,6 +146,9 @@ inline void Launch(const float *logits, float *adjusted, float *sorted, int *ids
   PrepareLaunch(logits, adjusted, ids, counts, n, bad, options, stream);
   Check(cub::DeviceRadixSort::SortPairsDescending(temp, bytes, adjusted, sorted, ids, sortedIds, n,
                                                   0, 32, stream));
+  // Only the first top_k entries participate in the CDF and choice.
+  if (ShortScan && options.top_k > 0 && options.top_k <= 1024 && options.top_k <= n)
+    n = options.top_k;
   Probabilities<<<(n + Threads - 1) / Threads, Threads, 0, stream>>>(
       sorted, cumulative, n, bad, options.temperature, options.top_k);
   Check(cub::DeviceScan::InclusiveSum(temp, bytes, cumulative, cumulative, n, stream));
