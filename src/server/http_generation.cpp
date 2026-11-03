@@ -50,7 +50,8 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
       return;
     }
   }
-  auto parsed = ParseResponseRequest(request.body, parent ? parent->history : "[]", model_id_);
+  auto parsed = ParseResponseRequestValidated(request.body, raw.value(),
+                                              parent ? parent->history : "[]", model_id_);
   if (!parsed.ok()) {
     Error(response,
           parsed.status().code() == StatusCode::kNotFound            ? 404

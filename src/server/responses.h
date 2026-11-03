@@ -25,6 +25,12 @@ struct ResponseRequest {
 Result<ResponseRequest> ParseResponseRequest(std::string_view body,
                                              std::string_view previous_history = "[]",
                                              std::string_view selected_model = kModelId);
+// Internal fast path: root must be the strict json::Parse result for these exact
+// body bytes. The body is still needed to preserve tool/schema declaration order.
+Result<ResponseRequest> ParseResponseRequestValidated(std::string_view body,
+                                                      const json::Value &root,
+                                                      std::string_view previous_history,
+                                                      std::string_view selected_model);
 std::string ResponseOutputItems(const ResponseRequest &, const GenerationResult &);
 std::string ResponseEnvelope(const ResponseRequest &, const GenerationResult *job = nullptr,
                              std::string_view status = "in_progress");
