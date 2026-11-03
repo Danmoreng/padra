@@ -55,6 +55,48 @@ void Case(text::Tokenizer &tokenizer, int boundary) {
   Require(coordinator.Sessions().Stats() == std::pair<std::size_t, std::size_t>{4, 8},
           "logical reservation probe leaked retained history");
 }
+void CancellationCleanup(text::Tokenizer &tokenizer, bool reset_failure) {
+  auto state = std::make_shared<MockState>();
+  state->pause_after = 1;
+  state->tokens = {0, 0};
+  Coordinator coordinator(Runtime(state), tokenizer);
+  ReleaseGuard release{state};
+  auto entered = state->entered.get_future();
+  auto session = coordinator.Sessions().Create("owner");
+  Require(session.ok(), "cleanup session setup failed");
+  auto request = Request("cancel_cleanup");
+  request.outputs = 2;
+  request.body = ChatBody;
+  request.session_id = session.value().id;
+  request.session_owner = "owner";
+  auto job = Submit(coordinator, std::move(request));
+  Require(entered.wait_for(2s) == std::future_status::ready,
+          "cleanup generation barrier not entered");
+  // Enable failure only after the initial preparation reset has succeeded.
+  state->reset_failure = reset_failure;
+  job->Cancel(CancelCause::Disconnect);
+  state->release.set_value();
+  Wait(job);
+  const auto metrics = coordinator.Metrics();
+  Require(metrics.ready == !reset_failure, "cleanup reset failure readiness incorrect");
+  Require(!metrics.active && metrics.queued == 0 && metrics.queued_bytes == 0 &&
+              metrics.queued_tokens == 0 && metrics.cancelled == 1 && metrics.completed == 0 &&
+              !job->session_lease && job->failure_cause == CancelCause::Disconnect,
+          "cleanup reset changed cancellation outcome or leaked resources");
+  auto snapshot = coordinator.Sessions().Get(session.value().id, "owner");
+  Require(snapshot.ok() && !snapshot.value().active && snapshot.value().history == "[]",
+          "cleanup reset retained a session lease or committed cancelled history");
+  AdmissionDecision decision;
+  auto next = coordinator.Submit(Request("after_cleanup"), {false, ApiRoute::Chat, &decision});
+  Require(next.ok() == !reset_failure, "cleanup reset readiness did not govern admission");
+  if (next.ok()) {
+    Wait(next.value());
+    Require(next.value()->failure.ok(), "successful cleanup did not permit generation");
+  } else {
+    Require(decision.cause == AdmissionCause::NotReady,
+            "failed cleanup did not reject admission as not ready");
+  }
+}
 void RetentionFailure() {
   auto sessions = std::make_shared<SessionStore>();
   auto store = std::make_shared<ResponseStore>();
@@ -87,6 +129,8 @@ int main() {
     Require(tokenizer.ok(), "test tokenizer unavailable");
     for (int boundary = 0; boundary < 6; ++boundary)
       Case(*tokenizer.value(), boundary);
+    CancellationCleanup(*tokenizer.value(), false);
+    CancellationCleanup(*tokenizer.value(), true);
     RetentionFailure();
     std::cout << "PASS reset/preparation/generation/tool/history failure release boundaries\n";
   } catch (const std::exception &error) {

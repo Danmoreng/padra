@@ -126,8 +126,13 @@ void Coordinator::Execute(const std::shared_ptr<Job> &job) {
         gpu_checkpoint_.reset();
       }
     }
-    if (runtime_touched && runtime_->Stats().phase != SessionPhase::Poisoned)
-      (void)runtime_->Reset();
+    if (runtime_touched && runtime_->Stats().phase != SessionPhase::Poisoned) {
+      const auto reset = runtime_->Reset();
+      if (!reset.ok()) {
+        std::lock_guard lock(mutex_);
+        metrics_.ready = false;
+      }
+    }
     job->Fail(error.what());
   }
   lease.reset();
