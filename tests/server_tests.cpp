@@ -153,12 +153,21 @@ void TestSnapshotDeletionDuringTransfer(text::Tokenizer &tokenizer, bool during_
   auto active = submit(a);
   Require(entered.get_future().wait_for(2s) == std::future_status::ready,
           "snapshot transfer did not start");
+  const auto bytes_before = coordinator.Metrics().session_cache_bytes;
   auto discarded =
       std::async(std::launch::async, [&] { return coordinator.DiscardSession(a, "owner"); });
   const bool responsive = discarded.wait_for(1s) == std::future_status::ready;
+  const bool deleted = responsive && discarded.get().ok();
+  const auto bytes_during = coordinator.Metrics().session_cache_bytes;
   release.set_value();
-  Require(responsive && discarded.get().ok(), "deletion blocked by snapshot transfer");
+  Require(deleted, "deletion blocked by snapshot transfer");
   Wait(active);
+  if (!during_save) {
+    Require(bytes_during == bytes_before && bytes_before > 0,
+            "pinned snapshot lost its byte charge during import");
+    Require(coordinator.Metrics().session_cache_bytes < bytes_during,
+            "deleted snapshot retained its byte charge after import");
+  }
   Require(!coordinator.SessionCacheAvailable(a, "owner"), "deleted session was reinserted");
 }
 void TestSnapshotBudget(text::Tokenizer &tokenizer) {

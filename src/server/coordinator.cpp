@@ -203,7 +203,8 @@ void Coordinator::RecordRejection(AdmissionCause cause, ApiRoute route) {
 void Coordinator::RemoveCached(const std::string &id, const std::string &owner) {
   for (auto it = session_cache_.begin(); it != session_cache_.end();) {
     if (it->id == id && it->owner == owner) {
-      session_cache_bytes_ -= it->snapshot->Size();
+      if (it->snapshot != importing_snapshot_)
+        session_cache_bytes_ -= it->snapshot->Size();
       it = session_cache_.erase(it);
     } else
       ++it;

@@ -127,6 +127,6 @@ Add `"session_cache": {"entries": 2, "bytes": 268435456}` to the configuration
 root to retain up to two physical KV snapshots within a 256 MiB host-memory payload
 budget. Both values default to zero and must either both be zero or both be positive.
 Entries are evicted least-recently-used, and snapshots larger than the budget are
-skipped. The opt-in currently requires BF16 KV without MTP. This is separate from
-the logical session-history store and does not reserve extra VRAM. See
+skipped. The opt-in currently requires BF16 KV without MTP and exactly one runtime
+lane. This is separate from the logical session-history store and does not reserve extra VRAM. See
 [KV cache storage](kv-cache.md) for memory accounting and limitations.

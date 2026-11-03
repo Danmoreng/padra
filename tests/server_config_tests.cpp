@@ -35,6 +35,7 @@ int main() {
                               "",
                               "{} trailing",
                               R"({"unknown":1})",
+                              R"({"execution":{"running_sequences":2},"session_cache":{"entries":1,"bytes":1024}})",
                               R"({"execution":{"running_sequences":0}})",
                               R"({"execution":{"running_sequences":5}})",
                               R"({"queue":null})",

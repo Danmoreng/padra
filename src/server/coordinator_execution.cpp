@@ -1,5 +1,6 @@
 #include "server/coordinator.h"
 #include "server/output_processing.h"
+#include <algorithm>
 #include <stdexcept>
 namespace mellum16::server {
 namespace {
@@ -61,13 +62,29 @@ void Coordinator::PrepareExecution(Lane &lane, Job &job, Clock::time_point start
         for (auto it = session_cache_.begin(); it != session_cache_.end(); ++it) {
           if (it->id == job.request.session_id && it->owner == job.request.session_owner) {
             snapshot = it->snapshot;
+            importing_snapshot_ = snapshot;
             session_cache_.splice(session_cache_.begin(), session_cache_, it);
             break;
           }
         }
       }
       if (snapshot) {
-        status = lane.runtime->LoadSession(*snapshot);
+        auto release_snapshot = [&] {
+          std::lock_guard lock(mutex_);
+          const bool indexed = std::any_of(session_cache_.begin(), session_cache_.end(),
+                                           [&](const auto &entry) { return entry.snapshot == snapshot; });
+          if (!indexed)
+            session_cache_bytes_ -= snapshot->Size();
+          importing_snapshot_.reset();
+          snapshot.reset();
+        };
+        try {
+          status = lane.runtime->LoadSession(*snapshot);
+        } catch (...) {
+          release_snapshot();
+          throw;
+        }
+        release_snapshot();
         if (status.ok()) {
           if (lease->record->deleted.load())
             throw std::runtime_error("session discarded during snapshot import");

@@ -96,6 +96,7 @@ private:
   };
   std::list<CachedSession> session_cache_;
   std::size_t session_cache_bytes_ = 0;
+  std::shared_ptr<const KVSessionSnapshot> importing_snapshot_;
   void RemoveCached(const std::string &, const std::string &);
   mutable std::mutex mutex_;
   std::condition_variable available_;

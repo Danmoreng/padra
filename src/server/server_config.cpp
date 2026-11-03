@@ -41,6 +41,8 @@ void Known(const json::Value &object, std::initializer_list<std::string_view> ke
 }
 } // namespace
 ServerLimits ValidateServerLimits(ServerLimits limits) {
+  if (limits.session_cache_entries && limits.running_sequences != 1)
+    throw std::invalid_argument("session cache requires exactly one runtime lane");
   if (!limits.running_sequences || limits.running_sequences > 4 || !limits.queued_requests ||
       limits.queued_requests > 1024 || !limits.queued_bytes ||
       limits.queued_bytes > (std::uint64_t{1} << 40) || !limits.queued_tokens ||
