@@ -119,6 +119,50 @@ void CacheProbe() {
   }
   std::cout << "CACHE " << cases << " exact cases and 7 invalid guards passed\n";
 }
+// Exercise the device-resident proposal prefix after its host observation.
+void ProposalInputsProbe() {
+  Stream stream;
+  Buffer state(sizeof(DecodeState)), chosen(sizeof(Control)), inputs(mtp::kMaxRows * sizeof(int)),
+      rows(mtp::kMaxRows * sizeof(DecodeState)), bad(sizeof(int));
+  for (int depth = 1; depth < mtp::kMaxRows; ++depth) {
+    for (int eos = 1; eos <= depth + 1; ++eos) {
+      DecodeState initial{123, 10, 100, 10, 10, 10, 0, 0};
+      Check(cudaMemcpyAsync(state.p, &initial, sizeof(initial), cudaMemcpyHostToDevice, stream.s));
+      Check(cudaMemsetAsync(bad.p, 0, sizeof(int), stream.s));
+      std::array<Control, mtp::kMaxRows> proposals{};
+      for (int d = 0; d < depth; ++d) {
+        proposals[d] = {d + 1 == eos ? 28 : 200 + d, 0};
+        Check(cudaMemcpyAsync(chosen.p, &proposals[d], sizeof(Control), cudaMemcpyHostToDevice,
+                              stream.s));
+        mtp::SaveProposal<<<1, 1, 0, stream.s>>>(chosen.As<Control>(), state.As<DecodeState>(),
+                                                 inputs.As<int>(), d, bad.As<int>());
+      }
+      std::array<int, mtp::kMaxRows> observed{};
+      Check(cudaMemcpyAsync(observed.data(), inputs.p, (depth + 1) * sizeof(int),
+                            cudaMemcpyDeviceToHost, stream.s));
+      Check(cudaStreamSynchronize(stream.s));
+      int proposed = 0;
+      while (proposed < depth && observed[proposed + 1] != 28)
+        ++proposed;
+      if (!proposed)
+        continue;
+      mtp::BuildStates<<<1, 32, 0, stream.s>>>(state.As<DecodeState>(), inputs.As<int>(),
+                                               rows.As<DecodeState>(), proposed + 1, bad.As<int>(),
+                                               100);
+      std::array<DecodeState, mtp::kMaxRows> result{};
+      int fault = 0;
+      Check(cudaMemcpyAsync(result.data(), rows.p, (proposed + 1) * sizeof(DecodeState),
+                            cudaMemcpyDeviceToHost, stream.s));
+      Check(cudaMemcpyAsync(&fault, bad.p, sizeof(fault), cudaMemcpyDeviceToHost, stream.s));
+      Check(cudaStreamSynchronize(stream.s));
+      RequireProbe(!fault, "device-resident proposal prefix rejected");
+      for (int row = 0; row <= proposed; ++row)
+        RequireProbe(result[row].token == observed[row] && result[row].position == 10 + row,
+                     "device-resident proposal prefix differs from observed prefix");
+    }
+  }
+  std::cout << "PROPOSAL device-resident prefixes passed\n";
+}
 void ExpertProbe(const std::filesystem::path &target, int rate) {
   auto loaded = internal::LoadCompiledModel(target);
   if (!loaded.ok())
@@ -223,6 +267,7 @@ int main(int argc, char **argv) {
       mellum16::CheckpointProbe();
       return 0;
     }
+    mellum16::ProposalInputsProbe();
     mellum16::CacheProbe();
     if (argc == 3)
       mellum16::ExpertProbe(argv[1], std::stoi(argv[2]));
