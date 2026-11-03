@@ -4185,8 +4185,9 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           }
           ++result.mtp_groups;
           result.mtp_proposed += proposed;
-          Check(cudaMemcpyAsync(verifier->inputs.p, inputs.data(), (proposed + 1) * sizeof(int),
-                                cudaMemcpyHostToDevice, stream.s));
+          // The draft graph already populated this prefix on the device. The
+          // host copy above is only for proposal/acceptance decisions; uploading
+          // it again would transfer the same values back to their source.
           verifyGraphs[proposed - 1].Launch(stream.s);
           int retained = 0;
           for (int row = 0; row <= proposed; ++row) {
