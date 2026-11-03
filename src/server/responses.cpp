@@ -233,7 +233,14 @@ Result<ResponseRequest> ParseResponseRequest(std::string_view body, std::string_
   auto parsed = json::Parse(body);
   if (!parsed.ok())
     return parsed.status();
-  const auto &root = parsed.value();
+  return ParseResponseRequestValidated(body, parsed.value(), previous, selected_model);
+}
+Result<ResponseRequest> ParseResponseRequestValidated(std::string_view body,
+                                                      const json::Value &root,
+                                                      std::string_view previous,
+                                                      std::string_view selected_model) {
+  if (body.size() > 2 * 1024 * 1024 || previous.size() > 8 * 1024 * 1024)
+    return Status(StatusCode::kResourceExhausted, "Responses body/history byte limit exceeded");
   auto fields = Fields(root, {"model",
                               "input",
                               "instructions",

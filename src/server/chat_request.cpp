@@ -22,32 +22,43 @@ Result<int> Budget(const json::Value *value, int fallback) {
 // bytes: their declaration order is part of the model's rendered prompt.
 Result<std::string> CanonicalBody(std::string_view body, const json::Value &root,
                                   const json::Value::Array &messages) {
-  json::Value::Array canonical;
   bool changed = false;
   for (const auto &message : messages) {
     if (!message.is_object())
       return Invalid("message must be object");
-    auto object = message.as_object();
     if (auto *role = message.find("role");
-        role && role->is_string() && role->as_string() == "developer") {
-      object.insert_or_assign("role", json::Value(std::string("system")));
+        role && role->is_string() && role->as_string() == "developer")
       changed = true;
-    }
     if (auto *content = message.find("content"); content && content->is_array()) {
-      std::string text;
       for (const auto &part : content->as_array()) {
         if (!part.is_object() || part.as_object().size() != 2 || !part.find("type") ||
             !part.find("type")->is_string() || part.find("type")->as_string() != "text" ||
             !part.find("text") || !part.find("text")->is_string())
           return Status(StatusCode::kUnsupported, "Chat content parts require type=text and text");
-        text += part.find("text")->as_string();
       }
-      object.insert_or_assign("content", json::Value(std::move(text)));
       changed = true;
     }
-    canonical.emplace_back(std::move(object));
   }
-  auto history = ValidateToolHistory(canonical);
+  // History validation observes normalized roles and content, so only use the
+  // original tree when no normalization is required.
+  json::Value::Array canonical;
+  if (changed) {
+    canonical.reserve(messages.size());
+    for (const auto &message : messages) {
+      auto object = message.as_object();
+      if (auto *role = message.find("role");
+          role && role->is_string() && role->as_string() == "developer")
+        object.insert_or_assign("role", json::Value(std::string("system")));
+      if (auto *content = message.find("content"); content && content->is_array()) {
+        std::string text;
+        for (const auto &part : content->as_array())
+          text += part.find("text")->as_string();
+        object.insert_or_assign("content", json::Value(std::move(text)));
+      }
+      canonical.emplace_back(std::move(object));
+    }
+  }
+  auto history = ValidateToolHistory(changed ? canonical : messages);
   if (!history.ok())
     return history;
   std::string result(body);
