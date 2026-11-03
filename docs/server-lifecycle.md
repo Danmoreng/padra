@@ -28,6 +28,12 @@ evictions have separate counters; TTL/deletion-only cleanup is excluded. See
 By default, at most four generation requests prepare/tokenize concurrently, with an early
 queue/readiness check followed by final byte/token admission.
 
+A failed runtime reset during error or cancellation cleanup removes readiness and
+rejects new generation admission as `model_not_ready`. The original request keeps
+its failure or cancellation outcome and releases its session lease. Successful
+cleanup after cancellation leaves readiness unchanged; failed cleanup requires a
+server restart before generation can resume.
+
 HTTP shutdown removes readiness, rejects new work and fails queued requests.
 Active generation gets a five-second grace period before cancellation; backend
 cancellation takes effect at its next cooperative boundary. The listener stays
