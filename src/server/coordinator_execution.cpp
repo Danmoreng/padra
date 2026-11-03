@@ -52,12 +52,52 @@ void Coordinator::PrepareExecution(Job &job, Clock::time_point started, bool &ru
       metrics_.ready = false;
       throw std::runtime_error(status.message());
     }
-    status = lease && job.request.checkpoint_anchor && runtime_->Stats().checkpoint_enabled
-                 ? runtime_->PrepareWithCheckpoint(job.request.input_ids, job.request.outputs,
-                                                   job.request.checkpoint_anchor, false,
-                                                   job.request.sampling)
-                 : runtime_->PrepareRequestShape(job.request.input_ids, job.request.outputs, false,
-                                                 job.request.sampling);
+    if (lease && limits_.session_cache_entries) {
+      std::shared_ptr<const KVSessionSnapshot> snapshot;
+      {
+        std::lock_guard lock(mutex_);
+        for (auto it = session_cache_.begin(); it != session_cache_.end(); ++it) {
+          if (it->id == job.request.session_id && it->owner == job.request.session_owner) {
+            snapshot = it->snapshot;
+            session_cache_.splice(session_cache_.begin(), session_cache_, it);
+            break;
+          }
+        }
+      }
+      if (snapshot) {
+        status = runtime_->LoadSession(*snapshot);
+        if (status.ok()) {
+          if (lease->record->deleted.load())
+            throw std::runtime_error("session discarded during snapshot import");
+          auto handle = runtime_->Checkpoint();
+          if (!handle)
+            throw std::runtime_error("imported snapshot has no checkpoint");
+          status = runtime_->PrepareCheckpointRestore(job.request.input_ids, job.request.outputs,
+                                                      *handle, job.request.checkpoint_anchor, false,
+                                                      job.request.sampling);
+          restored = status.ok();
+        }
+        if (!restored) {
+          {
+            std::lock_guard lock(mutex_);
+            RemoveCached(job.request.session_id, job.request.session_owner);
+          }
+          if (status.code() != StatusCode::kInvalidArgument &&
+              status.code() != StatusCode::kUnsupported)
+            throw std::runtime_error(status.message());
+          status = runtime_->Reset();
+          if (!status.ok())
+            throw std::runtime_error(status.message());
+        }
+      }
+    }
+    if (!restored)
+      status = lease && job.request.checkpoint_anchor && runtime_->Stats().checkpoint_enabled
+                   ? runtime_->PrepareWithCheckpoint(job.request.input_ids, job.request.outputs,
+                                                     job.request.checkpoint_anchor, false,
+                                                     job.request.sampling)
+                   : runtime_->PrepareRequestShape(job.request.input_ids, job.request.outputs,
+                                                   false, job.request.sampling);
     if (!status.ok()) {
       std::lock_guard lock(mutex_);
       metrics_.ready = false;
@@ -95,6 +135,42 @@ void Coordinator::CommitHistory(Job &job) {
       gpu_session_ = job.request.session_id;
       gpu_owner_ = job.request.session_owner;
       gpu_checkpoint_ = runtime_->Checkpoint();
+    }
+    if (limits_.session_cache_entries) {
+      auto handle = runtime_->Checkpoint();
+      if (handle) {
+        const std::size_t needed = KVCheckpointLedger::LocalSnapshotBytes(KVCacheFormat::BF16) +
+                                   7ULL * handle->anchor * 2048 +
+                                   static_cast<std::size_t>(handle->anchor) * sizeof(int);
+        std::size_t available = 0;
+        {
+          std::lock_guard lock(mutex_);
+          RemoveCached(job.request.session_id, job.request.session_owner);
+          while (!session_cache_.empty() &&
+                 (session_cache_.size() >= limits_.session_cache_entries ||
+                  needed > limits_.session_cache_bytes - session_cache_bytes_)) {
+            session_cache_bytes_ -= session_cache_.back().snapshot->Size();
+            session_cache_.pop_back();
+          }
+          available = limits_.session_cache_bytes - session_cache_bytes_;
+        }
+        if (needed <= available) {
+          auto saved = runtime_->SaveSession(available);
+          if (saved.ok()) {
+            std::lock_guard lock(mutex_);
+            if (!lease->record->deleted.load()) {
+              auto snapshot = std::make_shared<KVSessionSnapshot>(std::move(saved).value());
+              const auto bytes = snapshot->Size();
+              session_cache_.push_front(
+                  {job.request.session_owner, job.request.session_id, std::move(snapshot)});
+              session_cache_bytes_ += bytes;
+            }
+          } else if (saved.status().code() != StatusCode::kResourceExhausted &&
+                     saved.status().code() != StatusCode::kUnsupported) {
+            throw std::runtime_error(saved.status().message());
+          }
+        }
+      }
     }
   }
   if (job.partial_tool_call) {

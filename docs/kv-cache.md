@@ -70,9 +70,8 @@ ring and preceding target hidden state (2 MiB plus 9216 bytes).
 
 Reuse applies to the matching resident Chat session or Responses continuation.
 The runtime validates the canonical token prefix, runtime binding, generation,
-capacity and cache format before restoring. A different GPU session, changed
-prefix, reset or stale snapshot causes a full history replay through the server;
-this is not a multi-session GPU cache. Usage reports the actually reused prefix
+capacity and cache format before restoring. A changed prefix or stale snapshot causes
+a full history replay through the server. Usage reports the actually reused prefix
 in `cached_tokens`. Restore preserves the original chunk boundaries. An anchor
 within three tokens of a chunk end is moved back to leave four rows, preserving
 the full-chunk expert arithmetic instead of switching to a narrow tail path.
@@ -83,3 +82,19 @@ MTP supports both quantized target caches. Its rollback saves and restores the
 encoded rows and their scales without dequantizing history. The draft retains
 its separate 1024-token BF16 ring. See the [GPU profiles](gpu-profiles.md) for
 the selected 131K/MTP combinations and measured memory requirements.
+
+Optional multi-session retention is configured with `session_cache.entries` and
+`session_cache.bytes` in the server JSON configuration. Both default to zero,
+which disables it. It currently requires BF16 KV and no MTP; the server rejects
+other combinations when this option is enabled. Each completed logical session
+can retain a host-memory copy of its 21 checkpointed local rings and the seven
+global K/V prefixes, plus the canonical token prefix. The payload is approximately
+42 MiB + 14336 bytes per retained token + 4 bytes per token. The byte limit
+charges allocated vector capacities; entries also have small metadata overhead.
+The entry count and byte limit bound retention independently, and least-recently
+used entries are evicted to make room. Oversized snapshots are skipped and replayed.
+The `mellum_session_cache_entries` and `mellum_session_cache_bytes` metrics report
+retained entries and allocated payload capacity. Snapshot copies use the existing worker stream and do not add persistent VRAM;
+they add host memory and transfer time. Owner and session identities scope lookup,
+and deletion removes the retained entry. Prefix and runtime binding checks still
+apply on import. See [server configuration](server-configuration.md).

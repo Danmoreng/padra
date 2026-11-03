@@ -2262,8 +2262,28 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     // are no retained references into a caller/request or expired stack frame.
     do {
       if (worker) {
-        if (!worker->AwaitPrepare())
-          break;
+        const int command = worker->AwaitPrepare();
+        if (!command) break;
+        if (command == 2 || command == 3) {
+          auto &snapshot = *worker->transfer;
+          const auto direction = command == 2 ? cudaMemcpyDeviceToHost : cudaMemcpyHostToDevice;
+          std::size_t offset = 0;
+          auto copy = [&](void *device, std::size_t bytes) {
+            void *host = snapshot.bytes.data() + offset;
+            Check(cudaMemcpyAsync(command == 2 ? host : device, command == 2 ? device : host,
+                                  bytes, direction, stream.s));
+            offset += bytes;
+          };
+          copy(checkpointBuffer.p, checkpointBuffer.bytes);
+          for (int l = 3; l < 28; l += 4) {
+            copy(layers[l].kc, static_cast<std::size_t>(snapshot.anchor) * 1024);
+            copy(layers[l].vc, static_cast<std::size_t>(snapshot.anchor) * 1024);
+          }
+          if (offset != snapshot.bytes.size()) throw std::runtime_error("snapshot size mismatch");
+          Check(cudaStreamSynchronize(stream.s));
+          worker->TransferDone();
+          continue;
+        }
         if (worker->checkpoint_restore_pending) {
           // The CPU worker validated an actual completed identity/prefix. Restore
           // all local windows on the same owned stream before returning Prepared;

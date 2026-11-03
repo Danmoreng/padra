@@ -145,11 +145,13 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
         << "\nmellum_requests_cancelled_total " << m.cancelled << "\nmellum_queue_rejected_total "
         << m.rejected << "\nmellum_disconnects_total " << m.disconnects
         << "\nmellum_backpressure_total " << m.backpressure << "\nmellum_queue_requests "
-        << m.queued << "\nmellum_queue_bytes " << m.queued_bytes << "\nmellum_queue_tokens "
-        << m.queued_tokens << "\nmellum_active_requests " << m.active << "\nmellum_ready "
-        << m.ready << "\nmellum_model_loads_total " << r.model_loads
-        << "\nmellum_weight_uploads_total " << r.weight_uploads << "\nmellum_graph_captures_total "
-        << r.graph_captures << "\nmellum_resident_device_bytes " << r.resident_bytes
+        << m.queued << "\nmellum_session_cache_entries " << m.session_cache_entries
+        << "\nmellum_session_cache_bytes " << m.session_cache_bytes << "\nmellum_queue_bytes "
+        << m.queued_bytes << "\nmellum_queue_tokens " << m.queued_tokens
+        << "\nmellum_active_requests " << m.active << "\nmellum_ready " << m.ready
+        << "\nmellum_model_loads_total " << r.model_loads << "\nmellum_weight_uploads_total "
+        << r.weight_uploads << "\nmellum_graph_captures_total " << r.graph_captures
+        << "\nmellum_resident_device_bytes " << r.resident_bytes
         << "\nmellum_required_device_bytes " << r.required_bytes << "\nmellum_mtp_depth "
         << r.mtp_depth << "\nmellum_mtp_resident_device_bytes " << r.mtp_resident_bytes
         << "\nmellum_mtp_groups_total " << r.mtp_groups << "\nmellum_mtp_draft_calls_total "
