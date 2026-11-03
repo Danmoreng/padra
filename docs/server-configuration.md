@@ -58,13 +58,17 @@ shown above. An explicit positional generation timeout retains its meaning;
 
 `execution.running_sequences` selects 1–4 independent runtime lanes (default 1).
 Each lane owns its own KV cache, sampling state, scratch buffers and CUDA graphs;
-the immutable target weights are shared. Startup allocates and admits every lane
-against available device memory and the selected device budget. MTP requires one
-lane. These lanes run independent streams: they do not batch kernels across
+the immutable target and MTP draft weights are shared. MTP draft KV, verifier
+backup and rollback state remain lane-local. Startup allocates and admits every
+lane against available device memory and the selected device budget. These lanes
+run independent streams: they do not batch kernels across
 requests or provide a batched-token budget or prefill/decode fairness scheduler.
 The active sequence count is exposed as `mellum_active_requests` and in
 `/v1/models`. Per-lane request, prefill chunk and weight upload counters are
-exposed as `padra_lane_*` metrics. Existing runtime allocation and graph metrics
+exposed as `padra_lane_*` metrics, including draft weight uploads and MTP
+proposal/acceptance counts. Per-lane draft weight bytes are logical bytes; the
+corresponding upload counter identifies the lane that allocated the shared arena.
+Existing runtime allocation and graph metrics
 refer to the first lane. A session checkpoint stays bound to its owning lane.
 
 Queue/preparation limits bound admitted work separately from HTTP connection

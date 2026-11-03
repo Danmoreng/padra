@@ -1,5 +1,7 @@
 #include "runtime/shared_weight_registry.h"
 #include <stdexcept>
+#include <thread>
+#include <vector>
 void Require(bool condition) {
   if (!condition)
     throw std::runtime_error("registry test failed");
@@ -24,4 +26,46 @@ int main() {
   Require(bool(registry.Find(key, lock)));
   second.reset();
   Require(!registry.Find(key, lock));
+  SharedWeightRegistry<int, SharedDraftWeightKey> drafts;
+  auto draftLock = drafts.Acquire();
+  SharedDraftWeightKey draftKey{0, "draft-manifest", "draft-weights", false, true, true};
+  auto draft = std::make_shared<int>(17);
+  drafts.Publish(draftKey, draft, draftLock);
+  Require(drafts.Find(draftKey, draftLock) == draft);
+  Require(!drafts.Find({1, "draft-manifest", "draft-weights", false, true, true}, draftLock));
+  Require(!drafts.Find({0, "different", "draft-weights", false, true, true}, draftLock));
+  Require(!drafts.Find({0, "draft-manifest", "different", false, true, true}, draftLock));
+  Require(!drafts.Find({0, "draft-manifest", "draft-weights", true, true, true}, draftLock));
+  Require(!drafts.Find({0, "draft-manifest", "draft-weights", false, false, true}, draftLock));
+  Require(!drafts.Find({0, "draft-manifest", "draft-weights", false, true, false}, draftLock));
+  draft.reset();
+  Require(!drafts.Find(draftKey, draftLock));
+  draftLock.unlock();
+  std::vector<std::shared_ptr<int>> owners(8);
+  std::vector<std::thread> threads;
+  for (std::size_t i = 0; i < owners.size(); ++i) {
+    threads.emplace_back([&, i] {
+      auto held = drafts.Acquire();
+      auto value = drafts.Find(draftKey, held);
+      if (!value) {
+        value = std::make_shared<int>(23);
+        drafts.Publish(draftKey, value, held);
+      }
+      owners[i] = std::move(value);
+    });
+  }
+  for (auto &thread : threads)
+    thread.join();
+  for (const auto &owner : owners)
+    Require(owner == owners.front() && *owner == 23);
+
+  Require(NewRuntimeAllocationBytes(1000, 600, 200) == 200);
+  Require(NewRuntimeAllocationBytes(1000, 0, 0) == 1000);
+  bool rejected = false;
+  try {
+    (void)NewRuntimeAllocationBytes(1000, 600, 401);
+  } catch (const std::overflow_error &) {
+    rejected = true;
+  }
+  Require(rejected);
 }

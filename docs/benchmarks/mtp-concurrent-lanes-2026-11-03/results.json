@@ -1,0 +1,84 @@
+{
+  "device": "RTX 5070 Ti, 16 GiB",
+  "other_gpu_process": "Paused during test with approximately 2716 MiB still allocated",
+  "target": "K6 with Q8 head",
+  "draft": "EXL3-K4",
+  "kv": "BF16",
+  "capacity": 8192,
+  "prefill_chunk": 256,
+  "lanes": 2,
+  "test_scope": "Short seeded functional checks; no throughput or long-context quality claim",
+  "d1": {
+    "mtp_depth": 1,
+    "peak_active": 2,
+    "serial_parallel_match": [
+      true,
+      true
+    ],
+    "cancelled": {
+      "closed_after_token": true
+    },
+    "recovery_matches": true,
+    "survivor_completion_tokens": 1024,
+    "draft_weight_uploads": [
+      1.0,
+      0.0
+    ],
+    "mtp_proposed_delta": 954.0,
+    "mtp_accepted_delta": 703.0,
+    "lane_groups": [
+      850.0,
+      104.0
+    ],
+    "active_after": 0.0,
+    "serial_seconds": [
+      0.4809757910006738,
+      0.4414379669979098
+    ],
+    "parallel_seconds": [
+      0.7160117309977068,
+      0.6926869189992431
+    ]
+  },
+  "d2": {
+    "mtp_depth": 2,
+    "peak_active": 2,
+    "serial_parallel_match": [
+      true,
+      true
+    ],
+    "cancelled": {
+      "closed_after_token": true
+    },
+    "recovery_matches": true,
+    "survivor_completion_tokens": 1024,
+    "draft_weight_uploads": [
+      1.0,
+      0.0
+    ],
+    "mtp_proposed_delta": 1584.0,
+    "mtp_accepted_delta": 863.0,
+    "lane_groups": [
+      709.0,
+      83.0
+    ],
+    "active_after": 0.0,
+    "serial_seconds": [
+      0.5063796680005908,
+      0.4696441669984779
+    ],
+    "parallel_seconds": [
+      0.7562811700008751,
+      0.7403517909988295
+    ]
+  },
+  "full_context_q8_0_admission": {
+    "capacity": 131072,
+    "chunk": 256,
+    "lanes": 2,
+    "depth": 1,
+    "required_bytes": 2317348380,
+    "available_bytes": 2078801920,
+    "result": "startup rejected at second lane"
+  }
+}

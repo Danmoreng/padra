@@ -160,8 +160,6 @@ int main(int argc, char **argv) {
     if (!text.ok())
       throw std::runtime_error(text.status().message());
     auto tokenizer = std::move(text).value();
-    if (limits.running_sequences > 1 && !mtp.artifact.empty())
-      throw std::runtime_error("MTP with multiple runtime lanes is not supported");
     std::vector<std::unique_ptr<mellum16::ModelRuntime>> runtimes;
     for (unsigned lane = 0; lane < limits.running_sequences; ++lane) {
       auto loaded =

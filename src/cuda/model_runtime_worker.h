@@ -446,6 +446,11 @@ public:
       checkpoint->Invalidate();
     cv.notify_all();
   }
+  void RecordDraftWeight(bool uploaded, std::size_t bytes) {
+    std::lock_guard lock(mutex);
+    stats.mtp_weight_uploads = uploaded ? 1 : 0;
+    stats.mtp_weight_bytes = bytes;
+  }
   void RecordAdmission(std::size_t total, std::size_t free, std::size_t available,
                        std::size_t required) {
     std::lock_guard lock(mutex);

@@ -177,6 +177,11 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
     for (std::size_t i = 0; i < lanes.size(); ++i) {
       const auto label = "{lane=\"" + std::to_string(i) + "\"} ";
       out << "padra_lane_weight_uploads_total" << label << lanes[i].weight_uploads << '\n'
+          << "padra_lane_mtp_weight_uploads_total" << label << lanes[i].mtp_weight_uploads << '\n'
+          << "padra_lane_mtp_weight_bytes" << label << lanes[i].mtp_weight_bytes << '\n'
+          << "padra_lane_mtp_groups_total" << label << lanes[i].mtp_groups << '\n'
+          << "padra_lane_mtp_proposed_total" << label << lanes[i].mtp_proposed << '\n'
+          << "padra_lane_mtp_accepted_total" << label << lanes[i].mtp_accepted << '\n'
           << "padra_lane_prefill_chunks_total" << label << lanes[i].prefill_chunks << '\n'
           << "padra_lane_requests_total" << label << lanes[i].requests << '\n';
     }

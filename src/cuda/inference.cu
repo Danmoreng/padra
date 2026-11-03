@@ -694,6 +694,7 @@ struct Buffer {
   }
 };
 SharedWeightRegistry<Buffer> sharedWeights;
+SharedWeightRegistry<Buffer, SharedDraftWeightKey> sharedDraftWeights;
 struct TimingEvent {
   cudaEvent_t value = nullptr;
   TimingEvent() {
@@ -749,19 +750,24 @@ float BHost(float x) {
   return x;
 }
 void InitializeCodecTables() {
-  std::array<float, 256> fp8{};
-  std::array<float, 16> fp4{};
-  const float magnitudes[] = {0, .5, 1, 1.5, 2, 3, 4, 6};
-  for (int i = 0; i < 256; ++i) {
-    const int exp = (i & 127) >> 3, mant = i & 7;
-    fp8[i] = std::ldexp(exp ? 1.f + mant / 8.f : mant / 8.f, exp ? exp - 7 : -6);
-    if (i & 128)
-      fp8[i] = -fp8[i];
-  }
-  for (int i = 0; i < 16; ++i)
-    fp4[i] = (i & 8) ? -magnitudes[i & 7] : magnitudes[i & 7];
-  Check(cudaMemcpyToSymbol(e4m3, fp8.data(), sizeof(fp8)));
-  Check(cudaMemcpyToSymbol(e2m1, fp4.data(), sizeof(fp4)));
+  // The serving runtime selects device 0. Do not rewrite constant symbols when
+  // another lane may already be executing or capturing a CUDA graph.
+  static std::once_flag initialized;
+  std::call_once(initialized, [] {
+    std::array<float, 256> fp8{};
+    std::array<float, 16> fp4{};
+    const float magnitudes[] = {0, .5, 1, 1.5, 2, 3, 4, 6};
+    for (int i = 0; i < 256; ++i) {
+      const int exp = (i & 127) >> 3, mant = i & 7;
+      fp8[i] = std::ldexp(exp ? 1.f + mant / 8.f : mant / 8.f, exp ? exp - 7 : -6);
+      if (i & 128)
+        fp8[i] = -fp8[i];
+    }
+    for (int i = 0; i < 16; ++i)
+      fp4[i] = (i & 8) ? -magnitudes[i & 7] : magnitudes[i & 7];
+    Check(cudaMemcpyToSymbol(e4m3, fp8.data(), sizeof(fp8)));
+    Check(cudaMemcpyToSymbol(e2m1, fp4.data(), sizeof(fp4)));
+  });
 }
 std::vector<float> RopeTable(int capacity, bool local) {
   std::array<float, 64> frequencies{};
@@ -1378,6 +1384,16 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       weightLock.emplace(sharedWeights.Acquire());
       sharedArena = sharedWeights.Find(weightKey, *weightLock);
     }
+    std::optional<SharedWeightRegistry<Buffer, SharedDraftWeightKey>::Lock> draftWeightLock;
+    std::shared_ptr<Buffer> sharedDraftArena;
+    const SharedDraftWeightKey draftWeightKey{
+        weightDevice, mtpEnabled ? mtpModel->manifest_sha256 : "",
+        mtpEnabled ? mtpModel->weights_sha256 : "", o.mtp.fp8_experts, o.mtp.exl3_experts,
+        o.q8_head};
+    if (worker && mtpEnabled) {
+      draftWeightLock.emplace(sharedDraftWeights.Acquire());
+      sharedDraftArena = sharedDraftWeights.Find(draftWeightKey, *draftWeightLock);
+    }
     std::size_t free = 0, total = 0;
     Check(cudaMemGetInfo(&free, &total));
     const auto weightsbytes =
@@ -1514,8 +1530,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                         samplerBytes,
                         samplerTempBytes});
     const auto available = ServerAvailableBytes(free, total, o.server_device_budget_gib);
-    const auto required = admission::Sum({plannedResident - (sharedArena ? weightsbytes : 0),
-                                          700ULL * 1024 * 1024});
+    const auto newAllocationBytes = NewRuntimeAllocationBytes(
+        plannedResident, sharedArena ? weightsbytes : 0,
+        sharedDraftArena ? mtpModel->weights.size() : 0);
+    const auto required = admission::Sum({newAllocationBytes, 700ULL * 1024 * 1024});
     if (worker)
       worker->RecordAdmission(total, free, available, required);
     if (required > available)
@@ -1553,6 +1571,20 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       sharedWeights.Publish(weightKey, sharedArena, *weightLock);
     }
     weightLock.reset();
+    const bool uploadDraftWeights = mtpEnabled && !sharedDraftArena;
+    if (uploadDraftWeights) {
+      sharedDraftArena = std::make_shared<Buffer>(mtpModel->weights.size());
+      Check(cudaMemcpyAsync(sharedDraftArena->p, mtpModel->weights.data(),
+                            sharedDraftArena->bytes, cudaMemcpyHostToDevice, stream.s));
+      TimingEvent uploaded;
+      Check(cudaEventRecord(uploaded.value, stream.s));
+      Check(cudaEventSynchronize(uploaded.value));
+      if (worker)
+        sharedDraftWeights.Publish(draftWeightKey, sharedDraftArena, *draftWeightLock);
+    }
+    draftWeightLock.reset();
+    if (worker && mtpEnabled)
+      worker->RecordDraftWeight(uploadDraftWeights, mtpModel->weights.size());
     Buffer packedChunk(packedChunkBytes);
     auto *packedChunkK = packedChunk.As<__nv_bfloat16>();
     auto *packedChunkV = o.packed_bf16_prefill_attention && (!q8Cache || q8Native)
@@ -1709,7 +1741,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     std::unique_ptr<mtp::Verification> verifier;
     if (mtpEnabled) {
       draft = std::make_unique<mtp::Draft>(*mtpModel, embed, head, ropeL.As<float>(), o.capacity,
-                                           stream.s, headInput.As<unsigned char>());
+                                           stream.s, sharedDraftArena, headInput.As<unsigned char>());
       verifier = std::make_unique<mtp::Verification>();
       std::array<mtp::CacheBinding, mtp::kCaches> caches;
       for (int l = 0; l < 28; ++l) {

@@ -31,6 +31,7 @@ struct RuntimeStats {
   int mtp_depth = 0;
   std::uint64_t mtp_resident_bytes = 0, mtp_groups = 0, mtp_draft_calls = 0, mtp_proposed = 0,
                 mtp_accepted = 0, mtp_ordinary_tails = 0;
+  std::uint64_t mtp_weight_uploads = 0, mtp_weight_bytes = 0;
   int capacity = 8192, prefill_chunk = 2048, device_budget_gib = 0, expert_rate = 4;
   std::uint64_t device_total_bytes = 0, device_free_before_bytes = 0, admission_available_bytes = 0,
                 required_bytes = 0, post_graph_available_bytes = 0;
