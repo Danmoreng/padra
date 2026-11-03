@@ -8,7 +8,7 @@ padra-server ARTIFACT TOKENIZER_JSON TOKENIZER_SHA256 PORT \
   [--config server.json]
 ```
 
-The optional JSON file overrides the included queue/HTTP settings after positional
+The optional JSON file overrides the included execution, queue and HTTP settings after positional
 defaults are resolved. Omitted fields retain those defaults. It cannot change the
 model, tokenizer, context or numerical execution profile. Invalid types, unknown
 fields, unsupported values, duplicate keys and files above 64 KiB are rejected
@@ -23,6 +23,7 @@ Example:
 
 ```json
 {
+  "execution": {"running_sequences": 1},
   "queue": {
     "requests": 8,
     "bytes": 67108864,
@@ -54,6 +55,17 @@ times the selected context. The embedded coordinator defaults are 30000 ms,
 8192 context in the HTTP constructor, and 65536 queued tokens. Other defaults are
 shown above. An explicit positional generation timeout retains its meaning;
 `queue.generation_timeout_ms`, if supplied, overrides it.
+
+`execution.running_sequences` selects 1–4 independent runtime lanes (default 1).
+Each lane owns its own KV cache, sampling state, scratch buffers and CUDA graphs;
+the immutable target weights are shared. Startup allocates and admits every lane
+against available device memory and the selected device budget. MTP requires one
+lane. These lanes run independent streams: they do not batch kernels across
+requests or provide a batched-token budget or prefill/decode fairness scheduler.
+The active sequence count is exposed as `mellum_active_requests` and in
+`/v1/models`. Per-lane request, prefill chunk and weight upload counters are
+exposed as `padra_lane_*` metrics. Existing runtime allocation and graph metrics
+refer to the first lane. A session checkpoint stays bound to its owning lane.
 
 Queue/preparation limits bound admitted work separately from HTTP connection
 limits. Request-body allowance is derived from context and reported as

@@ -114,7 +114,10 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
                                               r.expert_rate))
         << ",\"prefill_chunk\":" << r.prefill_chunk
         << ",\"device_budget_gib\":" << r.device_budget_gib
-        << ",\"active_gpu_sessions\":1,\"logical_session_limit\":32,\"session_ttl_seconds\":1800,"
+        << ",\"active_gpu_sessions\":" << coordinator_.RuntimeCount()
+        << ",\"active_gpu_sequences\":" << coordinator_.Metrics().active
+        << ",\"runtime_lanes\":" << coordinator_.RuntimeCount()
+        << ",\"logical_session_limit\":32,\"session_ttl_seconds\":1800,"
            "\"native_kv_reuse\":"
         << (r.checkpoint_enabled && r.model_loads ? "true" : "false")
         << ",\"checkpoint_snapshot_bytes\":" << r.checkpoint_bytes
@@ -169,6 +172,14 @@ HttpServer::HttpServer(Coordinator &coordinator, const text::Tokenizer &tokenize
     out << "mellum_output_tokens_total " << m.output_tokens << "\nmellum_prefill_chunks_total "
         << r.prefill_chunks << "\nmellum_prefill_eager_chunks_total " << r.eager_tail_chunks
         << '\n';
+    auto lanes = coordinator_.RuntimeLaneMetrics();
+    out << "padra_runtime_lanes " << lanes.size() << '\n';
+    for (std::size_t i = 0; i < lanes.size(); ++i) {
+      const auto label = "{lane=\"" + std::to_string(i) + "\"} ";
+      out << "padra_lane_weight_uploads_total" << label << lanes[i].weight_uploads << '\n'
+          << "padra_lane_prefill_chunks_total" << label << lanes[i].prefill_chunks << '\n'
+          << "padra_lane_requests_total" << label << lanes[i].requests << '\n';
+    }
     m.queue_latency.Write(out, "mellum_queue_wait_seconds");
     m.tokenization_latency.Write(out, "mellum_tokenization_seconds");
     m.prefill_latency.Write(out, "mellum_prefill_seconds");

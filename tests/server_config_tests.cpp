@@ -11,9 +11,10 @@ int main() {
                 defaults.value().http().heartbeat == 15s,
             "resolved configuration borrowed mutable inputs");
     auto custom = ServerConfig::Parse(
-        R"({"queue":{"requests":2,"tokens":128,"timeout_ms":60,"generation_timeout_ms":80,"drain_timeout_ms":0},"http":{"preparation_requests":1,"threads":2,"queued_connections":4,"admin_port":8081,"heartbeat_ms":25,"poll_ms":1,"read_timeout_ms":100,"write_timeout_ms":200}})",
+        R"({"execution":{"running_sequences":2},"queue":{"requests":2,"tokens":128,"timeout_ms":60,"generation_timeout_ms":80,"drain_timeout_ms":0},"http":{"preparation_requests":1,"threads":2,"queued_connections":4,"admin_port":8081,"heartbeat_ms":25,"poll_ms":1,"read_timeout_ms":100,"write_timeout_ms":200}})",
         options);
     Require(custom.ok() && custom.value().generation().queued_requests == 2 &&
+                custom.value().generation().running_sequences == 2 &&
                 custom.value().generation().generation_timeout == 80ms &&
                 custom.value().http().heartbeat == 25ms &&
                 custom.value().http().admin_port == 8081 && custom.value().port() == 8080,
@@ -34,6 +35,8 @@ int main() {
                               "",
                               "{} trailing",
                               R"({"unknown":1})",
+                              R"({"execution":{"running_sequences":0}})",
+                              R"({"execution":{"running_sequences":5}})",
                               R"({"queue":null})",
                               R"({"http":{"threads":0}})",
                               R"({"http":{"threads":65}})",

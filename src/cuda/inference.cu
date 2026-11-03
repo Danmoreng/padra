@@ -1369,7 +1369,11 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     // observe an incomplete upload or race another allocation of the weights.
     std::optional<SharedWeightRegistry<Buffer>::Lock> weightLock;
     std::shared_ptr<Buffer> sharedArena;
-    const SharedWeightKey weightKey{0, model.manifest_sha256, model.weights_sha256, o.q8_head};
+    int weightDevice = 0;
+    Check(cudaGetDevice(&weightDevice));
+    const SharedWeightKey weightKey{weightDevice, model.manifest_sha256, model.weights_sha256,
+                                    model.shared_head_sha256, model.diagnostic_attention_sha256,
+                                    o.q8_head};
     if (worker) {
       weightLock.emplace(sharedWeights.Acquire());
       sharedArena = sharedWeights.Find(weightKey, *weightLock);
