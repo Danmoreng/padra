@@ -286,7 +286,12 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       simt_batch::FP8Tiled(matrix,be,bs,output,bad,batch,stream.s);
     };
     int diagnostic_batch_base=0,diagnostic_batch_rows=0;
+    const bool paired_q8_verifier=q8_kv && verifier && o.mtp.paired_attention;
+    static_assert(2*32*32*129<=mtp::kMaxRows*mtp::kVocabulary);
+    static_assert(2*128*sizeof(q8_native::QueryBlock)<=mtp::kMaxRows*(4096+512*2)*sizeof(float));
     const auto prefill=[&](int maximum_keys,int row_limit=256){
+      if(paired_q8_verifier && row_limit==2)
+        q8_simt::PairStates<<<1,2,0,stream.s>>>(batch,verifier->states.As<DecodeState>(),bad);
       active_batch_limit=row_limit;
       simt_batch::EmbedBatch<<<row_limit,128,0,stream.s>>>(embed,buffer("prompt").As<int>(),bx,bad,batch);
       for(int l=0;l<28;++l){const auto& a=layers[l];
@@ -302,7 +307,19 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         diagnostics.Measure("qknorm_rope",l,stream.s,[&]{simt_batch::QKRope<<<dim3(36,row_limit),128,0,stream.s>>>(bq,bk,a.qn,a.kn,l%4==3?rope_global:rope_local,bad,batch);});
         dump("q_rope",bq,4096);dump("k_rope",bk,512);
         diagnostics.Measure("attention",l,stream.s,[&]{
-        if(row_limit<=5){
+        if(paired_q8_verifier && row_limit==2){
+          auto* chunk=buffer("q8_chunk").As<q8_native::CacheRow>();
+          auto* keys=reinterpret_cast<q8_native::CacheRow*>(a.kc);
+          auto* values=reinterpret_cast<q8_native::CacheRow*>(a.vc);
+          q8_native::EncodeKV<<<2,128,0,stream.s>>>(bk,bv,chunk,chunk+2,2,bad,nullptr,0,o.capacity,&batch->rows);
+          q8_simt::Commit<<<2,128,0,stream.s>>>(chunk,chunk+2,keys,values,batch,a.capacity);
+          // SIMT uses batch QKV arenas. Verifier QKV/logits scratch is dead
+          // until the final heads; reuse it for encoded queries and partials.
+          q8_simt::AttentionPair(bq,keys,values,ba,verifier->qkv.As<q8_native::QueryBlock>(),
+              verifier->states.As<DecodeState>(),a.capacity,l%4!=3,verifier->logits.As<float>(),
+              reinterpret_cast<const q8_native::CacheRow*>(verifier->backup.As<unsigned char>()+(l*mtp::kMaxRows+1)*2048),
+              bad,stream.s,o.capacity);
+        }else if(row_limit<=5){
           // Same per-row attention as ordinary decoding. Store only the current
           // row before reading a wrapping ring; future verifier rows remain tentative.
           for(int row=0;row<row_limit;++row){
@@ -445,6 +462,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
 #endif
     }
     if(draft)identity.kernel_profile+=";draft-exl3-k4";
+    if(paired_q8_verifier)identity.kernel_profile+=";mtp-q8-paired-attention-sm61-v1";
     if(o.server_kv_checkpoint)identity.kernel_profile+=";prefix-chunk256-bitcopy";
     if(o.q8_head){
       const auto head_label=identity.math_profile.find("compensated-router/head");
@@ -546,11 +564,18 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
         // Computing the head for a zero-output request preserves capture_logits.
         run_head(static_cast<int>(o.input_ids.size())-1);check_numerics();
         const auto choose=[&](const float* row_logits){
-          if(o.sampling.stochastic())gpu_sampling::Launch(row_logits,adjusted,sorted,sample_ids,sorted_ids,cumulative,rng,control,bad,buffer("sampling_workspace").p,sampler_bytes,stream.s,o.sampling,counts);
+          const std::uint8_t* allowed=nullptr;
+          if(o.sampling.constraint){
+            const auto mask=o.sampling.constraint->Mask();
+            if(mask.size()!=98304)throw std::runtime_error("grammar vocabulary mismatch");
+            allowed=buffer("grammar_mask").As<std::uint8_t>();
+            Check(cudaMemcpyAsync(buffer("grammar_mask").p,mask.data(),mask.size(),cudaMemcpyHostToDevice,stream.s));
+          }
+          if(o.sampling.stochastic())gpu_sampling::Launch(row_logits,adjusted,sorted,sample_ids,sorted_ids,cumulative,rng,control,bad,buffer("sampling_workspace").p,sampler_bytes,stream.s,o.sampling,counts,98304,allowed);
           else {
             const float* selection_logits=row_logits;
             if(o.sampling.penalties()){gpu_sampling::PrepareLaunch(row_logits,adjusted,sample_ids,counts,98304,bad,o.sampling,stream.s);selection_logits=adjusted;}
-            SelectTiles<<<96,256,0,stream.s>>>(selection_logits,candidates,98304,bad);Select<<<1,256,0,stream.s>>>(candidates,control,96,bad);
+            SelectTiles<<<96,256,0,stream.s>>>(selection_logits,candidates,98304,bad,allowed);Select<<<1,256,0,stream.s>>>(candidates,control,96,bad);
           }
           if(o.sampling.penalties())gpu_sampling::RecordChoice<<<1,1,0,stream.s>>>(control,counts,98304,bad);
           Control chosen{};Check(cudaMemcpyAsync(&chosen,control,sizeof(chosen),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));
@@ -558,6 +583,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
           return chosen.token;
         };
         const auto emit=[&](int chosen){
+          if(o.sampling.constraint)o.sampling.constraint->Accept(chosen);
           token=chosen;result.generated_ids.push_back(token);
           if(result.generated_ids.size()==1)prefill_finished=std::chrono::steady_clock::now();
           if(worker && !worker->Emit(token,result.generated_ids.size()==1))result.cancelled=true;

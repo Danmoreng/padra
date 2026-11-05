@@ -194,7 +194,7 @@ padra_add_http()
 set(padra_server_sources
   src/server/chat_request.cpp src/server/chat_stream.cpp src/server/coordinator.cpp
   src/server/server_config.cpp src/server/job.cpp src/server/output_processing.cpp src/server/coordinator_execution.cpp src/server/secure_id.cpp
-  src/server/session_store.cpp src/server/tool_protocol.cpp src/server/responses.cpp
+  src/server/session_store.cpp src/server/tool_protocol.cpp src/server/tool_grammar.cpp src/server/responses.cpp
   src/server/response_store.cpp src/server/response_stream.cpp src/server/http_server.cpp
   src/server/http_listener.cpp src/server/http_request.cpp src/server/http_generation.cpp src/server/http_state.cpp
   src/server/http_transport.cpp src/server/response_retention.cpp)
@@ -240,6 +240,10 @@ if(BUILD_TESTING)
     padra_warnings(padra-parser-fuzz)
   endif()
   add_executable(padra-server-tests tests/server_tests.cpp)
+  add_executable(padra-tool-grammar-tests tests/tool_grammar_tests.cpp)
+  target_link_libraries(padra-tool-grammar-tests PRIVATE padra_test_support)
+  padra_warnings(padra-tool-grammar-tests)
+  add_test(NAME tool-grammar COMMAND padra-tool-grammar-tests)
   target_link_libraries(padra-server-tests PRIVATE padra_test_support)
   padra_warnings(padra-server-tests)
   add_test(NAME server-regressions COMMAND padra-server-tests)
@@ -315,6 +319,11 @@ if(BUILD_TESTING)
   add_test(NAME api-field-contract COMMAND padra-api-contract-tests
     "${PROJECT_SOURCE_DIR}/tests/contracts/api-fields.json")
   set_tests_properties(api-field-contract PROPERTIES TIMEOUT 30)
+  add_executable(padra-stateless-cache-tests tests/stateless_cache_tests.cpp)
+  target_link_libraries(padra-stateless-cache-tests PRIVATE padra_test_support)
+  padra_warnings(padra-stateless-cache-tests)
+  add_test(NAME stateless-prefix-cache COMMAND padra-stateless-cache-tests)
+  set_tests_properties(stateless-prefix-cache PROPERTIES TIMEOUT 30)
   add_executable(padra-output-order-tests tests/output_order_tests.cpp)
   target_link_libraries(padra-output-order-tests PRIVATE padra_test_support)
   padra_warnings(padra-output-order-tests)
@@ -361,6 +370,13 @@ if(BUILD_TESTING)
 endif()
 
 option(PADRA_BUILD_DIAGNOSTICS "Build explicit offline SIMT qualification tools" OFF)
+if(BUILD_TESTING AND PADRA_ENABLE_CUDA)
+  add_executable(padra-grammar-sampling-tests tests/cuda/grammar_sampling.cu)
+  target_include_directories(padra-grammar-sampling-tests PRIVATE include src)
+  target_link_libraries(padra-grammar-sampling-tests PRIVATE CUDA::cudart)
+  set_target_properties(padra-grammar-sampling-tests PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_ARCHITECTURES "${architecture}")
+  add_test(NAME grammar-sampling-gpu COMMAND padra-grammar-sampling-tests)
+endif()
 if(PADRA_BUILD_DIAGNOSTICS AND PADRA_ENABLE_CUDA AND PADRA_BUILD_SIMT)
   add_executable(padra-simt-qualify tools/simt_qualify.cpp)
   target_link_libraries(padra-simt-qualify PRIVATE padra_core)

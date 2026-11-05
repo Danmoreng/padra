@@ -50,7 +50,8 @@ __global__ void RecordChoice(const Control *chosen, int *counts, int n, int *bad
 }
 template <bool Penalties>
 __global__ void Prepare(const float *logits, float *adjusted, int *ids, const int *counts, int n,
-                        int *bad, float frequency, float presence, float repetition) {
+                        int *bad, float frequency, float presence, float repetition,
+                        const std::uint8_t *allowed) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n)
     return;
@@ -71,7 +72,7 @@ __global__ void Prepare(const float *logits, float *adjusted, int *ids, const in
     atomicExch(bad, 1);
     v = -FLT_MAX;
   }
-  adjusted[i] = v == 0 ? 0 : v;
+  adjusted[i] = allowed && !allowed[i] ? -INFINITY : v == 0 ? 0 : v;
   ids[i] = i;
 }
 __global__ void Probabilities(const float *sorted, double *probabilities, int n, int *bad,
@@ -129,20 +130,21 @@ __global__ void Choose(const double *cumulative, const int *sortedIds, State *st
   ++state->step;
 }
 inline void PrepareLaunch(const float *logits, float *adjusted, int *ids, const int *counts, int n,
-                          int *bad, SamplingOptions options, cudaStream_t stream) {
+                          int *bad, SamplingOptions options, cudaStream_t stream,
+                          const std::uint8_t *allowed = nullptr) {
   if (options.penalties())
     Prepare<true><<<(n + Threads - 1) / Threads, Threads, 0, stream>>>(
         logits, adjusted, ids, counts, n, bad, options.frequency_penalty, options.presence_penalty,
-        options.repetition_penalty);
+        options.repetition_penalty, allowed);
   else
-    Prepare<false><<<(n + Threads - 1) / Threads, Threads, 0, stream>>>(logits, adjusted, ids,
-                                                                        counts, n, bad, 0, 0, 1);
+    Prepare<false><<<(n + Threads - 1) / Threads, Threads, 0, stream>>>(
+        logits, adjusted, ids, counts, n, bad, 0, 0, 1, allowed);
 }
 inline void Launch(const float *logits, float *adjusted, float *sorted, int *ids, int *sortedIds,
                    double *cumulative, State *state, Control *chosen, int *bad, void *temp,
                    std::size_t bytes, cudaStream_t stream, SamplingOptions options,
-                   const int *counts, int n = Vocabulary) {
-  PrepareLaunch(logits, adjusted, ids, counts, n, bad, options, stream);
+                   const int *counts, int n = Vocabulary, const std::uint8_t *allowed = nullptr) {
+  PrepareLaunch(logits, adjusted, ids, counts, n, bad, options, stream, allowed);
   Check(cub::DeviceRadixSort::SortPairsDescending(temp, bytes, adjusted, sorted, ids, sortedIds, n,
                                                   0, 32, stream));
   Probabilities<<<(n + Threads - 1) / Threads, Threads, 0, stream>>>(

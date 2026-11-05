@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Measure one exact-length request against an already running local server.
 
-The request file is sent unchanged. Padra uses /v1/chat/completions; llama.cpp
-uses /completion. Prompt-cache reuse and short completions fail validation.
+The request file is sent unchanged. Padra uses /v1/chat/completions with a fresh
+credential namespace for an uncached prefill; llama.cpp uses /completion.
+Prompt-cache reuse and short completions fail validation.
 """
 import argparse
 import json
 from pathlib import Path
 import time
 import urllib.request
+import uuid
 
 
 def main():
@@ -22,9 +24,14 @@ def main():
     args = parser.parse_args()
     body = json.loads(args.request.read_text())
     endpoint = '/v1/chat/completions' if args.engine == 'padra' else '/completion'
+    request_headers = {'Content-Type': 'application/json'}
+    if args.engine == 'padra':
+        if body.get('session_id') is not None:
+            parser.error('uncached benchmarking requires a request without session_id')
+        request_headers['Authorization'] = 'Bearer benchmark-' + uuid.uuid4().hex
     req = urllib.request.Request(
         args.base_url.rstrip('/') + endpoint, data=json.dumps(body).encode(),
-        headers={'Content-Type': 'application/json'})
+        headers=request_headers)
     started = time.monotonic()
     with urllib.request.urlopen(req, timeout=600) as response:
         result = json.load(response)
@@ -56,6 +63,7 @@ def main():
         prefill_tokens_per_second=prompt / prefill,
         decode_tokens_per_second=steps / decode)
     record = dict(engine=args.engine, base_url=args.base_url, request=body,
+                  request_headers=request_headers, cache_policy='uncached',
                   response=result, headers=headers, measurement=measurement)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(record, indent=2) + '\n')

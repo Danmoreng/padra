@@ -1,0 +1,696 @@
+{
+  "scope": "Read-only engine analysis; paused optimization goal remains paused. New instrumented profiles only; no new runtime changes, commits or pushes. Existing uncommitted paired-attention candidate is preserved.",
+  "branch_head": "8c73469",
+  "candidate_source_fingerprint": "61b873e09a4b2c678365a41932304f85f18ff790fef16f171c4569ce1af48ddc",
+  "gpu": "GTX1070 Max-Q SM61 8GiB",
+  "models": "Native K3 target, shared stored Q8 head, EXL3 K4 MTP draft, Q8_0 target KV",
+  "trace_attribution": {
+    "method": "Chronological GPU kernels, request start at SetSimtBatch before first grid256 EmbedBatch, prefill ends at first MTP cache backup. Decode ends at its final kernel, excluding inter-request host reset. cuBLAS kernels assigned using their surrounding projection or attention wrapper kernels. Times are instrumented attribution, not speed benchmarks. Non-kernel time includes device copies and scheduling; it is not all CPU overhead.",
+    "traces": {
+      "mtp-trace-candidate": [
+        {
+          "phase": "prefill",
+          "request": 0,
+          "start_ns": 16314396326,
+          "end_ns": 20211877324,
+          "span_ms": 3897.480998,
+          "kernel_ms": 3889.553253,
+          "non_kernel_ms": 7.927745,
+          "launches": 15333,
+          "categories": {
+            "expert_dense_dp4a": {
+              "launches": 672,
+              "ms": 1302.220399,
+              "pct_phase_span": 33.411847284649674
+            },
+            "fp8_qkvo_projection": {
+              "launches": 3584,
+              "ms": 758.508927,
+              "pct_phase_span": 19.461517000063125
+            },
+            "attention_sgemm": {
+              "launches": 5376,
+              "ms": 570.684807,
+              "pct_phase_span": 14.642401266172895
+            },
+            "draft_priming": {
+              "launches": 64,
+              "ms": 381.120987,
+              "pct_phase_span": 9.778649009336362
+            },
+            "expert_sparse": {
+              "launches": 672,
+              "ms": 381.047095,
+              "pct_phase_span": 9.776753118117448
+            },
+            "expert_input_transform_and_pack": {
+              "launches": 1344,
+              "ms": 210.923752,
+              "pct_phase_span": 5.411796801786486
+            },
+            "router_activation_combine": {
+              "launches": 896,
+              "ms": 163.306508,
+              "pct_phase_span": 4.190052705421811
+            },
+            "other": {
+              "launches": 931,
+              "ms": 74.756995,
+              "pct_phase_span": 1.9180849127516388
+            },
+            "other_q8_attention_and_kv": {
+              "launches": 896,
+              "ms": 23.814098,
+              "pct_phase_span": 0.6110125491880589
+            },
+            "expert_group_metadata": {
+              "launches": 448,
+              "ms": 12.383182,
+              "pct_phase_span": 0.31772270362201777
+            },
+            "kv_dequantize": {
+              "launches": 448,
+              "ms": 8.789031,
+              "pct_phase_span": 0.22550542272072932
+            },
+            "shared_q8_head": {
+              "launches": 2,
+              "ms": 1.997472,
+              "pct_phase_span": 0.05125033325435087
+            }
+          }
+        },
+        {
+          "phase": "decode",
+          "request": 0,
+          "start_ns": 20211877324,
+          "end_ns": 21413116320,
+          "span_ms": 1201.238996,
+          "kernel_ms": 1190.549911,
+          "non_kernel_ms": 10.689085,
+          "launches": 24748,
+          "categories": {
+            "expert_verify": {
+              "launches": 2688,
+              "ms": 524.47216,
+              "pct_phase_span": 43.660933564963955
+            },
+            "fp8_verify": {
+              "launches": 3584,
+              "ms": 225.668649,
+              "pct_phase_span": 18.78632393316009
+            },
+            "shared_q8_head": {
+              "launches": 130,
+              "ms": 136.082679,
+              "pct_phase_span": 11.32852658406371
+            },
+            "other": {
+              "launches": 5657,
+              "ms": 136.05728,
+              "pct_phase_span": 11.326412183841558
+            },
+            "other_q8_attention_and_kv": {
+              "launches": 4625,
+              "ms": 90.733938,
+              "pct_phase_span": 7.553362678212621
+            },
+            "router_activation_combine": {
+              "launches": 3584,
+              "ms": 38.639045,
+              "pct_phase_span": 3.216599288623161
+            },
+            "expert_group_metadata": {
+              "launches": 1792,
+              "ms": 25.878425,
+              "pct_phase_span": 2.154311097639391
+            },
+            "expert_input_transform_and_pack": {
+              "launches": 2688,
+              "ms": 13.017735,
+              "pct_phase_span": 1.0836923412699466
+            }
+          }
+        }
+      ],
+      "analysis-code-trace": [
+        {
+          "phase": "prefill",
+          "request": 0,
+          "start_ns": 16383919514,
+          "end_ns": 20897674217,
+          "span_ms": 4513.754703,
+          "kernel_ms": 4505.74916,
+          "non_kernel_ms": 8.005543,
+          "launches": 15333,
+          "categories": {
+            "expert_dense_dp4a": {
+              "launches": 672,
+              "ms": 1248.030061,
+              "pct_phase_span": 27.649487912369615
+            },
+            "expert_sparse": {
+              "launches": 672,
+              "ms": 1063.107536,
+              "pct_phase_span": 23.552620954200755
+            },
+            "fp8_qkvo_projection": {
+              "launches": 3584,
+              "ms": 754.222355,
+              "pct_phase_span": 16.709422745075564
+            },
+            "attention_sgemm": {
+              "launches": 5376,
+              "ms": 568.430452,
+              "pct_phase_span": 12.59329514787769
+            },
+            "draft_priming": {
+              "launches": 64,
+              "ms": 380.834118,
+              "pct_phase_span": 8.437191275522444
+            },
+            "expert_input_transform_and_pack": {
+              "launches": 1344,
+              "ms": 207.370265,
+              "pct_phase_span": 4.594185520586097
+            },
+            "router_activation_combine": {
+              "launches": 896,
+              "ms": 162.202101,
+              "pct_phase_span": 3.5935072167788555
+            },
+            "other": {
+              "launches": 931,
+              "ms": 74.460016,
+              "pct_phase_span": 1.6496247780259583
+            },
+            "other_q8_attention_and_kv": {
+              "launches": 896,
+              "ms": 23.815931,
+              "pct_phase_span": 0.5276301564232344
+            },
+            "expert_group_metadata": {
+              "launches": 448,
+              "ms": 12.529633,
+              "pct_phase_span": 0.2775878137921931
+            },
+            "kv_dequantize": {
+              "launches": 448,
+              "ms": 8.756838,
+              "pct_phase_span": 0.19400340905056046
+            },
+            "shared_q8_head": {
+              "launches": 2,
+              "ms": 1.989854,
+              "pct_phase_span": 0.044084229891302534
+            }
+          }
+        },
+        {
+          "phase": "decode",
+          "request": 0,
+          "start_ns": 20897674217,
+          "end_ns": 23445520872,
+          "span_ms": 2547.846655,
+          "kernel_ms": 2524.625443,
+          "non_kernel_ms": 23.221212,
+          "launches": 53496,
+          "categories": {
+            "expert_verify": {
+              "launches": 5964,
+              "ms": 1105.436529,
+              "pct_phase_span": 43.3870903035175
+            },
+            "fp8_verify": {
+              "launches": 7952,
+              "ms": 497.256768,
+              "pct_phase_span": 19.51674630905132
+            },
+            "shared_q8_head": {
+              "launches": 284,
+              "ms": 296.012877,
+              "pct_phase_span": 11.618159060675493
+            },
+            "other": {
+              "launches": 11393,
+              "ms": 257.436194,
+              "pct_phase_span": 10.104069391099207
+            },
+            "other_q8_attention_and_kv": {
+              "launches": 10011,
+              "ms": 196.956135,
+              "pct_phase_span": 7.730297842434321
+            },
+            "router_activation_combine": {
+              "launches": 7952,
+              "ms": 85.466347,
+              "pct_phase_span": 3.354454116470365
+            },
+            "expert_group_metadata": {
+              "launches": 3976,
+              "ms": 57.315006,
+              "pct_phase_span": 2.2495469218103317
+            },
+            "expert_input_transform_and_pack": {
+              "launches": 5964,
+              "ms": 28.745587,
+              "pct_phase_span": 1.1282306548389978
+            }
+          }
+        },
+        {
+          "phase": "prefill",
+          "request": 1,
+          "start_ns": 23448661216,
+          "end_ns": 32559226956,
+          "span_ms": 9110.56574,
+          "kernel_ms": 9094.707635,
+          "non_kernel_ms": 15.858105,
+          "launches": 30661,
+          "categories": {
+            "expert_dense_dp4a": {
+              "launches": 1344,
+              "ms": 2501.514853,
+              "pct_phase_span": 27.457294358977975
+            },
+            "expert_sparse": {
+              "launches": 1344,
+              "ms": 1950.840567,
+              "pct_phase_span": 21.412946491729063
+            },
+            "fp8_qkvo_projection": {
+              "launches": 7168,
+              "ms": 1514.063279,
+              "pct_phase_span": 16.618762458982047
+            },
+            "attention_sgemm": {
+              "launches": 10752,
+              "ms": 1375.390597,
+              "pct_phase_span": 15.096654107453924
+            },
+            "draft_priming": {
+              "launches": 128,
+              "ms": 762.754268,
+              "pct_phase_span": 8.372194326540253
+            },
+            "expert_input_transform_and_pack": {
+              "launches": 2688,
+              "ms": 416.97614,
+              "pct_phase_span": 4.576841349920384
+            },
+            "router_activation_combine": {
+              "launches": 1792,
+              "ms": 326.103314,
+              "pct_phase_span": 3.5793969694795265
+            },
+            "other": {
+              "launches": 1859,
+              "ms": 149.038738,
+              "pct_phase_span": 1.635888947550693
+            },
+            "other_q8_attention_and_kv": {
+              "launches": 1792,
+              "ms": 47.726997,
+              "pct_phase_span": 0.5238642512665739
+            },
+            "expert_group_metadata": {
+              "launches": 896,
+              "ms": 25.056991,
+              "pct_phase_span": 0.27503221770287123
+            },
+            "kv_dequantize": {
+              "launches": 896,
+              "ms": 23.247749,
+              "pct_phase_span": 0.2551734948569725
+            },
+            "shared_q8_head": {
+              "launches": 2,
+              "ms": 1.994142,
+              "pct_phase_span": 0.021888234571918033
+            }
+          }
+        },
+        {
+          "phase": "decode",
+          "request": 1,
+          "start_ns": 32559226956,
+          "end_ns": 35035862339,
+          "span_ms": 2476.635383,
+          "kernel_ms": 2454.245706,
+          "non_kernel_ms": 22.389677,
+          "launches": 51136,
+          "categories": {
+            "expert_verify": {
+              "launches": 5628,
+              "ms": 1047.590005,
+              "pct_phase_span": 42.29891942071151
+            },
+            "fp8_verify": {
+              "launches": 7504,
+              "ms": 470.51467,
+              "pct_phase_span": 18.998140510697855
+            },
+            "shared_q8_head": {
+              "launches": 270,
+              "ms": 282.11118,
+              "pct_phase_span": 11.390904851656963
+            },
+            "other": {
+              "launches": 11290,
+              "ms": 263.373328,
+              "pct_phase_span": 10.634319844085018
+            },
+            "other_q8_attention_and_kv": {
+              "launches": 9560,
+              "ms": 228.593562,
+              "pct_phase_span": 9.230004689794097
+            },
+            "router_activation_combine": {
+              "launches": 7504,
+              "ms": 80.771985,
+              "pct_phase_span": 3.2613595668716973
+            },
+            "expert_group_metadata": {
+              "launches": 3752,
+              "ms": 54.118626,
+              "pct_phase_span": 2.18516727861834
+            },
+            "expert_input_transform_and_pack": {
+              "launches": 5628,
+              "ms": 27.17235,
+              "pct_phase_span": 1.0971477750223195
+            }
+          }
+        }
+      ]
+    }
+  },
+  "code_profile_metadata": {
+    "sources": [
+      {
+        "name": "tests/checkpoint_smoke.py",
+        "input_provenance": "2d7f1ae",
+        "source_sha256": "13abed8b4768530d7ade8fe1b70fbffb1020d29858e1c03e51bef7b738648d6f",
+        "repeated_source": true
+      },
+      {
+        "name": "src/cuda/simt_prefill.cuh",
+        "input_provenance": "2d7f1ae",
+        "source_sha256": "2834010e9762dbc1aed1ffab79d43dae9daac1641ff7bd5deb6703f40f378e17",
+        "repeated_source": true
+      }
+    ],
+    "binary_sha256": "8aedf27df73fda48ba13cb392186787486740dbd49f8a56ac9c312169d1aea66",
+    "command": [
+      "/usr/bin/nsys",
+      "profile",
+      "--trace=cuda",
+      "--sample=none",
+      "--cpuctxsw=none",
+      "--cuda-graph-trace=node",
+      "--output=/srv/agent/workspaces/padra-sm61-opt-20261105/analysis-code-trace",
+      "/home/sebastian/padra/build/sm61-k3-dp4a/padra-mtp-probe",
+      "/srv/agent/workspaces/padra-mtp-sm61-20261025/models/K3/native",
+      "/srv/agent/workspaces/padra-mtp-sm61-20261025/models/MTP-EXL3-K4/native",
+      "/srv/agent/workspaces/padra-sm61-opt-20261105/analysis-code-requests.json",
+      "/srv/agent/workspaces/padra-sm61-opt-20261105/analysis-code-results.jsonl",
+      "1"
+    ],
+    "purpose": "instrumented attribution; not a throughput benchmark; two existing source-continuation fixtures, no engine changes"
+  },
+  "code_profile_results_instrumented_not_benchmark": [
+    {
+      "depth": 1,
+      "request": 0,
+      "callbacks": 128,
+      "cancelled": false,
+      "committed": 2127,
+      "pending": 233,
+      "prefill_s": 4.513732494,
+      "decode_s": 2.548037588,
+      "decode_steps": 127,
+      "generation_wall_s": 7.062158709,
+      "capacity": 8192,
+      "prefill_tokens": 2000,
+      "prepare_s": 0.000132778,
+      "cached_tokens": 0,
+      "checkpoint_bytes": 25502720,
+      "checkpoint_captures": 0,
+      "checkpoint_restores": 0,
+      "checkpoint_available": false,
+      "mtp_bytes": 274263284,
+      "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa8-fp32-sgemm-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;prefill-attention-context-1024-2048-4096-8192;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;mtp-q8-paired-attention-sm61-v1;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+      "resident_bytes": 6105067091,
+      "free_initialized": 2184052736,
+      "device_total_bytes": 8500871168,
+      "device_free_before_bytes": 8387428352,
+      "required_bytes": 6839070291,
+      "post_graph_available_bytes": 2184052736,
+      "draft_calls": 71,
+      "groups": 71,
+      "proposed": 71,
+      "accepted": 56,
+      "tails": 0
+    },
+    {
+      "depth": 1,
+      "request": 1,
+      "callbacks": 128,
+      "cancelled": false,
+      "committed": 4127,
+      "pending": 58,
+      "prefill_s": 9.110585525,
+      "decode_s": 2.476775583,
+      "decode_steps": 127,
+      "generation_wall_s": 11.587698928,
+      "capacity": 8192,
+      "prefill_tokens": 4000,
+      "prepare_s": 0.000134588,
+      "cached_tokens": 0,
+      "checkpoint_bytes": 25502720,
+      "checkpoint_captures": 0,
+      "checkpoint_restores": 0,
+      "checkpoint_available": false,
+      "mtp_bytes": 274263284,
+      "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa8-fp32-sgemm-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;prefill-attention-context-1024-2048-4096-8192;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;mtp-q8-paired-attention-sm61-v1;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+      "resident_bytes": 6105067091,
+      "free_initialized": 2184052736,
+      "device_total_bytes": 8500871168,
+      "device_free_before_bytes": 8387428352,
+      "required_bytes": 6839070291,
+      "post_graph_available_bytes": 2184052736,
+      "draft_calls": 67,
+      "groups": 67,
+      "proposed": 67,
+      "accepted": 59,
+      "tails": 1
+    }
+  ],
+  "historical_game_case": {
+    "task": "Das Sternenwrack",
+    "task_path": "/srv/agent/artifacts/local-model-comparison-20261104/aufgabe.md",
+    "task_sha256": "bf97b2f74905bbc376bb754006971e60deefdc0bc1acf1437aa4bb126af59d8c",
+    "runner": "/srv/agent/artifacts/local-model-comparison-20261104/run.py",
+    "generated_game": "/srv/agent/artifacts/local-model-comparison-20261104/mellum",
+    "metrics": "/srv/agent/artifacts/local-model-comparison-20261104/mellum-metrics.json",
+    "agent_trace": "/srv/agent/artifacts/local-model-comparison-20261104/mellum-agent.jsonl",
+    "server_log": "/srv/agent/artifacts/local-model-comparison-20261104/mellum-server.log",
+    "agent_wall_seconds": 145.83325958251953,
+    "wall_excludes_model_startup_and_later_long_context_probe": true,
+    "agent_exit_code": 0,
+    "agent_peak_sampled_gpu_mib": 7625,
+    "llama_checkout_current_head": "c6a0ff11a0fe16ac1a2eb569190934593a2b3670",
+    "head_note": "Current local checkout identity; historical run.py does not record binary hash. Do not treat it as cryptographic identity of the Nov4 executed binary.",
+    "llama_server_path": "/srv/agent/repos/llama.cpp-update-20261104/build/bin/llama-server",
+    "model": "Mellum2.1-12B-A2.5B-Thinking-IQ4_XS.gguf",
+    "kv_format": "q8_0",
+    "context_capacity": 131072,
+    "agent": "Pi 1.1.0",
+    "speculation": "N-gram via --spec-default, no MTP draft in saved command",
+    "pi_model_config": {
+      "contextWindow": 131072,
+      "maxTokens": 16384,
+      "reasoning": false
+    },
+    "actual_assistant_messages_include_thinking": true,
+    "calls": 8,
+    "tool_calls": 7,
+    "output_tokens": 6391,
+    "cached_input_tokens_sum": 36854,
+    "uncached_input_tokens_sum": 5987,
+    "turns": [
+      {
+        "prompt_tokens": 2756,
+        "uncached_prompt_tokens": 2756,
+        "cached_prompt_tokens": 0,
+        "output_tokens": 112,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 2943,
+        "uncached_prompt_tokens": 76,
+        "cached_prompt_tokens": 2867,
+        "output_tokens": 511,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 3473,
+        "uncached_prompt_tokens": 20,
+        "cached_prompt_tokens": 3453,
+        "output_tokens": 516,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 4008,
+        "uncached_prompt_tokens": 20,
+        "cached_prompt_tokens": 3988,
+        "output_tokens": 2846,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 6872,
+        "uncached_prompt_tokens": 2869,
+        "cached_prompt_tokens": 4003,
+        "output_tokens": 382,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 7273,
+        "uncached_prompt_tokens": 20,
+        "cached_prompt_tokens": 7253,
+        "output_tokens": 75,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 7365,
+        "uncached_prompt_tokens": 18,
+        "cached_prompt_tokens": 7347,
+        "output_tokens": 579,
+        "stop_reason": "toolUse",
+        "content_types": [
+          "thinking",
+          "toolCall"
+        ]
+      },
+      {
+        "prompt_tokens": 8151,
+        "uncached_prompt_tokens": 208,
+        "cached_prompt_tokens": 7943,
+        "output_tokens": 1370,
+        "stop_reason": "stop",
+        "content_types": [
+          "thinking",
+          "text"
+        ]
+      }
+    ],
+    "per_call_server_timing": [
+      [
+        "prompt eval",
+        5657.16,
+        2756
+      ],
+      [
+        "eval",
+        2215.5,
+        112
+      ],
+      [
+        "prompt eval",
+        321.84,
+        76
+      ],
+      [
+        "eval",
+        10193.92,
+        511
+      ],
+      [
+        "prompt eval",
+        180.01,
+        20
+      ],
+      [
+        "eval",
+        10354.0,
+        516
+      ],
+      [
+        "prompt eval",
+        181.24,
+        20
+      ],
+      [
+        "eval",
+        58321.66,
+        2846
+      ],
+      [
+        "prompt eval",
+        6539.3,
+        2869
+      ],
+      [
+        "eval",
+        7942.89,
+        382
+      ],
+      [
+        "prompt eval",
+        196.73,
+        20
+      ],
+      [
+        "eval",
+        1551.49,
+        75
+      ],
+      [
+        "prompt eval",
+        183.24,
+        18
+      ],
+      [
+        "eval",
+        11949.44,
+        579
+      ],
+      [
+        "prompt eval",
+        605.04,
+        208
+      ],
+      [
+        "eval",
+        28107.32,
+        1370
+      ]
+    ]
+  },
+  "raw_evidence": "/srv/agent/workspaces/padra-sm61-opt-20261105",
+  "reproduction_script": "/srv/agent/workspaces/padra-sm61-opt-20261105/analyze_trace.py"
+}

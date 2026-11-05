@@ -1,0 +1,193 @@
+SM61 tool grammar and Sternenwrack coding benchmark, 2026-11-05
+
+Outcome
+-------
+Padra now constrains tool tokens before target selection. The previous malformed
+write call is prevented. The complete Pi agent run finishes without a model/API
+error, including recovery from an ordinary JavaScript syntax-check tool error.
+Both engines finish their agent runs and produce syntactically valid JavaScript.
+Neither generated game satisfies the task in browser testing. Agent completion,
+tool-call validity, JavaScript syntax and playable game quality are separate
+outcomes throughout this report.
+
+Current operating contract: ../tool-grammar.md.
+Machine-readable companion: sm61-tool-grammar-2026-11-05.json.
+Raw evidence: /srv/agent/workspaces/padra-grammar-20261105 (G below).
+
+Implementation and validation
+-----------------------------
+- Lazy byte grammar follows initial thinking and activates at visible tool-call
+  markers. It constrains offered names, JSON syntax and supported structural
+  schemas. Full JSON Schema strict mode remains unsupported.
+- Forbidden candidates are excluded before top-k/top-p or greedy selection.
+  Source logits remain immutable and RNG advances once per target token.
+- MTP proposals remain unconstrained. Only target choices advance grammar state;
+  accepted proposals must match those target choices. Rejected speculative rows
+  do not advance the grammar.
+- Each HTTP request has fresh grammar state, including KV checkpoint restores.
+- The additional admitted GPU allocation is 98,304 bytes. Vocabulary masks have
+  a bounded CPU cache per request. No model weights or KV precision changed.
+
+27/27 host tests pass. Grammar regression tests also pass under ASan/UBSan.
+The model-free CUDA test passes greedy/stochastic masks, top-k ordering, RNG
+accounting, immutable source logits and updated masks in a captured graph.
+Native CUDA HTTP tests pass at context131072, Q8 head, Q8_0 KV and MTP depth1,
+including stateless cache ownership/prefix checks, sessions, 40 stored roots,
+lineage and both streaming APIs. See G/validation.json and G/native-http/.
+
+Replaying the real pre-grammar output through the actual tokenizer accepts its
+first2690 tokens and blocks exactly token2691, ID2264, whose bytes are quote+].
+CPU mask/replay time was2.45039s for that trace (G/mask-replay.log).
+Direct GPU replay of the original failed request now completes a valid write of
+game.js:2701 output tokens, no parser error. D0 and MTP D1 token IDs are identical.
+D0: prefill12.7756s, decode63.5425s. D1: prefill13.6199s, decode54.9579s.
+These isolated probes are correctness/indicative timing checks, not complete
+agent runs. The probe precedes the final terminal-count admission bound; the
+frozen server below is used for native HTTP and all final benchmark runs.
+
+Hardware qualification is on GTX1070 Max-Q/SM61. The SM120 integration is present
+but is not compiled or hardware-qualified here; its backend requires CUDA>=12.8,
+whereas this computer has CUDA12.4. Full131K prompt quality/performance remains
+unqualified: these tests establish configured capacity and shorter real prompts.
+
+Frozen experiment
+-----------------
+Git base8c73469 on codex/pascal-sm61-port with the existing uncommitted Pascal,
+paired-attention and stateless-cache work preserved.
+Padra source SHA256:
+b6115b4ee9a6601f1537905055f270696c7b02a401032d896ebd23162300bc59
+Frozen executable: G/bin/padra-server
+SHA256:578ddbabfdf217a3d3ed17c3c4124dca824e2f67d5b0d3823a93fa3f830ed867
+llama.cpp:b12117-c6a0ff11a
+SHA256:7c4d371c132e974bef6685fd561ae757258cfa448226a0fd9ed3884e6b049d3e
+
+Both: Pi1.1.0, original German Sternenwrack task, temperature0.6, top_p0.95,
+top_k20, seed42, max16384 output tokens/request, context131072 and Q8_0 KV.
+Task SHA256:bf97b2f74905bbc376bb754006971e60deefdc0bc1acf1437aa4bb126af59d8c
+The actual client/task/sampling/context configuration signatures compare equal.
+Servers run sequentially, with no background builds or browser evaluation during
+timing. Game workspaces are initially empty and isolated with bubblewrap. No
+generated game files are repaired by the evaluator. All agent corrections and
+failed executed-tool checks count toward total time.
+
+Padra: native K3 target, shared Q8 head, EXL3 K4 MTP depth1, full GPU, chunk256.
+llama.cpp: IQ4_XS, N-gram speculation, batch512/ubatch128, automatic fit512MiB.
+Although llama logs29/29 GPU layers, CPU tensor overrides are active. It is not
+a fully GPU-resident placement. Both enable tool grammars, but grammar languages
+and quantizations are not identical. This is a configuration comparison, not an
+engine-only quality or arithmetic equivalence experiment.
+
+One initial llama launch hit a still-unavailable loopback port before starting
+any server/model work. Its prepared files/log are preserved as
+G/llama-startup-port-conflict*. The measured run uses free ports18181/18182.
+This setup failure is not a model attempt or omitted generation retry.
+
+Complete coding task
+--------------------
+Measure                          Padra                 llama.cpp
+Agent wall time                  281.120s (4:41)       202.825s (3:23)
+Server startup, separately       17.097s               2.656s
+Model requests                   12                    14
+Executed tool calls              11                    13
+Output tokens                    8907                  8304
+Fresh input tokens               15676                 10526
+Cached input tokens              76800                 133613
+Server prefill total             80.2818s              27.2063s
+Server decode total              199.254s              173.181s
+Observed peak GPU memory         7311MiB               7625MiB
+Malformed-tool/model errors      0                     0
+Final node --check               pass                  pass
+Browser task outcome             substantial failures  substantial failures
+
+Padra's full-run MTP accepts4151/4737 proposals (87.63%). Full-run fresh-prefill
+rates are195.3 vs386.9 tokens/s and decode rates44.6 vs47.9 tokens/s, but request
+lengths and trajectories differ. Do not use the wall-time ratio as isolated
+kernel speedup: Padra rewrites the whole JS file, while llama makes two small
+edits. Neither timing is a time-to-correct-playable-game measurement.
+
+Same-request replay
+-------------------
+Both engines replay the identical saved first three HTTP request bodies from
+the earlier coding run. Hashes match across engines. Padra additionally runs
+three cold namespaces followed by a warm sequence. Warm/cold output strings,
+reasoning, tool arguments and counts match exactly. They also match Padra's
+pre-grammar replay outputs for all three requests.
+
+Measure                         Padra warm            llama resident
+Prompt tokens                   8961                  8966
+Cached tokens                   5376                  5673
+Fresh prompt tokens             3585                  3293
+Output tokens                   1176                  1146
+Prefill total                   12.1750s              6.994049s
+Decode total                    28.7906s              22.50597s
+Request wall total              41.0002s              29.5556s
+Decode (sum(outputs-1)/time)     40.74 tokens/s        50.79 tokens/s
+First cold prompt,2756 tokens   8.78357s              5.509198s
+First cold prefill rate         313.8 tokens/s        500.3 tokens/s
+
+Padra all-cold prefill is29.1173s; warm reuse saves16.9423s of that work.
+Warm follow-up prefill is1.5036s and1.8475s, with2560 and2816 cached tokens.
+Small prompt-count differences arise from the engines' rendered/tokenized
+prompts, despite identical HTTP bodies. Output counts differ across engines.
+
+The earlier pre-grammar Padra warm replay had23.0337s decode and35.1891s wall.
+For exactly matching outputs, this implementation observes28.7906s decode
+(+25.0%) and41.0002s wall (+16.5%). This is one before/after observation, not a
+repeated randomized A/B confidence estimate. Prefill is effectively unchanged.
+CPU mask construction is a concrete next profiling/optimization target.
+
+Browser quality
+---------------
+The shared26-item rubric, Playwright harness, screenshots and per-check evidence
+are in G/evaluation/. Tests run only after all engine timing measurements.
+Controlled state changes are in isolated browser pages, never source edits.
+Both generatedFilesUnmodified checks pass.
+
+Padra: Start sets running=true, but CSS uses hidden instead of .hidden, leaving
+the menu over the canvas. ArrowRight from rest does not move; Up moves only
+0.026px in0.5s. HUD time stays20 while internal time falls. Three controlled
+collisions leave70% shield and play running; no target-win check exists. Repeated
+Start produces two animation chains. Blocked localStorage crashes initialization.
+
+llama.cpp: ID-selector display:flex overrides .hidden, so all overlays are
+visible and normal Start is intercepted. A controlled start yields time=NaN
+because gameLoop is called without a timestamp. Three controlled hits reach
+zero shields without game over, and score10000 does not win. P/Escape do not
+pause normal play; resume/restart add animation chains. Touch controls and
+personal-record storage are absent.
+
+Syntax validity and successful tool execution do not imply these games are
+usable. No composite quality score or claim of engine-caused quality difference
+is made from this single pair of runs with different quantizations.
+
+Recommended optimization order
+------------------------------
+1. Profile and share compiled grammar/mask caches across identical tool schemas
+   and tokenizer identities, retaining fresh mutable state per request. Consider
+   vocabulary tries and avoiding redundant mask transfers. Preserve masking
+   before top-k/top-p, exact sampling, cancellation isolation and MTP semantics.
+   This targets the observed decode cost without changing model arithmetic.
+2. Select bounded prefill attention by actual populated prefix length even when
+   capacity131072 is reserved. Current SM61 bounded shapes require capacity8192;
+   SGEMM attention requires capacity<=16384. Short prompts at131K therefore take
+   the split attention path. Qualify any new dispatch with Q8 cache arithmetic,
+   memory admission and growing-context tests.
+3. Measure reusable generated KV suffixes at successful tool-turn boundaries.
+   Current prompt snapshots and256-token chunk alignment leave fresh work on
+   follow-up requests. Extend reuse only where canonical token-prefix matching
+   proves it valid; preserve owner separation, cancellation and rollback.
+4. Reassess MTP proposal masking and kernel tuning after those costs are isolated.
+   Keep browser quality as a separate acceptance criterion and add quantization-
+   matched/repeated runs before attributing model quality to an engine.
+
+Reproduce
+---------
+Use G/run_game.py with --engine padra|llama, a new --out directory, and unique
+--server-port/--proxy-port. For Padra supply --binary G/bin/padra-server.
+The original fixed replay driver is
+/srv/agent/workspaces/padra-sternenwrack-20261105/replay_pi.py;
+use --engine, --out, --port and the same Padra --binary override.
+Do not run two servers simultaneously on this8GiB GPU. Manifests contain exact
+commands, artifacts, client configuration and hashes. G/validation.json,
+G/fixed-comparison.json, G/{padra,llama}-summary.json and evaluation/results.json
+paths under each engine's evaluation directory contain the underlying evidence.

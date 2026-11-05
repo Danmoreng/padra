@@ -2,6 +2,8 @@
 #include "mellum16/status.h"
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include "runtime/token_constraint.h"
 namespace mellum16 {
 // Source logits remain immutable. Counts cover canonical prompt plus chosen tokens.
 struct SamplingOptions {
@@ -9,6 +11,7 @@ struct SamplingOptions {
   int top_k = 0;
   std::uint64_t seed = 0;
   float frequency_penalty = 0, presence_penalty = 0, repetition_penalty = 1;
+  std::shared_ptr<TokenConstraint> constraint;
   bool stochastic() const {
     return temperature > 0;
   }
@@ -16,13 +19,14 @@ struct SamplingOptions {
     return frequency_penalty != 0 || presence_penalty != 0 || repetition_penalty != 1;
   }
   bool selection_graph() const {
-    return stochastic() || penalties();
+    return stochastic() || penalties() || constraint;
   }
   bool SameGraph(const SamplingOptions &other) const {
     return temperature == other.temperature && top_p == other.top_p && top_k == other.top_k &&
            frequency_penalty == other.frequency_penalty &&
            presence_penalty == other.presence_penalty &&
-           repetition_penalty == other.repetition_penalty;
+           repetition_penalty == other.repetition_penalty &&
+           bool(constraint) == bool(other.constraint);
   }
 };
 inline Status ValidateSampling(const SamplingOptions &s) {

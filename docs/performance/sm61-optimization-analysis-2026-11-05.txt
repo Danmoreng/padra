@@ -1,0 +1,290 @@
+Pascal / SM61 optimization analysis, 2026-11-05
+
+Scope and current state
+
+The optimization goal remains paused. This assessment changes no runtime,
+kernel, model or launch configuration. It adds two instrumented source-code
+profiles to the existing evidence and examines the historical Sternenwrack
+coding-agent benchmark. No new implementation, commit or push was performed.
+
+The branch is codex/pascal-sm61-port at 8c73469, four commits ahead of its
+remote. main b1abeef is already merged. The validated two-row Q8 MTP attention
+candidate remains uncommitted in the working tree; build/sm61-k3-dp4a includes
+that candidate. Its source fingerprint is recorded in the companion JSON.
+The existing launch helper selects that build, not an immutable committed
+binary. Preserve its exactness and performance evidence before future edits.
+
+Hardware/configuration: GTX 1070 Max-Q, SM61, physical 8 GiB; CUDA 12.4;
+native K3 target, shared stored Q8 output head, EXL3 K4 MTP draft, Q8_0 target
+KV, depth 1, capacity 8192, physical prefill batch 256. No new head format is
+proposed. Internal draft projection/cache formats remain unchanged.
+
+Latest paired non-instrumented measurements of the current candidate:
+  2k prompt, 1000 outputs: prefill 517.97 tok/s, decode 53.69 tok/s.
+  4k prompt, 1000 outputs: prefill 516.41 tok/s, decode 53.91 tok/s.
+Three AB/BA/AB process pairs, one warm-up/process, no prompt reuse.
+The paired-attention change gains approximately 3.1-3.7% decode over the
+committed 2048-key-tier reference; sampled peak GPU memory use is about 6013 MiB.
+These are the existing padded-prompt benchmarks, not the new code profiles.
+
+Measurement interpretation
+
+The historical 2000/4000-token speed fixtures contain token 759 1906/3906
+times: 95.30%/97.65% of input, with only 62 distinct tokens. They are useful
+for repeatable A/B regression measurements, but cannot establish performance
+on arbitrary code or the optimal dense/sparse expert routing threshold.
+
+Nsight Systems 2023.4.4 traces now separate request prefill and decode using
+ordered GPU events: SetSimtBatch before the first grid256 EmbedBatch starts
+prefill; the first MTP cache backup starts decode. Initialization is excluded.
+cuBLAS calls are attributed to the immediately surrounding projection or
+attention wrappers, since kernel names alone are ambiguous. The script checks
+that kernel intervals do not overlap and that category sums are complete.
+All percentages below use the corresponding phase span, not mixed-trace time.
+The traces instrument individual graph nodes and are attribution evidence,
+not a substitute for repeated, uninstrumented throughput measurements.
+
+Two additional existing corpus inputs were profiled without code changes:
+  tests/checkpoint_smoke.py: 2000 tokens, 128 generated, 431 distinct tokens.
+  src/cuda/simt_prefill.cuh: 4000 tokens, 128 generated, 411 distinct tokens.
+Both are frozen source-continuation fixtures from tests/data/pascal_math_corpus.json,
+marked repeated_source; they are not a broad production workload sample.
+They use the same target/draft/KV configuration and no reused prefix.
+
+Prefill GPU attribution, milliseconds (percentage of phase span)
+
+Component                     Padded 2k      Code 2k         Code 4k
+Dense expert DP4A             1302 (33.4%)   1248 (27.7%)    2502 (27.5%)
+Sparse expert projection       381 ( 9.8%)   1063 (23.6%)    1951 (21.4%)
+FP8 Q/K/V/O incl. expansion     759 (19.5%)    754 (16.7%)    1514 (16.6%)
+Attention SGEMM path           571 (14.6%)    568 (12.6%)    1375 (15.1%)
+Draft priming                  381 ( 9.8%)    381 ( 8.4%)     763 ( 8.4%)
+Expert input transform/pack     211 ( 5.4%)    207 ( 4.6%)     417 ( 4.6%)
+Whole phase                   3897           4514            9111
+
+The sparse path costs 2.79x as much on the code 2k input. Dense+sparse experts
+grow from 43.2% to 51.2% of prefill. This supports prioritizing expert tails
+and routing-dependent performance before more small Q8 conversion work.
+Routing histograms were not captured, so the precise cause of this difference
+is not yet established. Do not infer a best tile or threshold from these sums.
+
+Decode GPU attribution, percentage of phase span
+
+Component                     Padded 2k/64   Code 2k/128     Code 4k/128
+Verifier K3 experts            43.7%          43.4%           42.3%
+Verifier FP8 projections       18.8%          19.5%           19.0%
+Shared Q8 head                 11.3%          11.6%           11.4%
+Q8 attention and KV work        7.6%           7.7%            9.2%
+Expert grouping metadata        2.2%           2.2%            2.2%
+All time outside kernels        0.9%           0.9%            0.9%
+Whole phase, ms                1201           2548            2477
+MTP accepted/proposed         30/32          56/71           59/67
+
+The host is not the main limiter in these three traces. Long cudaMemcpyAsync
+API durations include waiting for GPU execution; they are not removable
+transfer cost. For padded decode, all non-kernel intervals total 10.69 ms and
+actual device memcpy events about 0.43 ms. Fusion can still remove kernel
+setup and repeated work; a pure host scheduling rewrite has little headroom.
+Nsight Systems timing does not identify memory-bandwidth, instruction or
+occupancy bottlenecks. No hardware-counter roofline is claimed here.
+
+Prioritized implementation hypotheses, after workload-baseline work
+
+1. Exact specializations and dispatch bounds in expert projections.
+   Verifier ExpertsSmall launches gridY=64, while Rows2 can use at most
+   2*8=16 tiles. Bounding the grid removes 75% of CTAs, but NOT 75% of time:
+   the unused CTAs currently return before doing expensive projection work.
+   Sparse prefill still instantiates Rate=0, despite known K3/K4 format.
+   Specializing Rate can simplify the existing exact codec without new math.
+   Both are small, separately measurable candidates with bitwise gates.
+   Sources: expert_exl3_prefill_simt.cuh:33,87;
+            expert_exl3_prefill_dp4a.cuh:66; expert_exl3_pascal_codec.cuh:44.
+
+2. Expert kernel reuse and tile choice, informed by real code routing.
+   DP4A uses M32/N128/K64, 80 registers/thread and 14784 B shared memory.
+   Sparse prefill uses 80 registers and 8224 B; Rows2 verifier uses 48 registers
+   and 6152 B. The recorded local-memory values show no spilling in these
+   kernels. Lower register counts alone do not prove improved occupancy/speed.
+   Aligned K3 word loads and cross-verifier-row decoded-weight reuse already
+   exist. Examine codec instructions, shared accesses and useful tile work.
+   Capture counts/expert, full/tail tile counts, and neighboring-token expert
+   overlap before choosing M8/M16/M32 or changing the dense threshold.
+   Changing which rows use DP4A changes arithmetic and needs a new quality gate.
+
+3. Reuse more rows in MTP prompt priming.
+   mtp::prime::Projection<4> means four token rows, not a K4 expert kernel.
+   It processes existing eh_proj/K/V internal matrices. eh_proj alone costs
+   311.6 ms of the padded trace's 380.0 ms projection work. The kernel uses
+   36 registers, no shared memory, and only four rows per loaded weight.
+   Test 8/16-row variants while retaining each row's compensated summation
+   order. Measure register growth and end-to-end prefill, not just a microcase.
+   A hypothetical 2x speedup of all priming gives only about 4.4-5.1% total
+   prefill throughput, depending on the measured workload; it is not a forecast.
+   Sources: mtp_prime.cuh:29; mtp.cuh:325.
+
+   Later, consider avoiding priming rows that will be overwritten in the
+   1024-row draft ring. Exact end-of-prefill state needs only the final window,
+   but checkpoints/cancellation require earlier windows at specific boundaries.
+   A rolling normalized-hidden buffer is about 9 MiB. This requires lifecycle
+   design and is a larger change than simply increasing row reuse.
+
+4. Target FP8 projection paths.
+   Verifier Q/O account for 98.3/98.1 ms; K+V for 29.3 ms in padded decode.
+   FP8Small already reuses weights across rows but repeats input FP8 decoding
+   for every output element. Predecode a small activation row once, retaining
+   original lane/FMA order and post-reduction scaling, then measure the extra
+   memory traffic. QKV dispatch fusion already exists in ordinary decode but
+   not Rows2 verification. Fusion alone removes launches, not weight traffic.
+   Sources: fp8_prefill_simt.cuh:58; inference_simt.cu:219,305.
+
+   Prefill repeatedly expands FP8 projection weights to FP32 before cuBLAS.
+   This costs 154.8 ms in padded 2k. A full persistent Q/K/V/O expansion would
+   require an additional 2378170368 B (2.21 GiB); it does not fit safely with
+   the present approximately 6 GiB footprint on this GPU. Any selective cache
+   must keep admission and the 700 MiB reserve. Expansion is only part of the
+   projection cost; eliminating it does not eliminate the GEMMs.
+   Source: pascal_sgemm.cuh:28; runtime/simt_memory.h.
+
+5. Attention and expert-input packing after the larger targets.
+   Local prefill always computes 1280 keys, including early chunks with only
+   256/512/768/1024 valid endpoints. Smaller early local tiers could reduce
+   padded QK/PV work. Extra graphs cost memory; dimension changes can alter
+   GEMM/softmax rounding. Global 2048-key tiering is already implemented.
+   The bounded-tier selection currently requires DP4A and capacity exactly 8192;
+   FP32-default and 16k configurations do not benefit. Generalizing this is
+   especially relevant for the proposed game benchmark, but needs qualification.
+   Sources: pascal_attention_sgemm.cuh:36; inference_simt.cu:253.
+
+   InputHad+Quantize cost 210.9 ms in padded prefill. Fusion must preserve float
+   inputs for sparse tails: the current order is transform, sparse projection,
+   then in-place INT8 packing, then dense projection. Naive early in-place
+   packing would corrupt sparse work. Source: expert_exl3_prefill_dp4a.cuh:62.
+
+6. Secondary work and candidates to defer.
+   Verifier Describe scans 64 counts with one active thread: 23.2 ms (~1.9% of
+   padded decode). A deterministic parallel scan or small-row specialization
+   is plausible. Router/norm fusion must preserve reduction and tie order.
+   The Q8 head already uses DP4A and batched weight reuse; further head work is
+   load/tile optimization, not enabling a missing basic acceleration.
+   Prefill Q8 dequantization 8.8 ms plus Gather 10.9 ms is only 0.51% of padded 2k
+   time, even before considering work that must remain. Fuse for memory savings
+   only if needed; this is not the next substantial speed opportunity.
+   Wholesale host-loop rewrites and GPU/CPU overlap are low priority under the
+   measured <1% non-kernel gap, with considerable cancellation/RNG complexity.
+
+MTP depth is a configuration experiment before more speculative kernel work.
+Acceptance changes from 93.8% in padded 64-output trace to 78.9%/88.1% in the two
+code traces. D2-D4 add serial draft forwards and currently lose the two-row Q8
+attention specialization. Measure D0/D1/D2/D3 with representative prompts,
+accepted/proposed, outputs/group, TTFT and total wall time; retain D1 until a
+benefit is shown. More accepted proposals alone do not prove better throughput.
+
+For scale: a hypothetical 25% reduction of verifier expert time would yield
+about 12% decode throughput; the same relative improvement in verifier FP8
+alone yields about 5%. These are independent Amdahl scenarios, not predictions
+or additive promises. The traces do not establish a path to llama.cpp parity.
+
+Real coding-agent benchmark: Das Sternenwrack
+
+The user's task was found at:
+  /srv/agent/artifacts/local-model-comparison-20261104/aufgabe.md
+Task SHA256: bf97b2f74905bbc376bb754006971e60deefdc0bc1acf1437aa4bb126af59d8c
+Runner: same directory/run.py. Outputs: mellum/{index.html,style.css,game.js,README.md}.
+Metrics/logs: mellum-metrics.json, mellum-agent.jsonl, mellum-server.log.
+
+Recorded Mellum result: 145.833 s (2m 25.8s), agent exit 0, 8 model calls, 7 tool calls,
+6391 output tokens, 36854 cached input tokens summed over calls, 5987 uncached input
+tokens. Time excludes model startup and the subsequent separate 102400-token
+synthetic probe. Peak sampled GPU use during the agent was 7625 MiB.
+
+This ran Pi 1.1.0 against llama.cpp with Mellum 2.1 IQ4_XS, Q8_0 KV, 131072 capacity,
+batch 512/microbatch 128 and N-gram speculation (--spec-default). No MTP draft
+appears in the saved command. It is not the older IQ3_XS+MTP speed benchmark.
+The checkout now reports c6a0ff11a0fe16ac1a2eb569190934593a2b3670, but the
+historical runner did not save a binary hash; do not overstate that identity.
+The server records approximately 48-50 tok/s generation on the game turns.
+
+The existing game is an excellent additional product-level benchmark because
+it exercises reasoning, tools, long generated code, repeated history, and real
+output usefulness. Agent exit 0 and node --check do not establish playability.
+Static inspection suggests pause/resume, HUD refresh and touch-control gaps;
+browser behavior must be assessed externally before grading those failures.
+Use a fixed rubric: initial start, movement/bounds, collecting/scoring, damage
+and invulnerability, win/loss/time limit, pause/resume/focus, restart, touch,
+responsive layout, storage failure handling, and browser console errors.
+
+Conditions for the next comparison:
+
+- Freeze the exact task and Pi version/tools, empty per-run output directories,
+  reasoning behavior, explicit sampling settings, and generation limits.
+  Three independent runs/configuration give more useful evidence than one
+  fortunate output. Preserve raw agent events, files and per-call server timings.
+- Use a common, sufficiently large context and output budget. The historical
+  last turn had 8151 prompt + 1370 output = 9521 tokens. Current Padra 8k cannot reproduce
+  that trajectory. A 16k/4096-output-budget profile is a sensible first candidate,
+  subject to admission, Pi compaction settings and actual template token counts.
+  The original Pi 131k/maxTokens 16384 configuration is not usable unchanged.
+  Static memory inventory grows only 52.53 MiB from 8k to 16k, but this omits
+  graph/library differences and is not proof of runtime admission. Pi's default
+  compaction reserve/keepRecent values (16384/20000) need explicit scaling;
+  4096/4096 is a starting configuration. No new 16k runtime/quality qualification
+  was performed in this analysis. At 16k, global attention uses the full admitted
+  context and 64-query SGEMM tiles, so 8k throughput must not be extrapolated.
+- Explicitly align thinking: old Pi used --thinking off and reasoning:false,
+  but every recorded assistant response contains thinking. Padra effort:none
+  would actually disable it, giving a different task configuration.
+- Record real prefix reuse. Unmodified Pi Chat does not send Padra session_id;
+  Padra resets such stateless requests. llama.cpp reused its slot by common
+  prefix in the historical game. Thus a plain-client comparison exposes a
+  real integration difference. Separately benchmark explicit Padra sessions
+  to isolate the engine's existing reuse capability, naming that mode clearly.
+  Do not silently add a Padra-only cache adapter and call it the same setup.
+- Compare complete supported configurations: Padra native K3 + Q8 head + K4 draft
+  versus llama.cpp IQ4_XS+N-gram and, optionally, its Q8-MTP configuration.
+  Different quantizations/sampling/tool trajectories prevent this from being
+  a pure engine or equal-quality comparison. Never substitute a BF16 head.
+- Report task wall time and functional score together with generated tokens,
+  model/tool call counts, fresh/cached prefill, decode, MTP/N-gram acceptance
+  and peak VRAM. Faster failure or a shorter incomplete game is not a win.
+- Add fixed-request replays from the saved trajectory for kernel comparisons.
+  Free-running agents naturally produce different code lengths/tool calls;
+  normalized tok/s and replay timings separate that from engine changes.
+
+Prefix integration may dominate small kernel changes in this workload. Existing
+Padra evidence shows prepare+prefill 3.874 s → 0.993 s for 1536/2000 tokens reused,
+about 3.90x. That benefit requires a matching resident session/checkpoint and
+does not automatically apply to unmodified stateless Pi traffic.
+
+Recommended next sequence
+
+First establish the Sternenwrack workload baseline with coherent context,
+reasoning and cache policies and a functional rubric. Preserve the historical
+145.8s result as a reference rather than treating it as a controlled current
+A/B run. Then retain the existing validated paired-attention candidate and
+test the two exact expert specializations separately. Use measured routing
+and the game/model profiles to choose larger expert, priming and FP8 work.
+Run the game again after a set of useful changes, alongside fixed-input speed
+and existing correctness/quality gates. Do not tune exclusively to this game.
+
+Main integration is a separate readiness track: the last formatter check
+failed 51 branch files; current SM120 regression evidence is absent. Run current
+host/native-text/SDK checks, SM61 default and DP4A builds, and shared CUDA/MTP/
+cache checks on the other SM120 machine. Keep approximate DP4A opt-in and
+qualification limits explicit. README changes should describe current supported
+behavior and hardware scope only; this report holds the experiment history.
+llama.cpp speed parity is not a prerequisite for merging a correct, bounded,
+clearly labeled experimental Pascal backend.
+
+Evidence and reproduction
+
+Companion: sm61-optimization-analysis-2026-11-05.json.
+Raw workspace: /srv/agent/workspaces/padra-sm61-opt-20261105
+  analyze_trace.py, analysis-phase-breakdown.json
+  analysis-code-{meta,requests}.json, analysis-code-results.jsonl
+  analysis-code-trace.{qdstrm,nsys-rep,sqlite}, analysis-code-stats.csv
+  mtp-trace-candidate.{nsys-rep,sqlite}, mtp-pair-paired/summary.json
+  sternenwrack-historical-case.json
+The automatic nsys importer path is broken in this installation. Matching
+/usr/lib/nsight-systems/host-linux-x64/QdstrmImporter imported both captures;
+nsys stats then created SQLite exports. No missing trace data is inferred
+from the initial automatic-import warning. All analysis GPU jobs completed.

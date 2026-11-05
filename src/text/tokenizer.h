@@ -17,6 +17,9 @@ public:
   Result<std::vector<int>> Encode(std::string_view) const;
   Result<std::string> Decode(std::span<const int>, bool skip_special = true) const;
   std::string_view RawToken(int id, bool skip_special = true) const;
+  std::size_t VocabularySize() const {
+    return raw_.size();
+  }
   std::size_t MaxRawTokenBytes() const {
     return max_raw_;
   }

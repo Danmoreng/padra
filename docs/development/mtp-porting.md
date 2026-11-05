@@ -34,14 +34,19 @@ admission; its scratch buffers are shared with the other prefill graphs.
 
 The verifier batches 2–5 target rows, shares FP8 weight reads and grouped EXL3
 weights, and uses the same per-row attention and Q8 head arithmetic as ordinary
-SM61 decoding. Tentative KV rows are backed up in their stored format and
+SM61 decoding. For two Q8_0 rows, query encoding, attention and merge are
+batched while retaining the ordinary per-row partitions and arithmetic. The
+first query reads its overwritten ring entry from the encoded rollback snapshot.
+Three-to-five-row verification and BF16 attention use sequential row attention.
+Tentative KV rows are backed up in their stored format and
 restored after rejection. Retained draft rows are repaired using actual target
 hidden states. RNG and penalty counts advance only for emitted target samples.
 BF16 and Q8_0 session checkpoints also include draft KV and the preceding target
 hidden row, retaining complete 256-token prefill chunks. Q8_0 selects the target
 cache; the draft retains its native 1024-row BF16 ring (2 MiB). This does not
-allocate a BF16 output head. SIMT uses a fixed verifier dispatch; SM120 research
-flags do not select alternative SIMT kernels.
+allocate a BF16 output head. The probe's `paired_attention: false` diagnostic
+option selects sequential Q8_0 attention for comparison; other SM120 research
+switches do not select alternative SIMT kernels.
 
 Enable `PADRA_BUILD_DIAGNOSTICS=ON` for `padra-simt-qualify`, or
 `PADRA_ENABLE_MTP_PROBES=ON` for the artifact-backed `padra-mtp-probe` on either

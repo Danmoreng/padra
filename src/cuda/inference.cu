@@ -1401,7 +1401,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             : admission::Bytes(admission::Sum({regions.back().offset, regions.back().count}), 4);
     const std::size_t samplerTempBytes = worker ? gpu_sampling::WorkspaceBytes() : 0;
     const std::size_t samplerBytes =
-        worker ? gpu_sampling::Vocabulary * 28 + sizeof(gpu_sampling::State) : 0;
+        worker ? gpu_sampling::Vocabulary * 29 + sizeof(gpu_sampling::State) : 0;
     const std::size_t selectionbytes = kSelectionBlocks * sizeof(SelectionCandidate);
     const std::size_t fastAttentionBytes =
         o.fast_w4a8
@@ -1810,6 +1810,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
     auto *sampleState =
         worker ? reinterpret_cast<gpu_sampling::State *>(sampleCumulative + 98304) : nullptr;
     auto *sampleCounts = worker ? reinterpret_cast<int *>(sampleState + 1) : nullptr;
+    auto *sampleMask = worker ? reinterpret_cast<std::uint8_t *>(sampleCounts + 98304) : nullptr;
     Buffer fastAttentionScratch(fastAttentionBytes);
     Buffer ids(batch * 8 * sizeof(int)), routing(batch * 8 * sizeof(float)), bad(sizeof(int)),
         control(sizeof(Control));
@@ -2826,11 +2827,12 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       const int steps = static_cast<int>(o.input_ids.size()) + std::max(0, o.generate - 1);
       const auto chooseToken = [&](const float *selectedLogits, bool sampled,
                                    SamplingOptions fixed) {
+        const auto *allowed = sampled && fixed.constraint ? sampleMask : nullptr;
         if (sampled && fixed.stochastic())
           gpu_sampling::Launch(selectedLogits, sampleAdjusted, sampleSorted, sampleIds,
                                sampleSortedIds, sampleCumulative, sampleState,
                                control.As<Control>(), bad.As<int>(), samplerTemp.p,
-                               samplerTempBytes, stream.s, fixed, sampleCounts);
+                               samplerTempBytes, stream.s, fixed, sampleCounts, kVocabulary, allowed);
         else {
           const float *selectionLogits = selectedLogits;
           if (sampled && fixed.penalties()) {
@@ -2839,7 +2841,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             selectionLogits = sampleAdjusted;
           }
           SelectTiles<<<kSelectionBlocks, kSelectionThreads, 0, stream.s>>>(
-              selectionLogits, selection.As<SelectionCandidate>(), kVocabulary, bad.As<int>());
+              selectionLogits, selection.As<SelectionCandidate>(), kVocabulary, bad.As<int>(), allowed);
           Select<<<1, kSelectionThreads, 0, stream.s>>>(selection.As<SelectionCandidate>(),
                                                         control.As<Control>(), kSelectionBlocks,
                                                         bad.As<int>());
@@ -2872,6 +2874,17 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                                                       contextMaximum);
         }
       };
+      const auto updateGrammarMask = [&] {
+        if (o.sampling.constraint) {
+          auto mask = o.sampling.constraint->Mask();
+          if (mask.size() != 98304)
+            throw std::runtime_error("grammar vocabulary mismatch");
+          Check(cudaMemcpyAsync(sampleMask, mask.data(), mask.size(), cudaMemcpyHostToDevice,
+                                stream.s));
+          // Host mask storage may change at the next Accept/Mask boundary.
+          Check(cudaStreamSynchronize(stream.s));
+        }
+      };
       const auto observeToken = [&](int position) {
         Check(cudaGetLastError());
         Check(
@@ -2881,6 +2894,10 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           throw std::runtime_error(
               "nonfinite or unrepresentable native forward; no fallback attempted");
         token = host.p->token;
+        if (o.sampling.constraint && o.generate > 0) {
+          o.sampling.constraint->Accept(token);
+          updateGrammarMask();
+        }
         last_token_ready = std::chrono::steady_clock::now();
         if (position + 1 == static_cast<int>(o.input_ids.size()))
           prefill_finished = last_token_ready;
@@ -2891,6 +2908,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
         return o.generate > 0 && token == 28 && o.diagnostic_decode_token < 0;
       };
       const auto finishToken = [&](int position) {
+        updateGrammarMask();
         finishDeviceToken(position, position + 1 == static_cast<int>(o.input_ids.size()),
                           worker && o.sampling.selection_graph(), o.sampling);
         return observeToken(position);

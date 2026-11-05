@@ -96,7 +96,7 @@ inline ServerMemoryPlan PlanServerMemory(std::size_t weights, int capacity, int 
     add("local_checkpoint", KVCheckpointLedger::LocalSnapshotBytes(kv_format));
   }
   if (sampling_workspace) {
-    add("sampling_arrays_state", 98304 * 28 + 16);
+    add("sampling_arrays_state", 98304 * 29 + 16);
     add("sampling_algorithm_workspace", sampling_workspace);
   }
   return plan;

@@ -1,0 +1,107 @@
+SM61 coding benchmark: tool-output diagnosis, 2026-11-05
+
+Scope and evidence
+------------------
+Workspace: /srv/agent/workspaces/padra-tool-error-20261105
+Benchmark: /srv/agent/workspaces/padra-sternenwrack-20261105
+This investigation does not implement constrained sampling or automatic retries.
+The code and configuration statements below describe the pre-grammar baseline.
+For current constrained decoding behavior, see ../tool-grammar.md.
+
+Cause
+-----
+The failed fourth request names the correct write tool and game.js destination.
+A direct runtime replay captured the model's token pieces before tool parsing.
+At output token 2691, token ID 2264 emits a closing quote followed by a square
+bracket. The full generated tool ends with an extra ] before the object braces.
+The arguments are an object, so the parser correctly reports "mismatched tool
+argument bracket". This is generated invalid JSON, not a streaming split error.
+The invalid bracket is at zero-based offset 8498 in the trimmed tool JSON, or
+8499 in the parser buffer, which includes a leading newline.
+
+Removing only that bracket for diagnostic parsing produces a valid write call
+with an 8165-character content string. No repaired call was executed. The 8466
+argument bytes published before failure match both the original and cached
+benchmark runs (SHA256 d5495ec3bd23d8ebba06d0f77c68a27c4cc552bf25b0b95a542faa2bd0df1735).
+Raw evidence: d1/token-pieces.jsonl, d1/first-error.json, d1/diagnosis.json,
+d1/malformed-tool.txt and d1/result.json under the investigation workspace.
+
+Retry behavior
+--------------
+The server terminates the response with invalid_tool_output. Streaming HTTP
+headers have already been sent, so the failure arrives as an SSE error event.
+Replaying that exact event through installed Pi 1.1.0 and its OpenAI SDK yields
+an APIError without HTTP status. Pi formats the parser message and does not
+classify it as transient. Its enabled retry mechanism therefore does not retry.
+The agent loop exits before tool execution; no normal toolResult error reaches
+the model. Ordinary executed-tool errors take a different continuation path.
+Evidence and source locations: retry-analysis/retry-analysis.{txt,json}.
+
+Already published argument deltas cannot be retracted by an invisible server
+retry. Reporting success for partial/repaired arguments could execute truncated
+code. Any corrective continuation must discard the failed attempt, explicitly
+state that its tool was not executed, and enforce a bounded attempt/token budget.
+
+Corrective-feedback diagnostic
+------------------------------
+One modified request explicitly explains the extra bracket and asks for the
+complete valid write call. Target K3, shared Q8 head, EXL3 K4 MTP D1, Q8_0 KV,
+131072 context capacity, seed 42, temperature 0.6, top_p 0.95 and top_k 20 remain
+unchanged. This is a direct generation diagnostic, not a resumed Pi benchmark.
+An initial 4096-output-token cap produced only reasoning and no tool call.
+Repeating the same corrective request with the original 16384-token budget
+exhausted that budget with an incomplete tool call. It produced 49406 bytes of
+reasoning and 4184 bytes of tool content; no tool was executed. Recorded prefill
+was 13.099 seconds and decode 329.73 seconds. The absence of a parser error at
+the cutoff is not successful completion. Both probes consumed additional time;
+neither counts as a successful recovery or a new full-game benchmark.
+Evidence: corrective-request.json, corrective-d1/result.json and
+corrective-d1-full/{result.json,content.txt,reasoning.txt}.
+
+llama.cpp comparison qualification
+---------------------------------
+A CPU reconstruction using the installed llama.cpp common library, saved chat
+template and actual benchmark requests 001 and 004 generates the same 3087-byte
+tool grammar, lazily triggered by the exact string <tool_call> followed by LF.
+That grammar constrains write arguments to the declared object and excludes the
+extra closing bracket. Grammar SHA256:
+6dab24d61117dd24595dbe16fe18d5055f89b4e45a2d2ba064674f3b32a80814
+Historical activation of the grammar per token was not logged. This establishes
+the reconstructed configuration, not a historical per-token trace.
+Evidence: retry-analysis/llama-request-{001,004}.{json,gbnf}.
+Identical HTTP sampling parameters therefore did not establish identical grammar
+policies: Padra currently validates generated calls after sampling. Prior timing
+measurements remain observations of those configurations, not a controlled test
+of equivalent constrained sampling implementations.
+
+Implementation assessment and next qualification
+-----------------------------------------------
+Constrained sampling belongs before target token selection, not in the current
+post-generation TokenCallback or ToolStreamParser. Both stochastic and greedy
+selection need constraints, including the initial prefill token. Tool schemas,
+tokenizer byte pieces, escaped strings, lazy activation, EOS and request reset
+must have explicit contracts. A grammar prevents structural errors; it does not
+guarantee useful arguments, correct JavaScript or completion within a token cap.
+
+Current MTP verification selects target tokens row by row and accepts a proposal
+only when it matches that target choice (src/cuda/inference.cu). A conservative
+first implementation can constrain target selection and advance grammar state
+only for committed target tokens; unmasked draft proposals can be rejected by
+that verification. Masking draft proposals later requires separate tentative
+grammar state and correct discard/restore handling. CUDA graph capture and the
+CPU-to-GPU constraint transfer also need explicit integration and measurement.
+
+Qualify ordinary decoding first, then MTP acceptance/rejection and cancellation,
+and finally rerun the coding task with both engines' grammar policies recorded.
+Keep the existing model/quantization differences explicit. Measure successful
+task completion and tool validity alongside total time, prefill/decode rates,
+cache reuse, MTP acceptance and peak VRAM. Retain the 131072 context capacity and
+Q8 KV requirement; configured capacity alone does not qualify full-length prompt
+quality or performance. Optimize only against this validated baseline.
+
+Existing parser checks
+----------------------
+The independent host parser review passed 3447 valid-fixture/chunk-schedule
+trials under sanitizers, including an analytically completed version of the
+published prefix. Existing parser-properties and server-regressions passed.
+Evidence: benchmark workspace parser-review/host-sanitizer.log and review.txt.

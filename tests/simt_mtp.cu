@@ -13,6 +13,7 @@ namespace mellum16 { namespace {
 #include "cuda/mtp.cuh"
 #undef PADRA_MTP_SIMT
 #include "cuda/kv_q8_simt.cuh"
+#include "cuda/q8_simt_pair_probe.cuh"
 void Q8Attention(bool local,int position){
   constexpr int capacity=2048;const int cap=local?1024:capacity;
   std::vector<float> source(cap*512),value(source.size()),query(4096);
@@ -53,4 +54,4 @@ void Rollback(int retained){
   for(int i=0;i<29;++i){auto expected=original[i];for(int row=0;row<rows;++row)for(int part=0;part<2;++part){auto* p=expected.data()+(part*cap+(position+row)%cap)*bindings[i].row_bytes;if(row<retained)std::memset(p,252,bindings[i].row_bytes);else if(position+row<cap)std::memset(p,0,bindings[i].row_bytes);}std::vector<unsigned char> actual(expected.size());Check(cudaMemcpy(actual.data(),buffers[i]->p,actual.size(),cudaMemcpyDeviceToHost));Require(actual==expected,"MTP rollback differs from byte oracle");}
 }
 }}
-int main(){try{using namespace mellum16;for(bool local:{false,true})for(int position:{127,1023,1026,2047})Q8Attention(local,position);for(int retained:{0,1,2,5})Rollback(retained);std::cout<<"Q8_0 attention and BF16/Q8_0 speculative rollback passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{using namespace mellum16;const bool paired_only=argc>1;Q8PairedAttention(paired_only && std::string(argv[1])=="--paired-sanitize");if(paired_only)return 0;for(bool local:{false,true})for(int position:{127,1023,1026,2047})Q8Attention(local,position);for(int retained:{0,1,2,5})Rollback(retained);std::cout<<"Q8_0 attention and BF16/Q8_0 speculative rollback passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

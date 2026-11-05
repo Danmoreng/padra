@@ -23,7 +23,9 @@ void Coordinator::PrepareExecution(Job &job, Clock::time_point started, bool &ru
   std::optional<KVCheckpointHandle> retained;
   {
     std::lock_guard lock(mutex_);
-    if (lease && gpu_session_ == job.request.session_id && gpu_owner_ == job.request.session_owner)
+    const bool explicit_session = lease && gpu_session_ == job.request.session_id;
+    const bool automatic = !lease && job.request.automatic_prefix_cache && gpu_session_.empty();
+    if ((explicit_session || automatic) && gpu_owner_ == job.request.session_owner)
       retained = gpu_checkpoint_;
   }
   Status status;
@@ -52,7 +54,8 @@ void Coordinator::PrepareExecution(Job &job, Clock::time_point started, bool &ru
       metrics_.ready = false;
       throw std::runtime_error(status.message());
     }
-    status = lease && job.request.checkpoint_anchor && runtime_->Stats().checkpoint_enabled
+    status = (lease || job.request.automatic_prefix_cache) && job.request.checkpoint_anchor &&
+                     runtime_->Stats().checkpoint_enabled
                  ? runtime_->PrepareWithCheckpoint(job.request.input_ids, job.request.outputs,
                                                    job.request.checkpoint_anchor, false,
                                                    job.request.sampling)
@@ -90,12 +93,12 @@ void Coordinator::CommitHistory(Job &job) {
     auto status = sessions_->Commit(lease, json::Stringify(json::Value(std::move(messages))));
     if (!status.ok())
       throw std::runtime_error(status.message());
-    {
-      std::lock_guard lock(mutex_);
-      gpu_session_ = job.request.session_id;
-      gpu_owner_ = job.request.session_owner;
-      gpu_checkpoint_ = runtime_->Checkpoint();
-    }
+  }
+  if (!job.partial_tool_call && (lease || job.request.automatic_prefix_cache)) {
+    std::lock_guard lock(mutex_);
+    gpu_session_ = job.request.session_id;
+    gpu_owner_ = job.request.session_owner;
+    gpu_checkpoint_ = runtime_->Checkpoint();
   }
   if (job.partial_tool_call) {
     std::lock_guard lock(mutex_);

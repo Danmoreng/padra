@@ -1,0 +1,2892 @@
+{
+  "date": "2026-11-05",
+  "feature": "lazy tool grammar before target selection",
+  "workspace": "/srv/agent/workspaces/padra-grammar-20261105",
+  "tests": {
+    "host": {
+      "passed": 27,
+      "failed": 0
+    },
+    "asan_ubsan": "tool grammar regression checks passed",
+    "cuda_sampler": "grammar GPU sampler checks passed",
+    "native_http": {
+      "actual_cuda_model": true,
+      "kv_format": "q8_0_token512_block32_f16scale_rot_k128_v64_v2",
+      "capacity": 131072,
+      "prefill_chunk": 256,
+      "device_budget_gib": 8,
+      "head_format_requested": "q8",
+      "artifact_identity_verified": true,
+      "admin_listener_verified": true,
+      "server_config": {
+        "port": 18463,
+        "admin_port": 42623,
+        "context_capacity": 131072,
+        "request_body_bytes": 2097152,
+        "queue": {
+          "requests": 8,
+          "bytes": 67108864,
+          "tokens": 1048576,
+          "timeout_ms": 5000,
+          "generation_timeout_ms": 30000,
+          "drain_timeout_ms": 5000
+        },
+        "http": {
+          "preparation_requests": 4,
+          "threads": 16,
+          "queued_connections": 32,
+          "admin_threads": 2,
+          "admin_queued_connections": 8,
+          "send_buffer_bytes": 16384,
+          "keep_alive_seconds": 2,
+          "keep_alive_requests": 16,
+          "read_timeout_ms": 5000,
+          "write_timeout_ms": 2000,
+          "heartbeat_ms": 15000,
+          "poll_ms": 20
+        }
+      },
+      "chat_and_responses_streams": true,
+      "session_followup": true,
+      "stateless_prefix_cache": {
+        "chat_repeat_cached_tokens": 256,
+        "chat_followup_cached_tokens": 256,
+        "responses_repeat_cached_tokens": 256,
+        "owner_and_system_and_tool_prefix_misses": true,
+        "cached_and_fresh_choices_exact": true,
+        "no_implicit_session_or_response_retention": true
+      },
+      "chat_cached_tokens": 256,
+      "responses_cached_tokens": 256,
+      "session_cache_miss_replay": true,
+      "mtp_depth": 1,
+      "native_tool_request": true,
+      "native_tool_calls": 1,
+      "independent_stored_responses": 40,
+      "stored_lineage_delete": true,
+      "metrics": true,
+      "build_source_sha256": "b6115b4ee9a6601f1537905055f270696c7b02a401032d896ebd23162300bc59",
+      "build_kernel_profile": "baseline-v1",
+      "math_profile": "mellum16-pascal-q8_0-dp4a-v2;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+      "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa4-fp32-split-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;mtp-q8-paired-attention-sm61-v1;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+      "scope": "Serving smoke test; not numerical quality, sustained load or speed qualification"
+    },
+    "original_bad_token_cpu_replay": "blocked_token=2691 id=2264 piece=\"\\\"]\" seconds=2.45039",
+    "d0_d1": {
+      "d0_d1_exact_token_ids": true,
+      "d0_outputs": 2701,
+      "d1_outputs": 2701,
+      "d0": {
+        "depth": 0,
+        "prompt_tokens": 3985,
+        "anchor": 3981,
+        "outputs": 2701,
+        "first_error": 0,
+        "cancelled": false,
+        "prefill_s": 12.7756,
+        "decode_s": 63.5425
+      },
+      "d1": {
+        "depth": 1,
+        "prompt_tokens": 3985,
+        "anchor": 3981,
+        "outputs": 2701,
+        "first_error": 0,
+        "cancelled": false,
+        "prefill_s": 13.6199,
+        "decode_s": 54.9579
+      }
+    }
+  },
+  "build": {
+    "git_head": "8c73469de3e91986db605cb204bd71753d8fa803",
+    "binary_sha256": "578ddbabfdf217a3d3ed17c3c4124dca824e2f67d5b0d3823a93fa3f830ed867",
+    "build_identity_header": "#pragma once\nnamespace mellum16 {\ninline constexpr char kPadraBuildVersion[]=\"0.1.0\";\ninline constexpr char kPadraBuildKernelProfile[]=\"baseline-v1\";\ninline constexpr char kPadraBuildPrefillProfile[]=\"global-matrix-v1\";\ninline constexpr char kPadraBuildQ8PrefillProfile[]=\"packed-chunk-v1\";\ninline constexpr char kPadraBuildExl3PrefillTransport[]=\"async64-v1\";\ninline constexpr char kPadraBuildSourceSha256[]=\"b6115b4ee9a6601f1537905055f270696c7b02a401032d896ebd23162300bc59\";\n}\n",
+    "worktree_dirty": true,
+    "model_free_gpu_test": "grammar GPU sampler checks passed\n",
+    "host_tests": "Test project /home/sebastian/padra/build/rebase-host\n      Start 19: server-output-order\n      Start 20: server-partial-tools\n 1/27 Test #19: server-output-order ..............   Passed    3.18 sec\n      Start 26: kernel-profile-configuration\n 2/27 Test #20: server-partial-tools .............   Passed    3.28 sec\n      Start  2: tool-grammar\n 3/27 Test  #2: tool-grammar .....................   Passed    0.59 sec\n      Start  1: parser-properties\n 4/27 Test #26: kernel-profile-configuration .....   Passed    0.93 sec\n      Start 17: api-field-contract\n 5/27 Test #17: api-field-contract ...............   Passed    0.34 sec\n      Start  3: server-regressions\n 6/27 Test  #3: server-regressions ...............   Passed    0.58 sec\n      Start  8: http-slow-reader\n 7/27 Test  #1: parser-properties ................   Passed    1.35 sec\n      Start 22: server-admission-errors\n 8/27 Test  #8: http-slow-reader .................   Passed    0.29 sec\n      Start  7: http-slow-bodies\n 9/27 Test  #7: http-slow-bodies .................   Passed    0.13 sec\n      Start 23: server-transport\n10/27 Test #22: server-admission-errors ..........   Passed    0.23 sec\n      Start 21: server-admission\n11/27 Test #23: server-transport .................   Passed    0.20 sec\n      Start 24: server-disconnect-queue\n12/27 Test #21: server-admission .................   Passed    0.23 sec\n      Start  6: http-heartbeat\n13/27 Test #24: server-disconnect-queue ..........   Passed    0.10 sec\n      Start 14: mtp-artifact-contract\n14/27 Test  #6: http-heartbeat ...................   Passed    0.07 sec\n      Start 10: http-deadlines\n15/27 Test #10: http-deadlines ...................   Passed    0.06 sec\n      Start  9: http-restart\n16/27 Test #14: mtp-artifact-contract ............   Passed    0.08 sec\n      Start 25: server-disconnect-active\n17/27 Test #25: server-disconnect-active .........   Passed    0.04 sec\n      Start 18: stateless-prefix-cache\n18/27 Test  #9: http-restart .....................   Passed    0.06 sec\n      Start 12: k3-artifact-and-api-contract\n19/27 Test #12: k3-artifact-and-api-contract .....   Passed    0.03 sec\n      Start 11: k6-artifact-and-api-contract\n20/27 Test #11: k6-artifact-and-api-contract .....   Passed    0.03 sec\n      Start 15: mtp-schedule-contract\n21/27 Test #18: stateless-prefix-cache ...........   Passed    0.09 sec\n      Start  4: generation-events\n22/27 Test  #4: generation-events ................   Passed    0.02 sec\n      Start 13: kv-memory-contract\n23/27 Test #15: mtp-schedule-contract ............   Passed    0.04 sec\n      Start  5: execution-boundaries\n24/27 Test #13: kv-memory-contract ...............   Passed    0.01 sec\n      Start 16: server-configuration\n25/27 Test  #5: execution-boundaries .............   Passed    0.01 sec\n      Start 27: gpu-profiles\n26/27 Test #16: server-configuration .............   Passed    0.01 sec\n27/27 Test #27: gpu-profiles .....................   Passed    0.01 sec\n\n100% tests passed, 0 tests failed out of 27\n\nTotal Test time (real) =   6.01 sec\n",
+    "sanitizers": "tool grammar regression checks passed\n"
+  },
+  "probe_binary_sha256": "b86cfdec667c8e09f075cd095f15ea269363772bd73a39fe4cd1490b1e05372b",
+  "hardware_limits": [
+    "SM61 runtime tested; SM120 integration requires CUDA >=12.8 and hardware qualification elsewhere.",
+    "131072 capacity admitted; full-length prompt quality/performance not qualified by the shorter coding task."
+  ],
+  "gpu_grammar_mask_bytes": 98304,
+  "benchmarks": {
+    "status": "completed",
+    "full_task": {
+      "padra": {
+        "name": "padra-game",
+        "engine": "padra",
+        "status": "completed",
+        "error": null,
+        "agent_wall_seconds": 281.1198311830012,
+        "startup_seconds": 17.0968108750003,
+        "model_calls": 12,
+        "tool_calls": 11,
+        "completed_usage_calls": 12,
+        "incomplete_or_error_calls": 0,
+        "completed_response_usage_totals": {
+          "input_tokens_total": 92476,
+          "input_tokens_fresh": 15676,
+          "input_tokens_cached": 76800,
+          "output_tokens": 8907
+        },
+        "server_counters_all_requests": {
+          "prefill_seconds": 80.2818,
+          "decode_seconds": 199.254,
+          "generated_output_tokens": 8907.0,
+          "raw_counter_deltas": {
+            "mellum_requests_submitted_total": 12.0,
+            "mellum_requests_completed_total": 12.0,
+            "mellum_requests_failed_total": 0.0,
+            "mellum_requests_cancelled_total": 0.0,
+            "mellum_queue_rejected_total": 0.0,
+            "mellum_disconnects_total": 0.0,
+            "mellum_backpressure_total": 0.0,
+            "mellum_model_loads_total": 0.0,
+            "mellum_weight_uploads_total": 0.0,
+            "mellum_graph_captures_total": 0.0,
+            "mellum_mtp_groups_total": 4737.0,
+            "mellum_mtp_draft_calls_total": 4744.0,
+            "mellum_mtp_proposed_total": 4737.0,
+            "mellum_mtp_accepted_total": 4151.0,
+            "mellum_mtp_ordinary_tails_total": 7.0,
+            "mellum_tokenization_seconds_total": 0.31371,
+            "mellum_queue_wait_seconds_total": 0.00058319,
+            "mellum_prefill_seconds_total": 80.2818,
+            "mellum_decode_seconds_total": 199.254,
+            "mellum_first_token_seconds_total": 80.2881,
+            "mellum_first_visible_seconds_total": 120.57,
+            "mellum_output_tokens_total": 8907.0,
+            "mellum_prefill_chunks_total": 68.0,
+            "mellum_prefill_eager_chunks_total": 12.0,
+            "mellum_responses_written_total": 12.0,
+            "mellum_response_write_failures_total": 0.0,
+            "mellum_response_body_bytes_total": 2468582.0,
+            "mellum_response_evicted_records_total": 0.0,
+            "mellum_response_evicted_roots_total": 0.0
+          }
+        },
+        "gpu_peak_mib": 7311.0,
+        "binary_sha256": "578ddbabfdf217a3d3ed17c3c4124dca824e2f67d5b0d3823a93fa3f830ed867",
+        "task_sha256": "bf97b2f74905bbc376bb754006971e60deefdc0bc1acf1437aa4bb126af59d8c",
+        "source_identity": {
+          "id": "mellum21-exl3-k3-research",
+          "context_capacity": 131072,
+          "kv_format": "q8_0_token512_block32_f16scale_rot_k128_v64_v2",
+          "execution_profile": "exl3-k3-simt-sm61-layer-batch256-staged-kv--pascal-fp32-v2-attention-tiered-131072-v1-q8_0-token512-block32-f16scale-rot-k128-v64-v2-chunk256-budget8GiB-local-checkpoint-encoded-v1",
+          "build_version": "0.1.0",
+          "build_source_sha256": "b6115b4ee9a6601f1537905055f270696c7b02a401032d896ebd23162300bc59",
+          "checkpoint_sha256": "bfa5157b1bcf8919399023f9f943129044835844cc8354cb58ec9dada65299a9",
+          "manifest_sha256": "9032f99eab3b9adf536f722a3721185ee32daa07f96254e9449ef7c69e5c507d",
+          "tokenizer_sha256": "58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a",
+          "build_kernel_profile": "baseline-v1",
+          "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa4-fp32-split-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;mtp-q8-paired-attention-sm61-v1;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+          "math_profile": "mellum16-pascal-q8_0-dp4a-v2;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+          "quality_status": "unqualified",
+          "mtp_depth": 1
+        },
+        "pi_version": "1.1.0",
+        "llama_cpu_tensor_overrides": null,
+        "llama_full_gpu_verified": null,
+        "calls": [
+          {
+            "request": 1,
+            "request_sha256": "bcec90475d238dc71e39059a2dbfdd2cd4e998545c6df672d60270b6c62db34a",
+            "http_status": 200,
+            "wall_seconds": 13.065953799999988,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 2,
+            "input_tokens_total": 2756,
+            "input_tokens_fresh": 2756,
+            "input_tokens_cached": 0,
+            "output_tokens": 146,
+            "cache_fraction": 0.0,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 11.17407900217741,
+            "normalized_output_sha256": "a4196a6bbd0ae58f362fd6f101bfc919bbb99f448215e7ce4c9707cfdaa2e56e"
+          },
+          {
+            "request": 2,
+            "request_sha256": "bda968ea7f60654cf004fabe1e36482e20b74db687a4efc5df4f2742e0e7a2e9",
+            "http_status": 200,
+            "wall_seconds": 10.568596714001615,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 4,
+            "input_tokens_total": 2918,
+            "input_tokens_fresh": 358,
+            "input_tokens_cached": 2560,
+            "output_tokens": 352,
+            "cache_fraction": 0.8773132282385195,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 33.306219314212186,
+            "normalized_output_sha256": "3166d18b215eca238e00f6584cad59979fc93eb55d3c4edbc54b54e3e6ef9410"
+          },
+          {
+            "request": 3,
+            "request_sha256": "38bb6446bb92e54f4dfacce9ee33aee45b71984a3bbb2a0150851f22f546248b",
+            "http_status": 200,
+            "wall_seconds": 17.183882998999252,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 6,
+            "input_tokens_total": 3287,
+            "input_tokens_fresh": 471,
+            "input_tokens_cached": 2816,
+            "output_tokens": 678,
+            "cache_fraction": 0.8567082445999391,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 39.45557590443819,
+            "normalized_output_sha256": "04f1c1d20f1dc166b83920c4fd2b6755e7b16b5bfb3a13b23b97098ee6aa43f5"
+          },
+          {
+            "request": 4,
+            "request_sha256": "0f45e036d9a8f61854007a2d4c311c9fafc356fb38eb062684332d4466b3c21b",
+            "http_status": 200,
+            "wall_seconds": 58.84019334199911,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 8,
+            "input_tokens_total": 3985,
+            "input_tokens_fresh": 913,
+            "input_tokens_cached": 3072,
+            "output_tokens": 2701,
+            "cache_fraction": 0.7708908406524467,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 45.90399600322307,
+            "normalized_output_sha256": "0fda0bf33b28b9e1fa57812b18ea6775916d8a2e960e9fe71052a654b7595245"
+          },
+          {
+            "request": 5,
+            "request_sha256": "ae3a094534af3d93bad3d35497ea27f6daf0b3a8244282d2dc6d5b3787b3dd18",
+            "http_status": 200,
+            "wall_seconds": 26.867282328999863,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 10,
+            "input_tokens_total": 6700,
+            "input_tokens_fresh": 2860,
+            "input_tokens_cached": 3840,
+            "output_tokens": 527,
+            "cache_fraction": 0.573134328358209,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 19.614935129898477,
+            "normalized_output_sha256": "2b11679c5be3fd5cf95ca98269a24066669fffe3826d16f4a3af84c53d83559b"
+          },
+          {
+            "request": 6,
+            "request_sha256": "fab066af0f17bffa2747a06e8f68577292b62e70f4661fff8813772d6a32bcda",
+            "http_status": 200,
+            "wall_seconds": 5.422671751000962,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 12,
+            "input_tokens_total": 7246,
+            "input_tokens_fresh": 590,
+            "input_tokens_cached": 6656,
+            "output_tokens": 52,
+            "cache_fraction": 0.9185757659398289,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 9.589368928776006,
+            "normalized_output_sha256": "38bfc47b3ce41381998588b55ff9d5938794ad6604f2fb2da46cddda368811af"
+          },
+          {
+            "request": 7,
+            "request_sha256": "6e14f9bc1f74ccb66c74581af631b9164d519b8ee99d93c5b414d0dd02be4bd9",
+            "http_status": 200,
+            "wall_seconds": 4.21448413699909,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 14,
+            "input_tokens_total": 7443,
+            "input_tokens_fresh": 275,
+            "input_tokens_cached": 7168,
+            "output_tokens": 68,
+            "cache_fraction": 0.9630525325809486,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 16.13483353823208,
+            "normalized_output_sha256": "49cec915ca4114d78a25870c1f237e4cfcf571ad3cb09dd35abcd35501e2ad42"
+          },
+          {
+            "request": 8,
+            "request_sha256": "c7efd4973581ee1f4a3c5d232dc98f8b441b58ce1b287bfa2633030f6a3f87cc",
+            "http_status": 200,
+            "wall_seconds": 4.063927383998816,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 16,
+            "input_tokens_total": 7618,
+            "input_tokens_fresh": 194,
+            "input_tokens_cached": 7424,
+            "output_tokens": 90,
+            "cache_fraction": 0.9745339984247834,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 22.146064999675744,
+            "normalized_output_sha256": "34fbb8ae2a871469507efbd6f074f1844b1e4907df351a7c603e136d05b0ed0a"
+          },
+          {
+            "request": 9,
+            "request_sha256": "ed53f33d75ffec06ac3ac62b51ab57bb77b3a70c5170de54397521402bfdcf20",
+            "http_status": 200,
+            "wall_seconds": 29.743685843001003,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 18,
+            "input_tokens_total": 10265,
+            "input_tokens_fresh": 2841,
+            "input_tokens_cached": 7424,
+            "output_tokens": 559,
+            "cache_fraction": 0.7232342912810521,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 18.793904795479087,
+            "normalized_output_sha256": "5490b06d6327e024e35b6bfe4a048ef4038cd0d3665784c24b93680d0ad66a72"
+          },
+          {
+            "request": 10,
+            "request_sha256": "b0bdbc854bf4ca9c9faa0c44b8d05480ded7e474e0a1fe65f35ed38767d808c0",
+            "http_status": 200,
+            "wall_seconds": 69.13014332400053,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 20,
+            "input_tokens_total": 11424,
+            "input_tokens_fresh": 1184,
+            "input_tokens_cached": 10240,
+            "output_tokens": 2942,
+            "cache_fraction": 0.896358543417367,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 42.55741212934242,
+            "normalized_output_sha256": "9c156983e0c6f9a5da56e0e973b6fd95a7c8cbb3f6bfc22bd84fb6e0e483eded"
+          },
+          {
+            "request": 11,
+            "request_sha256": "2e43ca86e35e3becab6c8aa2a9d85a62ebc2e2fedfd5438ad8adc569a8ebf562",
+            "http_status": 200,
+            "wall_seconds": 23.280609542998718,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 22,
+            "input_tokens_total": 14384,
+            "input_tokens_fresh": 3120,
+            "input_tokens_cached": 11264,
+            "output_tokens": 49,
+            "cache_fraction": 0.7830923248053393,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 2.1047558874907546,
+            "normalized_output_sha256": "d602ba203bcf86891587a9a4a64d1de2fa9d759497cbecf8e9e8b97ca5e4dacd"
+          },
+          {
+            "request": 12,
+            "request_sha256": "7f9313024ed8a43a6e87009b49c2702a565e65e56798056e4cda590b27361f22",
+            "http_status": 200,
+            "wall_seconds": 17.495961819000513,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 24,
+            "input_tokens_total": 14450,
+            "input_tokens_fresh": 114,
+            "input_tokens_cached": 14336,
+            "output_tokens": 743,
+            "cache_fraction": 0.9921107266435986,
+            "prefill_seconds": null,
+            "decode_seconds": null,
+            "fresh_prefill_tokens_per_second": null,
+            "effective_total_input_tokens_per_prefill_second": null,
+            "decode_tokens_per_second": null,
+            "output_tokens_per_wall_second": 42.466942239957696,
+            "normalized_output_sha256": "a7fa0af26d34f0e85740bd8cb5bf7c23b9ad62e8a7cfd5781a29dc7c7a15a093"
+          }
+        ],
+        "generated_files": [
+          {
+            "path": "README.md",
+            "bytes": 1130,
+            "sha256": "6cc878e5c72671ae61848e4c2daf47da04b8929ca7498b61591850d59e1debff"
+          },
+          {
+            "path": "game.js",
+            "bytes": 8164,
+            "sha256": "cad45fd1123c3b020fb251457cfee460d9edba38dc3a99924fb90cabc1aeb708"
+          },
+          {
+            "path": "index.html",
+            "bytes": 605,
+            "sha256": "6819c3fda630caa19c685352451f92ab5e09668094d43153d04be719cd1c081e"
+          },
+          {
+            "path": "style.css",
+            "bytes": 1543,
+            "sha256": "4abd914d0edd3fd2aaed974352366f69896f3353c64d79c8e5b2e92d4bbd851d"
+          }
+        ],
+        "evidence_directory": "/srv/agent/workspaces/padra-grammar-20261105/padra-game"
+      },
+      "llama": {
+        "name": "llama-game",
+        "engine": "llama",
+        "status": "completed",
+        "error": null,
+        "agent_wall_seconds": 202.82510399500097,
+        "startup_seconds": 2.6559112279992405,
+        "model_calls": 14,
+        "tool_calls": 13,
+        "completed_usage_calls": 14,
+        "incomplete_or_error_calls": 0,
+        "completed_response_usage_totals": {
+          "input_tokens_total": 144139,
+          "input_tokens_fresh": 10526,
+          "input_tokens_cached": 133613,
+          "output_tokens": 8304
+        },
+        "server_counters_all_requests": {
+          "prefill_seconds": 27.2063,
+          "decode_seconds": 173.181,
+          "generated_output_tokens": 8304.0,
+          "raw_counter_deltas": {
+            "llamacpp:prompt_tokens_total": 10526.0,
+            "llamacpp:prompt_tokens_cached_total": 133613.0,
+            "llamacpp:prompt_seconds_total": 27.2063,
+            "llamacpp:tokens_predicted_total": 8304.0,
+            "llamacpp:tokens_predicted_seconds_total": 173.181,
+            "llamacpp:n_decode_total": 8163.0,
+            "llamacpp:spec_decode_num_draft_tokens_total": 464.0,
+            "llamacpp:spec_decode_num_accepted_tokens_total": 189.0,
+            "llamacpp:spec_decode_num_drafts_total": 29.0
+          }
+        },
+        "gpu_peak_mib": 7625.0,
+        "binary_sha256": "7c4d371c132e974bef6685fd561ae757258cfa448226a0fd9ed3884e6b049d3e",
+        "task_sha256": "bf97b2f74905bbc376bb754006971e60deefdc0bc1acf1437aa4bb126af59d8c",
+        "source_identity": {
+          "id": "mellum21-exl3-k3-research",
+          "build_info": "b12117-c6a0ff11a",
+          "model_path": "/srv/agent/workspaces/inference-bench-20261012/models/mellum2.1/Mellum2.1-12B-A2.5B-Thinking-IQ4_XS.gguf",
+          "model_ftype": "IQ4_XS - 4.25 bpw"
+        },
+        "pi_version": "1.1.0",
+        "llama_cpu_tensor_overrides": true,
+        "llama_full_gpu_verified": false,
+        "calls": [
+          {
+            "request": 1,
+            "request_sha256": "bcec90475d238dc71e39059a2dbfdd2cd4e998545c6df672d60270b6c62db34a",
+            "http_status": 200,
+            "wall_seconds": 7.718555612998898,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 2,
+            "input_tokens_total": 2756,
+            "input_tokens_fresh": 2756,
+            "input_tokens_cached": 0,
+            "output_tokens": 112,
+            "cache_fraction": 0.0,
+            "prefill_seconds": 5.488325,
+            "decode_seconds": 2.219153,
+            "fresh_prefill_tokens_per_second": 502.1568511339981,
+            "effective_total_input_tokens_per_prefill_second": 502.1568511339981,
+            "decode_tokens_per_second": 50.019083857670026,
+            "output_tokens_per_wall_second": 14.510486885833881,
+            "normalized_output_sha256": "6c7cd8af8198e9de1ebd1f9f8cd8f7b13ac9073408d61e1c1094b418a6d7bdd8"
+          },
+          {
+            "request": 2,
+            "request_sha256": "f3e0517a252ad7951531334a18facd09467194ac0a68056dafe2ff5cfec67e23",
+            "http_status": 200,
+            "wall_seconds": 10.712454234000688,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 4,
+            "input_tokens_total": 2943,
+            "input_tokens_fresh": 76,
+            "input_tokens_cached": 2867,
+            "output_tokens": 520,
+            "cache_fraction": 0.9741760108732586,
+            "prefill_seconds": 0.306134,
+            "decode_seconds": 10.393434,
+            "fresh_prefill_tokens_per_second": 248.2572990912476,
+            "effective_total_input_tokens_per_prefill_second": 9613.437252967655,
+            "decode_tokens_per_second": 49.93537265931549,
+            "output_tokens_per_wall_second": 48.541630950408276,
+            "normalized_output_sha256": "19c5434f2beb475f1b466bc18ab192a871af01a31733d79a579b81b8533f707b"
+          },
+          {
+            "request": 3,
+            "request_sha256": "fa8add49347792c9e27378d3fbbe999bc93759bffa51c9c98a75c0dd42268181",
+            "http_status": 200,
+            "wall_seconds": 16.879346084000645,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 6,
+            "input_tokens_total": 3482,
+            "input_tokens_fresh": 20,
+            "input_tokens_cached": 3462,
+            "output_tokens": 844,
+            "cache_fraction": 0.9942561746122918,
+            "prefill_seconds": 0.185219,
+            "decode_seconds": 16.61663,
+            "fresh_prefill_tokens_per_second": 107.98028280036065,
+            "effective_total_input_tokens_per_prefill_second": 18799.36723554279,
+            "decode_tokens_per_second": 50.73230853668885,
+            "output_tokens_per_wall_second": 50.001937030013195,
+            "normalized_output_sha256": "8960abf55d4fa90579ec240a846df33dab54be4b29729854b7b1d35778adfbc9"
+          },
+          {
+            "request": 4,
+            "request_sha256": "9ce2587b511ca6f8af0731180da3d0736a0e87e38a3080c8a0c3ccb4a553f263",
+            "http_status": 200,
+            "wall_seconds": 76.24814538300052,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 8,
+            "input_tokens_total": 4346,
+            "input_tokens_fresh": 869,
+            "input_tokens_cached": 3477,
+            "output_tokens": 3611,
+            "cache_fraction": 0.8000460193281178,
+            "prefill_seconds": 2.123284,
+            "decode_seconds": 74.107595,
+            "fresh_prefill_tokens_per_second": 409.27167538586457,
+            "effective_total_input_tokens_per_prefill_second": 2046.829345485578,
+            "decode_tokens_per_second": 48.71295580432748,
+            "output_tokens_per_wall_second": 47.35852894338162,
+            "normalized_output_sha256": "7b4c2c002af7fa4ec8e3aae6f21babb3e61d2067fe035f2cc1f29c852f9d1f6a"
+          },
+          {
+            "request": 5,
+            "request_sha256": "aae036d9876ac6cb275c2701b42a112a8192f6154c05783016f160079c6e676b",
+            "http_status": 200,
+            "wall_seconds": 15.384148528999503,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 10,
+            "input_tokens_total": 7976,
+            "input_tokens_fresh": 51,
+            "input_tokens_cached": 7925,
+            "output_tokens": 713,
+            "cache_fraction": 0.9936058174523571,
+            "prefill_seconds": 0.308222,
+            "decode_seconds": 14.971381,
+            "fresh_prefill_tokens_per_second": 165.4651517412774,
+            "effective_total_input_tokens_per_prefill_second": 25877.451966439774,
+            "decode_tokens_per_second": 47.55740302113747,
+            "output_tokens_per_wall_second": 46.34640641020705,
+            "normalized_output_sha256": "8d15fb1a62c063c81c1ef3fe6e081188dd5ce2370442342a729fcce293cb6f24"
+          },
+          {
+            "request": 6,
+            "request_sha256": "2fa7232e521a264ab41726c8878e5f88ebcd4d234c3081eda087849d786df970",
+            "http_status": 200,
+            "wall_seconds": 1.5455119149992242,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 12,
+            "input_tokens_total": 8708,
+            "input_tokens_fresh": 20,
+            "input_tokens_cached": 8688,
+            "output_tokens": 61,
+            "cache_fraction": 0.9977032613688562,
+            "prefill_seconds": 0.243862,
+            "decode_seconds": 1.2735150000000002,
+            "fresh_prefill_tokens_per_second": 82.01359785452428,
+            "effective_total_input_tokens_per_prefill_second": 35708.72050585987,
+            "decode_tokens_per_second": 47.113697129597995,
+            "output_tokens_per_wall_second": 39.46912308342225,
+            "normalized_output_sha256": "dddfdc59cbbe13d40d14d9a1eb40b75157ced64e9683e1195735d374edd0c294"
+          },
+          {
+            "request": 7,
+            "request_sha256": "30157d194ef99d547cc7ee1c3aa5d16a715d3c184a4da6c55393749689ce463d",
+            "http_status": 200,
+            "wall_seconds": 7.761786388000473,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 14,
+            "input_tokens_total": 8883,
+            "input_tokens_fresh": 115,
+            "input_tokens_cached": 8768,
+            "output_tokens": 347,
+            "cache_fraction": 0.987053923224136,
+            "prefill_seconds": 0.40730500000000003,
+            "decode_seconds": 7.3240479999999994,
+            "fresh_prefill_tokens_per_second": 282.34369821141405,
+            "effective_total_input_tokens_per_prefill_second": 21809.209314886877,
+            "decode_tokens_per_second": 47.24163468071209,
+            "output_tokens_per_wall_second": 44.70620326996544,
+            "normalized_output_sha256": "8d52e978af8d3b47e08e7aa9d4fc8dfe86a3dacfa2fca6f8e33dce2214c68db2"
+          },
+          {
+            "request": 8,
+            "request_sha256": "0757aa1b40e0e3a1dd654715170b7b5f26353a9b90b9d1d5e849dba456dcacee",
+            "http_status": 200,
+            "wall_seconds": 18.17995872100073,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 16,
+            "input_tokens_total": 12345,
+            "input_tokens_fresh": 3116,
+            "input_tokens_cached": 9229,
+            "output_tokens": 491,
+            "cache_fraction": 0.7475901174564601,
+            "prefill_seconds": 7.933371,
+            "decode_seconds": 10.210274,
+            "fresh_prefill_tokens_per_second": 392.7712444054362,
+            "effective_total_input_tokens_per_prefill_second": 1556.0850488398942,
+            "decode_tokens_per_second": 47.99087664052894,
+            "output_tokens_per_wall_second": 27.00776209314586,
+            "normalized_output_sha256": "d69103255781f53e01e5287ee18fe269f4b58eac644c87f0e071a6f796ad25df"
+          },
+          {
+            "request": 9,
+            "request_sha256": "dc2c5a7983dd3d33e62d9808ce84128de0e58958ac2bd68ffe3ae68058f0aa6b",
+            "http_status": 200,
+            "wall_seconds": 1.101707030000398,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 18,
+            "input_tokens_total": 12862,
+            "input_tokens_fresh": 27,
+            "input_tokens_cached": 12835,
+            "output_tokens": 38,
+            "cache_fraction": 0.9979007930337428,
+            "prefill_seconds": 0.25899500000000003,
+            "decode_seconds": 0.79435,
+            "fresh_prefill_tokens_per_second": 104.24911677831616,
+            "effective_total_input_tokens_per_prefill_second": 49661.19037047047,
+            "decode_tokens_per_second": 46.578963932775224,
+            "output_tokens_per_wall_second": 34.49192840313116,
+            "normalized_output_sha256": "7c13bf7d32e136f7a8d1cc7cca67b49393e389ea0693f1c36c0e3a694d997da8"
+          },
+          {
+            "request": 10,
+            "request_sha256": "0c9d7f411d774d191c65860e96b65ae4e818d3de64e1b1abc1bb82381d80429a",
+            "http_status": 200,
+            "wall_seconds": 3.49942612400082,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 20,
+            "input_tokens_total": 13005,
+            "input_tokens_fresh": 106,
+            "input_tokens_cached": 12899,
+            "output_tokens": 134,
+            "cache_fraction": 0.9918492887351019,
+            "prefill_seconds": 0.441067,
+            "decode_seconds": 3.017149,
+            "fresh_prefill_tokens_per_second": 240.32629963248215,
+            "effective_total_input_tokens_per_prefill_second": 29485.31628981538,
+            "decode_tokens_per_second": 44.08134964497942,
+            "output_tokens_per_wall_second": 38.29199281589652,
+            "normalized_output_sha256": "191efa1beb830ff2fbf8138872292598c1908835e260ce7a42ed0297ef9f8ad5"
+          },
+          {
+            "request": 11,
+            "request_sha256": "80fc11574cf9eee3ecc96f6cbef05b01b6bc19498cba6d6280e4c94bb3dd85d9",
+            "http_status": 200,
+            "wall_seconds": 17.612205356999766,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 22,
+            "input_tokens_total": 16253,
+            "input_tokens_fresh": 3115,
+            "input_tokens_cached": 13138,
+            "output_tokens": 390,
+            "cache_fraction": 0.8083430751245924,
+            "prefill_seconds": 8.531545,
+            "decode_seconds": 8.986858,
+            "fresh_prefill_tokens_per_second": 365.1155798861754,
+            "effective_total_input_tokens_per_prefill_second": 1905.0476789374025,
+            "decode_tokens_per_second": 43.28542856691404,
+            "output_tokens_per_wall_second": 22.14373453492575,
+            "normalized_output_sha256": "9b410ff6d528b05985ea9a0864c6c3fd57296983a86cb6e09671bde0717e2ef7"
+          },
+          {
+            "request": 12,
+            "request_sha256": "f518b787e80bec93f87d6ef396461de2923a15a4b2e01500e635794b2634939c",
+            "http_status": 200,
+            "wall_seconds": 0.651559633000943,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 24,
+            "input_tokens_total": 16669,
+            "input_tokens_fresh": 27,
+            "input_tokens_cached": 16642,
+            "output_tokens": 38,
+            "cache_fraction": 0.9983802267682524,
+            "prefill_seconds": 0.24982200000000002,
+            "decode_seconds": 0.352951,
+            "fresh_prefill_tokens_per_second": 108.07695078896174,
+            "effective_total_input_tokens_per_prefill_second": 66723.5071370816,
+            "decode_tokens_per_second": 104.83041555343375,
+            "output_tokens_per_wall_second": 58.32159955180189,
+            "normalized_output_sha256": "def8c8f16ec0c89ae8d2bfe37de7ba1a8bc05c049924d70a1ca5beed651f40f9"
+          },
+          {
+            "request": 13,
+            "request_sha256": "f3dac1c901a050858526ad6aaecea5a8f02064a076ed2d12a08cf2717671337a",
+            "http_status": 200,
+            "wall_seconds": 6.074717935000081,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 26,
+            "input_tokens_total": 16724,
+            "input_tokens_fresh": 18,
+            "input_tokens_cached": 16706,
+            "output_tokens": 254,
+            "cache_fraction": 0.9989237024635255,
+            "prefill_seconds": 0.214244,
+            "decode_seconds": 5.809142,
+            "fresh_prefill_tokens_per_second": 84.01635518380913,
+            "effective_total_input_tokens_per_prefill_second": 78060.52911633466,
+            "decode_tokens_per_second": 43.55204262522762,
+            "output_tokens_per_wall_second": 41.8126409683245,
+            "normalized_output_sha256": "77bf958de7e00dbb3f22d3aa88d7bf8e5184e0fc71e77e6175c77d4c0b5a487b"
+          },
+          {
+            "request": 14,
+            "request_sha256": "b638624f8d20269887a49aaa056be31d50bdb04b51afee3d642aafc511fe7e13",
+            "http_status": 200,
+            "wall_seconds": 17.924690520001604,
+            "sse_done": true,
+            "errors": [],
+            "has_completed_usage": true,
+            "message_count": 28,
+            "input_tokens_total": 17187,
+            "input_tokens_fresh": 210,
+            "input_tokens_cached": 16977,
+            "output_tokens": 751,
+            "cache_fraction": 0.9877814627334613,
+            "prefill_seconds": 0.724193,
+            "decode_seconds": 17.104141,
+            "fresh_prefill_tokens_per_second": 289.97794786748835,
+            "effective_total_input_tokens_per_prefill_second": 23732.62376189773,
+            "decode_tokens_per_second": 43.84903047747326,
+            "output_tokens_per_wall_second": 41.897515561676364,
+            "normalized_output_sha256": "c78eff77de087bbcb00928d05c17db831272903a3f74f720af11bf15b2860a97"
+          }
+        ],
+        "generated_files": [
+          {
+            "path": "README.md",
+            "bytes": 1927,
+            "sha256": "5bf814ef79736803f51fec24bba5732378f0818f86ff04fe0826d30b3a4d9109"
+          },
+          {
+            "path": "game.js",
+            "bytes": 10463,
+            "sha256": "f1527fb73fc498efb8c02bf75bc9b8c25258f65ab371f2f6c2c6293642eca33e"
+          },
+          {
+            "path": "index.html",
+            "bytes": 1063,
+            "sha256": "1ca40e06259d7a39fccdc415637805716c8c1e5d0c1164f6fd0a3a390bc53bf5"
+          },
+          {
+            "path": "style.css",
+            "bytes": 1898,
+            "sha256": "6bd74c9b5ecb13a040f6bab10ddc7a42614cb8e0125889ed063a3c7fd767790c"
+          }
+        ],
+        "evidence_directory": "/srv/agent/workspaces/padra-grammar-20261105/llama-game"
+      }
+    },
+    "fixed_requests": {
+      "padra": {
+        "engine": "padra",
+        "status": "PASS",
+        "request_sha256": [
+          "bcec90475d238dc71e39059a2dbfdd2cd4e998545c6df672d60270b6c62db34a",
+          "bffb217e0b147784cf39444b2837868afa7393e5ca8e446038bbcdc2310fbc2b",
+          "bc77956e50c53f0a5360bceab188a93ba17ea3f891c34974fd5db3e04ab5a993"
+        ],
+        "binary_sha256": "578ddbabfdf217a3d3ed17c3c4124dca824e2f67d5b0d3823a93fa3f830ed867",
+        "context": 131072,
+        "source_identity": {
+          "id": "mellum21-exl3-k3-research",
+          "context_capacity": 131072,
+          "kv_format": "q8_0_token512_block32_f16scale_rot_k128_v64_v2",
+          "execution_profile": "exl3-k3-simt-sm61-layer-batch256-staged-kv--pascal-fp32-v2-attention-tiered-131072-v1-q8_0-token512-block32-f16scale-rot-k128-v64-v2-chunk256-budget8GiB-local-checkpoint-encoded-v1",
+          "build_version": "0.1.0",
+          "build_source_sha256": "b6115b4ee9a6601f1537905055f270696c7b02a401032d896ebd23162300bc59",
+          "checkpoint_sha256": "bfa5157b1bcf8919399023f9f943129044835844cc8354cb58ec9dada65299a9",
+          "manifest_sha256": "9032f99eab3b9adf536f722a3721185ee32daa07f96254e9449ef7c69e5c507d",
+          "tokenizer_sha256": "58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a",
+          "build_kernel_profile": "baseline-v1",
+          "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa4-fp32-split-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;mtp-q8-paired-attention-sm61-v1;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+          "math_profile": "mellum16-pascal-q8_0-dp4a-v2;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+          "quality_status": "unqualified",
+          "mtp_depth": 1
+        },
+        "gpu_peak_mib_by_phase": {
+          "startup": 7005.0,
+          "cold-1": 7311.0,
+          "cold-2": 7311.0,
+          "cold-3": 7311.0,
+          "warm-1": 7311.0,
+          "warm-2": 7311.0,
+          "warm-3": 7311.0
+        },
+        "llama_cpu_tensor_overrides": null,
+        "llama_full_gpu_verified": null,
+        "measurements": [
+          {
+            "input_tokens_total": 2756,
+            "input_tokens_fresh": 2756,
+            "input_tokens_cached": 0,
+            "output_tokens": 146,
+            "cache_fraction": 0.0,
+            "prefill_seconds": 8.78357,
+            "decode_seconds": 4.28539,
+            "wall_seconds": 13.097558179999396,
+            "fresh_prefill_tokens_per_second": 313.76763662155594,
+            "effective_total_input_tokens_per_prefill_second": 313.76763662155594,
+            "decode_tokens_per_second": 33.83589358261442,
+            "output_tokens_per_wall_second": 11.147115973338378,
+            "mode": "cold",
+            "request": 1,
+            "normalized_output_sha256": "a4196a6bbd0ae58f362fd6f101bfc919bbb99f448215e7ce4c9707cfdaa2e56e",
+            "server_counter_deltas": {
+              "mellum_requests_submitted_total": 1.0,
+              "mellum_requests_completed_total": 1.0,
+              "mellum_requests_failed_total": 0.0,
+              "mellum_requests_cancelled_total": 0.0,
+              "mellum_queue_rejected_total": 0.0,
+              "mellum_disconnects_total": 0.0,
+              "mellum_backpressure_total": 0.0,
+              "mellum_model_loads_total": 0.0,
+              "mellum_weight_uploads_total": 0.0,
+              "mellum_graph_captures_total": 0.0,
+              "mellum_mtp_groups_total": 84.0,
+              "mellum_mtp_draft_calls_total": 84.0,
+              "mellum_mtp_proposed_total": 84.0,
+              "mellum_mtp_accepted_total": 61.0,
+              "mellum_mtp_ordinary_tails_total": 0.0,
+              "mellum_tokenization_seconds_total": 0.0259475,
+              "mellum_queue_wait_seconds_total": 9.2418e-05,
+              "mellum_prefill_seconds_total": 8.78357,
+              "mellum_decode_seconds_total": 4.28539,
+              "mellum_first_token_seconds_total": 8.78413,
+              "mellum_first_visible_seconds_total": 11.7694,
+              "mellum_output_tokens_total": 146.0,
+              "mellum_prefill_chunks_total": 11.0,
+              "mellum_prefill_eager_chunks_total": 1.0,
+              "mellum_responses_written_total": 1.0,
+              "mellum_response_write_failures_total": 0.0,
+              "mellum_response_body_bytes_total": 34567.0,
+              "mellum_response_evicted_records_total": 0.0,
+              "mellum_response_evicted_roots_total": 0.0
+            }
+          },
+          {
+            "input_tokens_total": 2918,
+            "input_tokens_fresh": 2918,
+            "input_tokens_cached": 0,
+            "output_tokens": 352,
+            "cache_fraction": 0.0,
+            "prefill_seconds": 9.517930000000002,
+            "decode_seconds": 9.08581,
+            "wall_seconds": 18.614652378000756,
+            "fresh_prefill_tokens_per_second": 306.57926671030356,
+            "effective_total_input_tokens_per_prefill_second": 306.57926671030356,
+            "decode_tokens_per_second": 38.631668502863256,
+            "output_tokens_per_wall_second": 18.909834728689432,
+            "mode": "cold",
+            "request": 2,
+            "normalized_output_sha256": "3166d18b215eca238e00f6584cad59979fc93eb55d3c4edbc54b54e3e6ef9410",
+            "server_counter_deltas": {
+              "mellum_requests_submitted_total": 1.0,
+              "mellum_requests_completed_total": 1.0,
+              "mellum_requests_failed_total": 0.0,
+              "mellum_requests_cancelled_total": 0.0,
+              "mellum_queue_rejected_total": 0.0,
+              "mellum_disconnects_total": 0.0,
+              "mellum_backpressure_total": 0.0,
+              "mellum_model_loads_total": 0.0,
+              "mellum_weight_uploads_total": 0.0,
+              "mellum_graph_captures_total": 0.0,
+              "mellum_mtp_groups_total": 184.0,
+              "mellum_mtp_draft_calls_total": 184.0,
+              "mellum_mtp_proposed_total": 184.0,
+              "mellum_mtp_accepted_total": 167.0,
+              "mellum_mtp_ordinary_tails_total": 0.0,
+              "mellum_tokenization_seconds_total": 0.009774900000000003,
+              "mellum_queue_wait_seconds_total": 4.868700000000002e-05,
+              "mellum_prefill_seconds_total": 9.517930000000002,
+              "mellum_decode_seconds_total": 9.08581,
+              "mellum_first_token_seconds_total": 9.51817,
+              "mellum_first_visible_seconds_total": 11.7353,
+              "mellum_output_tokens_total": 352.0,
+              "mellum_prefill_chunks_total": 12.0,
+              "mellum_prefill_eager_chunks_total": 1.0,
+              "mellum_responses_written_total": 1.0,
+              "mellum_response_write_failures_total": 0.0,
+              "mellum_response_body_bytes_total": 95210.0,
+              "mellum_response_evicted_records_total": 0.0,
+              "mellum_response_evicted_roots_total": 0.0
+            }
+          },
+          {
+            "input_tokens_total": 3287,
+            "input_tokens_fresh": 3287,
+            "input_tokens_cached": 0,
+            "output_tokens": 678,
+            "cache_fraction": 0.0,
+            "prefill_seconds": 10.8158,
+            "decode_seconds": 15.3789,
+            "wall_seconds": 26.206997143999615,
+            "fresh_prefill_tokens_per_second": 303.90724680559924,
+            "effective_total_input_tokens_per_prefill_second": 303.90724680559924,
+            "decode_tokens_per_second": 44.0213539329861,
+            "output_tokens_per_wall_second": 25.870953328784395,
+            "mode": "cold",
+            "request": 3,
+            "normalized_output_sha256": "04f1c1d20f1dc166b83920c4fd2b6755e7b16b5bfb3a13b23b97098ee6aa43f5",
+            "server_counter_deltas": {
+              "mellum_requests_submitted_total": 1.0,
+              "mellum_requests_completed_total": 1.0,
+              "mellum_requests_failed_total": 0.0,
+              "mellum_requests_cancelled_total": 0.0,
+              "mellum_queue_rejected_total": 0.0,
+              "mellum_disconnects_total": 0.0,
+              "mellum_backpressure_total": 0.0,
+              "mellum_model_loads_total": 0.0,
+              "mellum_weight_uploads_total": 0.0,
+              "mellum_graph_captures_total": 0.0,
+              "mellum_mtp_groups_total": 354.0,
+              "mellum_mtp_draft_calls_total": 355.0,
+              "mellum_mtp_proposed_total": 354.0,
+              "mellum_mtp_accepted_total": 322.0,
+              "mellum_mtp_ordinary_tails_total": 1.0,
+              "mellum_tokenization_seconds_total": 0.011042999999999997,
+              "mellum_queue_wait_seconds_total": 4.6032999999999984e-05,
+              "mellum_prefill_seconds_total": 10.8158,
+              "mellum_decode_seconds_total": 15.3789,
+              "mellum_first_token_seconds_total": 10.816000000000003,
+              "mellum_first_visible_seconds_total": 11.367600000000003,
+              "mellum_output_tokens_total": 678.0,
+              "mellum_prefill_chunks_total": 13.0,
+              "mellum_prefill_eager_chunks_total": 1.0,
+              "mellum_responses_written_total": 1.0,
+              "mellum_response_write_failures_total": 0.0,
+              "mellum_response_body_bytes_total": 192123.0,
+              "mellum_response_evicted_records_total": 0.0,
+              "mellum_response_evicted_roots_total": 0.0
+            }
+          },
+          {
+            "input_tokens_total": 2756,
+            "input_tokens_fresh": 2756,
+            "input_tokens_cached": 0,
+            "output_tokens": 146,
+            "cache_fraction": 0.0,
+            "prefill_seconds": 8.823900000000002,
+            "decode_seconds": 4.293200000000002,
+            "wall_seconds": 13.127597857999717,
+            "fresh_prefill_tokens_per_second": 312.333548657623,
+            "effective_total_input_tokens_per_prefill_second": 312.333548657623,
+            "decode_tokens_per_second": 33.77434081803781,
+            "output_tokens_per_wall_second": 11.121608201231597,
+            "mode": "warm",
+            "request": 1,
+            "normalized_output_sha256": "a4196a6bbd0ae58f362fd6f101bfc919bbb99f448215e7ce4c9707cfdaa2e56e",
+            "server_counter_deltas": {
+              "mellum_requests_submitted_total": 1.0,
+              "mellum_requests_completed_total": 1.0,
+              "mellum_requests_failed_total": 0.0,
+              "mellum_requests_cancelled_total": 0.0,
+              "mellum_queue_rejected_total": 0.0,
+              "mellum_disconnects_total": 0.0,
+              "mellum_backpressure_total": 0.0,
+              "mellum_model_loads_total": 0.0,
+              "mellum_weight_uploads_total": 0.0,
+              "mellum_graph_captures_total": 0.0,
+              "mellum_mtp_groups_total": 84.0,
+              "mellum_mtp_draft_calls_total": 84.0,
+              "mellum_mtp_proposed_total": 84.0,
+              "mellum_mtp_accepted_total": 61.0,
+              "mellum_mtp_ordinary_tails_total": 0.0,
+              "mellum_tokenization_seconds_total": 0.009245299999999998,
+              "mellum_queue_wait_seconds_total": 4.797000000000002e-05,
+              "mellum_prefill_seconds_total": 8.823900000000002,
+              "mellum_decode_seconds_total": 4.293200000000002,
+              "mellum_first_token_seconds_total": 8.824200000000001,
+              "mellum_first_visible_seconds_total": 11.8185,
+              "mellum_output_tokens_total": 146.0,
+              "mellum_prefill_chunks_total": 11.0,
+              "mellum_prefill_eager_chunks_total": 1.0,
+              "mellum_responses_written_total": 1.0,
+              "mellum_response_write_failures_total": 0.0,
+              "mellum_response_body_bytes_total": 34567.0,
+              "mellum_response_evicted_records_total": 0.0,
+              "mellum_response_evicted_roots_total": 0.0
+            }
+          },
+          {
+            "input_tokens_total": 2918,
+            "input_tokens_fresh": 358,
+            "input_tokens_cached": 2560,
+            "output_tokens": 352,
+            "cache_fraction": 0.8773132282385195,
+            "prefill_seconds": 1.5035999999999987,
+            "decode_seconds": 9.130499999999998,
+            "wall_seconds": 10.645625709001251,
+            "fresh_prefill_tokens_per_second": 238.0952380952383,
+            "effective_total_input_tokens_per_prefill_second": 1940.675711625434,
+            "decode_tokens_per_second": 38.442582552981776,
+            "output_tokens_per_wall_second": 33.06522412321632,
+            "mode": "warm",
+            "request": 2,
+            "normalized_output_sha256": "3166d18b215eca238e00f6584cad59979fc93eb55d3c4edbc54b54e3e6ef9410",
+            "server_counter_deltas": {
+              "mellum_requests_submitted_total": 1.0,
+              "mellum_requests_completed_total": 1.0,
+              "mellum_requests_failed_total": 0.0,
+              "mellum_requests_cancelled_total": 0.0,
+              "mellum_queue_rejected_total": 0.0,
+              "mellum_disconnects_total": 0.0,
+              "mellum_backpressure_total": 0.0,
+              "mellum_model_loads_total": 0.0,
+              "mellum_weight_uploads_total": 0.0,
+              "mellum_graph_captures_total": 0.0,
+              "mellum_mtp_groups_total": 184.0,
+              "mellum_mtp_draft_calls_total": 184.0,
+              "mellum_mtp_proposed_total": 184.0,
+              "mellum_mtp_accepted_total": 167.0,
+              "mellum_mtp_ordinary_tails_total": 0.0,
+              "mellum_tokenization_seconds_total": 0.009952100000000005,
+              "mellum_queue_wait_seconds_total": 5.044999999999998e-05,
+              "mellum_prefill_seconds_total": 1.5035999999999987,
+              "mellum_decode_seconds_total": 9.130499999999998,
+              "mellum_first_token_seconds_total": 1.504099999999994,
+              "mellum_first_visible_seconds_total": 3.7387999999999977,
+              "mellum_output_tokens_total": 352.0,
+              "mellum_prefill_chunks_total": 2.0,
+              "mellum_prefill_eager_chunks_total": 1.0,
+              "mellum_responses_written_total": 1.0,
+              "mellum_response_write_failures_total": 0.0,
+              "mellum_response_body_bytes_total": 95213.0,
+              "mellum_response_evicted_records_total": 0.0,
+              "mellum_response_evicted_roots_total": 0.0
+            }
+          },
+          {
+            "input_tokens_total": 3287,
+            "input_tokens_fresh": 471,
+            "input_tokens_cached": 2816,
+            "output_tokens": 678,
+            "cache_fraction": 0.8567082445999391,
+            "prefill_seconds": 1.8474999999999966,
+            "decode_seconds": 15.366900000000001,
+            "wall_seconds": 17.226987443000326,
+            "fresh_prefill_tokens_per_second": 254.93910690121834,
+            "effective_total_input_tokens_per_prefill_second": 1779.1610284167828,
+            "decode_tokens_per_second": 44.05573017329455,
+            "output_tokens_per_wall_second": 39.356852278631294,
+            "mode": "warm",
+            "request": 3,
+            "normalized_output_sha256": "04f1c1d20f1dc166b83920c4fd2b6755e7b16b5bfb3a13b23b97098ee6aa43f5",
+            "server_counter_deltas": {
+              "mellum_requests_submitted_total": 1.0,
+              "mellum_requests_completed_total": 1.0,
+              "mellum_requests_failed_total": 0.0,
+              "mellum_requests_cancelled_total": 0.0,
+              "mellum_queue_rejected_total": 0.0,
+              "mellum_disconnects_total": 0.0,
+              "mellum_backpressure_total": 0.0,
+              "mellum_model_loads_total": 0.0,
+              "mellum_weight_uploads_total": 0.0,
+              "mellum_graph_captures_total": 0.0,
+              "mellum_mtp_groups_total": 354.0,
+              "mellum_mtp_draft_calls_total": 355.0,
+              "mellum_mtp_proposed_total": 354.0,
+              "mellum_mtp_accepted_total": 322.0,
+              "mellum_mtp_ordinary_tails_total": 1.0,
+              "mellum_tokenization_seconds_total": 0.011023699999999997,
+              "mellum_queue_wait_seconds_total": 4.7671e-05,
+              "mellum_prefill_seconds_total": 1.8474999999999966,
+              "mellum_decode_seconds_total": 15.366900000000001,
+              "mellum_first_token_seconds_total": 1.848000000000006,
+              "mellum_first_visible_seconds_total": 2.3795999999999964,
+              "mellum_output_tokens_total": 678.0,
+              "mellum_prefill_chunks_total": 2.0,
+              "mellum_prefill_eager_chunks_total": 1.0,
+              "mellum_responses_written_total": 1.0,
+              "mellum_response_write_failures_total": 0.0,
+              "mellum_response_body_bytes_total": 192126.0,
+              "mellum_response_evicted_records_total": 0.0,
+              "mellum_response_evicted_roots_total": 0.0
+            }
+          }
+        ],
+        "evidence_directory": "/srv/agent/workspaces/padra-grammar-20261105/replay-padra"
+      },
+      "llama": {
+        "engine": "llama",
+        "status": "PASS",
+        "request_sha256": [
+          "bcec90475d238dc71e39059a2dbfdd2cd4e998545c6df672d60270b6c62db34a",
+          "bffb217e0b147784cf39444b2837868afa7393e5ca8e446038bbcdc2310fbc2b",
+          "bc77956e50c53f0a5360bceab188a93ba17ea3f891c34974fd5db3e04ab5a993"
+        ],
+        "binary_sha256": "7c4d371c132e974bef6685fd561ae757258cfa448226a0fd9ed3884e6b049d3e",
+        "context": 131072,
+        "source_identity": {
+          "id": "mellum21-exl3-k3-research",
+          "build_info": "b12117-c6a0ff11a",
+          "model_path": "/srv/agent/workspaces/inference-bench-20261012/models/mellum2.1/Mellum2.1-12B-A2.5B-Thinking-IQ4_XS.gguf",
+          "model_ftype": "IQ4_XS - 4.25 bpw"
+        },
+        "gpu_peak_mib_by_phase": {
+          "startup": 6307.0,
+          "resident-1": 7625.0,
+          "resident-2": 7627.0,
+          "resident-3": 7627.0
+        },
+        "llama_cpu_tensor_overrides": true,
+        "llama_full_gpu_verified": false,
+        "measurements": [
+          {
+            "input_tokens_total": 2756,
+            "input_tokens_fresh": 2756,
+            "input_tokens_cached": 0,
+            "output_tokens": 112,
+            "cache_fraction": 0.0,
+            "prefill_seconds": 5.5091980000000005,
+            "decode_seconds": 2.2091819999999998,
+            "wall_seconds": 7.74802705699949,
+            "fresh_prefill_tokens_per_second": 500.25430198733096,
+            "effective_total_input_tokens_per_prefill_second": 500.25430198733096,
+            "decode_tokens_per_second": 50.24484175590785,
+            "output_tokens_per_wall_second": 14.45529283468626,
+            "mode": "resident",
+            "request": 1,
+            "normalized_output_sha256": "6c7cd8af8198e9de1ebd1f9f8cd8f7b13ac9073408d61e1c1094b418a6d7bdd8",
+            "server_counter_deltas": {
+              "llamacpp:prompt_tokens_total": 2756.0,
+              "llamacpp:prompt_tokens_cached_total": 0.0,
+              "llamacpp:prompt_seconds_total": 5.5073,
+              "llamacpp:tokens_predicted_total": 112.0,
+              "llamacpp:tokens_predicted_seconds_total": 2.20918,
+              "llamacpp:n_decode_total": 119.0,
+              "llamacpp:spec_decode_num_draft_tokens_total": 0.0,
+              "llamacpp:spec_decode_num_accepted_tokens_total": 0.0,
+              "llamacpp:spec_decode_num_drafts_total": 0.0
+            }
+          },
+          {
+            "input_tokens_total": 2919,
+            "input_tokens_fresh": 160,
+            "input_tokens_cached": 2759,
+            "output_tokens": 624,
+            "cache_fraction": 0.9451867077766358,
+            "prefill_seconds": 0.529648,
+            "decode_seconds": 12.087247999999999,
+            "wall_seconds": 12.6289743920006,
+            "fresh_prefill_tokens_per_second": 302.0874241005347,
+            "effective_total_input_tokens_per_prefill_second": 5511.207443434129,
+            "decode_tokens_per_second": 51.54192252860205,
+            "output_tokens_per_wall_second": 49.410188082672164,
+            "mode": "resident",
+            "request": 2,
+            "normalized_output_sha256": "2d61de90d106762328d8c1c0486abefa1ea63d422c95604b748e9ee876c513ec",
+            "server_counter_deltas": {
+              "llamacpp:prompt_tokens_total": 160.0,
+              "llamacpp:prompt_tokens_cached_total": 2759.0,
+              "llamacpp:prompt_seconds_total": 0.5282200000000001,
+              "llamacpp:tokens_predicted_total": 624.0,
+              "llamacpp:tokens_predicted_seconds_total": 12.08722,
+              "llamacpp:n_decode_total": 603.0,
+              "llamacpp:spec_decode_num_draft_tokens_total": 32.0,
+              "llamacpp:spec_decode_num_accepted_tokens_total": 24.0,
+              "llamacpp:spec_decode_num_drafts_total": 2.0
+            }
+          },
+          {
+            "input_tokens_total": 3291,
+            "input_tokens_fresh": 377,
+            "input_tokens_cached": 2914,
+            "output_tokens": 410,
+            "cache_fraction": 0.8854451534487997,
+            "prefill_seconds": 0.955203,
+            "decode_seconds": 8.20954,
+            "wall_seconds": 9.178570255999148,
+            "fresh_prefill_tokens_per_second": 394.68050246910866,
+            "effective_total_input_tokens_per_prefill_second": 3445.3409379995664,
+            "decode_tokens_per_second": 49.820087361776665,
+            "output_tokens_per_wall_second": 44.66926640693549,
+            "mode": "resident",
+            "request": 3,
+            "normalized_output_sha256": "26d9b365a278208fcf06304a012bf6a06870fd407ef16fbbe3c02255e896ef49",
+            "server_counter_deltas": {
+              "llamacpp:prompt_tokens_total": 377.0,
+              "llamacpp:prompt_tokens_cached_total": 2914.0,
+              "llamacpp:prompt_seconds_total": 0.9514100000000001,
+              "llamacpp:tokens_predicted_total": 410.0,
+              "llamacpp:tokens_predicted_seconds_total": 8.2096,
+              "llamacpp:n_decode_total": 413.0,
+              "llamacpp:spec_decode_num_draft_tokens_total": 0.0,
+              "llamacpp:spec_decode_num_accepted_tokens_total": 0.0,
+              "llamacpp:spec_decode_num_drafts_total": 0.0
+            }
+          }
+        ],
+        "evidence_directory": "/srv/agent/workspaces/padra-grammar-20261105/replay-llama"
+      },
+      "totals": {
+        "padra_cold": {
+          "input_tokens_total": 8961,
+          "input_tokens_fresh": 8961,
+          "input_tokens_cached": 0,
+          "output_tokens": 1176,
+          "prefill_seconds": 29.1173,
+          "decode_seconds": 28.7501,
+          "wall_seconds": 57.91920770199977,
+          "fresh_prefill_tokens_per_second": 307.7551833446096,
+          "effective_total_input_tokens_per_prefill_second": 307.7551833446096,
+          "decode_tokens_per_second": 40.79985808745013
+        },
+        "padra_warm": {
+          "input_tokens_total": 8961,
+          "input_tokens_fresh": 3585,
+          "input_tokens_cached": 5376,
+          "output_tokens": 1176,
+          "prefill_seconds": 12.174999999999997,
+          "decode_seconds": 28.7906,
+          "wall_seconds": 41.000211010001294,
+          "fresh_prefill_tokens_per_second": 294.4558521560576,
+          "effective_total_input_tokens_per_prefill_second": 736.016427104723,
+          "decode_tokens_per_second": 40.74246455440317
+        },
+        "llama_resident": {
+          "input_tokens_total": 8966,
+          "input_tokens_fresh": 3293,
+          "input_tokens_cached": 5673,
+          "output_tokens": 1146,
+          "prefill_seconds": 6.994049,
+          "decode_seconds": 22.505969999999998,
+          "wall_seconds": 29.555571704999238,
+          "fresh_prefill_tokens_per_second": 470.8288432065603,
+          "effective_total_input_tokens_per_prefill_second": 1281.946980926213,
+          "decode_tokens_per_second": 50.78652464212829
+        }
+      },
+      "same_http_body_hashes": true
+    }
+  },
+  "quality": {
+    "padra": {
+      "gameDir": "/srv/agent/workspaces/padra-grammar-20261105/padra-game/game",
+      "outDir": "/srv/agent/workspaces/padra-grammar-20261105/evaluation/padra",
+      "generatedFilesUnmodified": true,
+      "browserTool": "Playwright 1.56.1 with installed Chromium 1243, headless, software rendering",
+      "started": {
+        "text": "Das Sternenwrack\n\nSteuerung: WASD oder Pfeiltasten | P: Pause | ESC: Pause\n\nStart\nPunkte: 0\nZeit: 20s\nSchild: 100%",
+        "buttons": [
+          {
+            "text": "Start",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 593,
+              "y": 451,
+              "w": 94,
+              "h": 48.59375
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 1280,
+            "height": 800,
+            "box": {
+              "width": 1280,
+              "height": 800
+            }
+          }
+        ],
+        "viewport": {
+          "width": 1280,
+          "height": 800,
+          "scrollWidth": 1280,
+          "scrollHeight": 800,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 20,
+          "callbacks": 19,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 492.7,
+          "sameTimestamp": 1
+        }
+      },
+      "files": {
+        "README.md": {
+          "bytes": 1130,
+          "sha256": "6cc878e5c72671ae61848e4c2daf47da04b8929ca7498b61591850d59e1debff"
+        },
+        "game.js": {
+          "bytes": 8164,
+          "sha256": "cad45fd1123c3b020fb251457cfee460d9edba38dc3a99924fb90cabc1aeb708"
+        },
+        "index.html": {
+          "bytes": 605,
+          "sha256": "6819c3fda630caa19c685352451f92ab5e09668094d43153d04be719cd1c081e"
+        },
+        "style.css": {
+          "bytes": 1543,
+          "sha256": "4abd914d0edd3fd2aaed974352366f69896f3353c64d79c8e5b2e92d4bbd851d"
+        }
+      },
+      "checks": [
+        {
+          "id": "files_syntax",
+          "status": "pass",
+          "evidence": "All four requested files exist; node --check game.js succeeds.",
+          "type": "browser"
+        },
+        {
+          "id": "start",
+          "status": "fail",
+          "evidence": "Start sets running=true, but the full-screen menu remains display:flex: CSS defines hidden as an element selector rather than .hidden.",
+          "type": "browser + source"
+        },
+        {
+          "id": "hud",
+          "status": "fail",
+          "evidence": "The time HUD remains at20s while the internal timer decreases; HUD also visible on menu.",
+          "type": "browser"
+        },
+        {
+          "id": "movement",
+          "status": "fail",
+          "evidence": "ArrowRight from rest does not move; only Up/W accelerates. Up movement over0.5s is tiny because speeds are in pixels/second.",
+          "type": "browser + source"
+        },
+        {
+          "id": "bounds",
+          "status": "pass",
+          "evidence": "Controlled off-field ship update clamps its radius within canvas.",
+          "type": "controlled-state browser"
+        },
+        {
+          "id": "asteroids",
+          "status": "fail",
+          "evidence": "No initial asteroids. Spawning compares timestamp modulo2000ms with dt in seconds, making normal spawning unreliable; dt is unbounded.",
+          "type": "browser + source"
+        },
+        {
+          "id": "cells",
+          "status": "partial",
+          "evidence": "Controlled colocated cell awards10 points. Normal spawn uses the same unit mismatch and no initial cells are present.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "damage_invulnerability",
+          "status": "fail",
+          "evidence": "Three immediate arranged collisions reduce shields100→90→80→70; no invulnerability or meaningful collision feedback.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "three_hit_loss",
+          "status": "fail",
+          "evidence": "Three hits leave running=true and shield70; even zero shield has no game-over check.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "difficulty",
+          "status": "fail",
+          "evidence": "No time-based difficulty progression implemented.",
+          "type": "source"
+        },
+        {
+          "id": "target_win",
+          "status": "fail",
+          "evidence": "Score10000 does not end play; no target-score check exists.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "timeout",
+          "status": "partial",
+          "evidence": "Expiry produces an alert and resets to menu, but first/restarted frame uses stale lastTime and dt has no bound.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "pause_button",
+          "status": "fail",
+          "evidence": "No pause/resume button.",
+          "type": "browser + source"
+        },
+        {
+          "id": "pause_keys",
+          "status": "partial",
+          "evidence": "P pauses internal time and Escape resumes; no visible pause text.",
+          "type": "browser"
+        },
+        {
+          "id": "focus_pause",
+          "status": "fail",
+          "evidence": "Blur leaves paused=false; no blur handler.",
+          "type": "browser + source"
+        },
+        {
+          "id": "arrow_scroll",
+          "status": "pass",
+          "evidence": "Overflow:hidden prevents scrolling in tested desktop layout.",
+          "type": "browser + source"
+        },
+        {
+          "id": "restart",
+          "status": "fail",
+          "evidence": "Start remains clickable during play and creates another RAF chain; reset does not reset lastTime.",
+          "type": "browser + source"
+        },
+        {
+          "id": "touch_mobile",
+          "status": "fail",
+          "evidence": "No visible directional controls or viewport meta tag.",
+          "type": "browser + source"
+        },
+        {
+          "id": "keyboard_focus",
+          "status": "pass",
+          "evidence": "Start is keyboard reachable and has browser focus outline.",
+          "type": "browser"
+        },
+        {
+          "id": "status_text",
+          "status": "fail",
+          "evidence": "No pause/result screen text; menu permanently covers canvas and time HUD is stale.",
+          "type": "browser + source"
+        },
+        {
+          "id": "reduced_motion",
+          "status": "pass",
+          "evidence": "Reduced-motion CSS is active; no decorative motion implemented.",
+          "type": "browser + source"
+        },
+        {
+          "id": "record_storage",
+          "status": "partial",
+          "evidence": "Record read/write exists but blocked storage throws on page load and prevents initialization.",
+          "type": "browser + source"
+        },
+        {
+          "id": "single_loop",
+          "status": "fail",
+          "evidence": "Repeated Start creates multiple pending RAF callbacks.",
+          "type": "browser"
+        },
+        {
+          "id": "visual_quality",
+          "status": "fail",
+          "evidence": "Permanent menu obscures play; no stars or recognizable ship, only simple circles.",
+          "type": "browser + source"
+        },
+        {
+          "id": "offline_console",
+          "status": "partial",
+          "evidence": "Normal pages load locally without external requests or script exceptions; blocked localStorage produces an uncaught initialization exception.",
+          "type": "browser"
+        },
+        {
+          "id": "menu",
+          "status": "partial",
+          "evidence": "Title, keyboard instructions and Start are present; the initial menu states no explicit collection target or time objective.",
+          "type": "browser + source"
+        }
+      ],
+      "pages": [
+        {
+          "label": "desktop",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": [
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/padra/desktop-menu.png",
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/padra/desktop-started.png"
+          ]
+        },
+        {
+          "label": "controlled",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": []
+        },
+        {
+          "label": "mobile",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": [
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/padra/mobile-menu.png"
+          ]
+        },
+        {
+          "label": "blocked-storage",
+          "errors": [
+            "Blocked"
+          ],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": [
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/padra/blocked-storage-menu.png"
+          ]
+        },
+        {
+          "label": "reduced",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": []
+        }
+      ],
+      "syntax": {
+        "status": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "browserVersion": "153.0.8010.12",
+      "initial": {
+        "text": "Das Sternenwrack\n\nSteuerung: WASD oder Pfeiltasten | P: Pause | ESC: Pause\n\nStart\nPunkte: 0\nZeit: 20s\nSchild: 100%",
+        "buttons": [
+          {
+            "text": "Start",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 593,
+              "y": 451,
+              "w": 94,
+              "h": 48.59375
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 1280,
+            "height": 800,
+            "box": {
+              "width": 1280,
+              "height": 800
+            }
+          }
+        ],
+        "viewport": {
+          "width": 1280,
+          "height": 800,
+          "scrollWidth": 1280,
+          "scrollHeight": 800,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 0,
+          "callbacks": 0,
+          "maxPending": 0,
+          "pending": 0,
+          "maxCallbacksSameTimestamp": 0,
+          "lastTimestamp": -1,
+          "sameTimestamp": 0
+        }
+      },
+      "focus": {
+        "id": "startButton",
+        "outline": "rgb(16, 16, 16) auto 1px"
+      },
+      "start": {
+        "running": true,
+        "paused": false,
+        "time": 19.507299999999997,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 400,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 20s",
+        "raf": {
+          "scheduled": 20,
+          "callbacks": 19,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 492.7,
+          "sameTimestamp": 1
+        }
+      },
+      "right": {
+        "running": true,
+        "paused": false,
+        "time": 19.00729999999999,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 400,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 20s",
+        "raf": {
+          "scheduled": 50,
+          "callbacks": 49,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 992.7,
+          "sameTimestamp": 1
+        }
+      },
+      "up": {
+        "running": true,
+        "paused": false,
+        "time": 18.490599999999983,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 399.97416665200006,
+            "speed": 0.10000000000000002
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 20s",
+        "raf": {
+          "scheduled": 81,
+          "callbacks": 80,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 1509.4,
+          "sameTimestamp": 1
+        }
+      },
+      "afterWait": {
+        "running": true,
+        "paused": false,
+        "time": 16.99069999999996,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 399.97416665200006,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 20s",
+        "raf": {
+          "scheduled": 171,
+          "callbacks": 170,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 3009.3,
+          "sameTimestamp": 1
+        }
+      },
+      "pauseStart": {
+        "running": true,
+        "paused": true,
+        "time": 16.97409999999996,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 399.97416665200006,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 16s",
+        "raf": {
+          "scheduled": 172,
+          "callbacks": 171,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 3025.9,
+          "sameTimestamp": 1
+        }
+      },
+      "pauseEnd": {
+        "running": true,
+        "paused": true,
+        "time": 16.97409999999996,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 399.97416665200006,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 16s",
+        "raf": {
+          "scheduled": 174,
+          "callbacks": 174,
+          "maxPending": 1,
+          "pending": 0,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 3242.7,
+          "sameTimestamp": 1
+        }
+      },
+      "resume": {
+        "running": true,
+        "paused": false,
+        "time": 16.67409999999996,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 399.97416665200006,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 16s",
+        "raf": {
+          "scheduled": 187,
+          "callbacks": 186,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 3542.7,
+          "sameTimestamp": 1
+        }
+      },
+      "blur": {
+        "running": true,
+        "paused": false,
+        "time": 16.67409999999996,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 399.97416665200006,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 16s",
+        "raf": {
+          "scheduled": 187,
+          "callbacks": 186,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 3542.7,
+          "sameTimestamp": 1
+        }
+      },
+      "secondStart": {
+        "running": true,
+        "paused": false,
+        "time": 19.833299999999998,
+        "shield": 100,
+        "score": 0,
+        "entities": [
+          {
+            "type": "Ship",
+            "x": 640,
+            "y": 400,
+            "speed": 0
+          }
+        ],
+        "menuDisplay": "flex",
+        "timeHUD": "Zeit: 20s",
+        "raf": {
+          "scheduled": 211,
+          "callbacks": 209,
+          "maxPending": 2,
+          "pending": 2,
+          "maxCallbacksSameTimestamp": 2,
+          "lastTimestamp": 3759.3,
+          "sameTimestamp": 2
+        }
+      },
+      "controlled": {
+        "bounds": {
+          "x": 10,
+          "y": 790,
+          "w": 1280,
+          "h": 800,
+          "r": 10
+        },
+        "collection": {
+          "score": 10,
+          "cells": 0
+        },
+        "hits": {
+          "shields": [
+            90,
+            80,
+            70
+          ],
+          "running": true
+        },
+        "target": {
+          "score": 10000,
+          "running": true
+        },
+        "unclamped": 10,
+        "ended": {
+          "running": false,
+          "menu": "flex"
+        }
+      },
+      "mobile": {
+        "text": "Das Sternenwrack\n\nSteuerung: WASD oder Pfeiltasten | P: Pause | ESC: Pause\n\nStart\nPunkte: 0\nZeit: 20s\nSchild: 100%",
+        "buttons": [
+          {
+            "text": "Start",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 443,
+              "y": 1111.5,
+              "w": 94,
+              "h": 48.59375
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 980,
+            "height": 2121,
+            "box": {
+              "width": 980,
+              "height": 2121
+            }
+          }
+        ],
+        "viewport": {
+          "width": 980,
+          "height": 2121,
+          "scrollWidth": 980,
+          "scrollHeight": 2121,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 0,
+          "callbacks": 0,
+          "maxPending": 0,
+          "pending": 0,
+          "maxCallbacksSameTimestamp": 0,
+          "lastTimestamp": -1,
+          "sameTimestamp": 0
+        }
+      },
+      "blockedStorage": {
+        "text": "Das Sternenwrack\n\nSteuerung: WASD oder Pfeiltasten | P: Pause | ESC: Pause\n\nStart\nPunkte: 0\nZeit: 20s\nSchild: 100%",
+        "buttons": [
+          {
+            "text": "Start",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 593,
+              "y": 451,
+              "w": 94,
+              "h": 48.59375
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 1280,
+            "height": 800,
+            "box": {
+              "width": 1280,
+              "height": 800
+            }
+          }
+        ],
+        "viewport": {
+          "width": 1280,
+          "height": 800,
+          "scrollWidth": 1280,
+          "scrollHeight": 800,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 0,
+          "callbacks": 0,
+          "maxPending": 0,
+          "pending": 0,
+          "maxCallbacksSameTimestamp": 0,
+          "lastTimestamp": -1,
+          "sameTimestamp": 0
+        }
+      },
+      "reduced": {
+        "matches": true,
+        "animation": "0.001s"
+      },
+      "playability": "Agent completed and syntax valid, but not a usable implementation of the requested game.",
+      "finished": "2026-11-05T20:29:52.606Z"
+    },
+    "llama": {
+      "gameDir": "/srv/agent/workspaces/padra-grammar-20261105/llama-game/game",
+      "outDir": "/srv/agent/workspaces/padra-grammar-20261105/evaluation/llama",
+      "generatedFilesUnmodified": true,
+      "browserTool": "Playwright 1.56.1 with installed Chromium 1243, headless, software rendering",
+      "started": {
+        "text": "Sternenwrack\nSternenwrack\n\nSteuerung: WASD oder Pfeiltasten\n\nStart Spiel\nPunkte: 0\nZeit: NaN\nSchilde: 0\nFortfahren\nGame Over\n\nPunkte: 0\n\nNochmal",
+        "buttons": [
+          {
+            "text": "Start Spiel",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 600.609375,
+              "y": 433.5,
+              "w": 189,
+              "h": 60
+            }
+          },
+          {
+            "text": "Fortfahren",
+            "id": "resumeButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 601.109375,
+              "y": 378,
+              "w": 188,
+              "h": 60
+            }
+          },
+          {
+            "text": "Nochmal",
+            "id": "restartButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 610.109375,
+              "y": 401.5,
+              "w": 170,
+              "h": 60
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 800,
+            "height": 600,
+            "box": {
+              "width": 796,
+              "height": 596
+            }
+          }
+        ],
+        "viewport": {
+          "width": 1280,
+          "height": 800,
+          "scrollWidth": 1280,
+          "scrollHeight": 800,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 34,
+          "callbacks": 33,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2224.9,
+          "sameTimestamp": 1
+        }
+      },
+      "files": {
+        "README.md": {
+          "bytes": 1927,
+          "sha256": "5bf814ef79736803f51fec24bba5732378f0818f86ff04fe0826d30b3a4d9109"
+        },
+        "game.js": {
+          "bytes": 10463,
+          "sha256": "f1527fb73fc498efb8c02bf75bc9b8c25258f65ab371f2f6c2c6293642eca33e"
+        },
+        "index.html": {
+          "bytes": 1063,
+          "sha256": "1ca40e06259d7a39fccdc415637805716c8c1e5d0c1164f6fd0a3a390bc53bf5"
+        },
+        "style.css": {
+          "bytes": 1898,
+          "sha256": "6bd74c9b5ecb13a040f6bab10ddc7a42614cb8e0125889ed063a3c7fd767790c"
+        }
+      },
+      "checks": [
+        {
+          "id": "files_syntax",
+          "status": "pass",
+          "evidence": "All four requested files exist; node --check passes after model corrected two syntax errors.",
+          "type": "browser"
+        },
+        {
+          "id": "start",
+          "status": "fail",
+          "evidence": "Normal Start click is intercepted: ID selectors with display:flex override .hidden on menu/pause/result overlays.",
+          "type": "browser + source"
+        },
+        {
+          "id": "hud",
+          "status": "fail",
+          "evidence": "Time becomes NaN after startGame invokes gameLoop without a timestamp; initial shields are0.",
+          "type": "browser + source"
+        },
+        {
+          "id": "movement",
+          "status": "partial",
+          "evidence": "W accelerates and Right rotates in the controlled started game, but displacement/rotation are frame-based and overlays obstruct play.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "bounds",
+          "status": "pass",
+          "evidence": "Controlled out-of-bounds ship update clamps within radius.",
+          "type": "controlled-state browser"
+        },
+        {
+          "id": "asteroids",
+          "status": "partial",
+          "evidence": "Five variable-size asteroids exist, but random-walk displacement is per frame and delta has no clamp.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "cells",
+          "status": "pass",
+          "evidence": "Controlled collection adds10 points; cells replenish below3 remaining.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "damage_invulnerability",
+          "status": "fail",
+          "evidence": "One overlapping asteroid damages on every update; invulnerable flag is never consulted.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "three_hit_loss",
+          "status": "fail",
+          "evidence": "Three consecutive hits reduce3→2→1→0 without setting gameOver.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "difficulty",
+          "status": "fail",
+          "evidence": "No progressive difficulty implemented.",
+          "type": "source"
+        },
+        {
+          "id": "target_win",
+          "status": "fail",
+          "evidence": "Score10000 does not end play; no target check.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "timeout",
+          "status": "fail",
+          "evidence": "Normal timer is NaN and cannot expire; only artificially repaired finite timer reaches the timeout branch.",
+          "type": "browser + controlled-state browser"
+        },
+        {
+          "id": "pause_button",
+          "status": "fail",
+          "evidence": "No visible pause button; only resume exists.",
+          "type": "browser + source"
+        },
+        {
+          "id": "pause_keys",
+          "status": "fail",
+          "evidence": "P and Escape do not pause normal play; Space is used instead, and Escape resets a paused game.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "focus_pause",
+          "status": "fail",
+          "evidence": "Blur leaves paused=false; no focus-loss handler.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "arrow_scroll",
+          "status": "pass",
+          "evidence": "Overflow:hidden prevents scrolling.",
+          "type": "browser + source"
+        },
+        {
+          "id": "restart",
+          "status": "fail",
+          "evidence": "Reset/start adds another RAF chain while the old game-over chain continues.",
+          "type": "controlled-state browser + source"
+        },
+        {
+          "id": "touch_mobile",
+          "status": "fail",
+          "evidence": "No visible touch direction buttons or touch input handling.",
+          "type": "browser + source"
+        },
+        {
+          "id": "keyboard_focus",
+          "status": "pass",
+          "evidence": "Start is keyboard reachable with explicit2px focus outline.",
+          "type": "browser"
+        },
+        {
+          "id": "status_text",
+          "status": "fail",
+          "evidence": "Pause and result overlays are already visible at initial load; timer becomes NaN.",
+          "type": "browser"
+        },
+        {
+          "id": "reduced_motion",
+          "status": "pass",
+          "evidence": "No decorative animation exists; background is a static gradient.",
+          "type": "source"
+        },
+        {
+          "id": "record_storage",
+          "status": "fail",
+          "evidence": "No personal-record storage implementation.",
+          "type": "source"
+        },
+        {
+          "id": "single_loop",
+          "status": "fail",
+          "evidence": "Pause/resume and restart increase simultaneous RAF callbacks.",
+          "type": "controlled-state browser"
+        },
+        {
+          "id": "visual_quality",
+          "status": "partial",
+          "evidence": "Source draws a triangle ship and colored objects, but overlapping menus obscure normal play; no stars.",
+          "type": "browser + source"
+        },
+        {
+          "id": "offline_console",
+          "status": "pass",
+          "evidence": "Tested pages load entirely locally without external requests or uncaught script exceptions. Logical NaN/state failures are recorded separately.",
+          "type": "browser"
+        },
+        {
+          "id": "menu",
+          "status": "partial",
+          "evidence": "Menu markup has title, keyboard instructions and Start, but no explicit target; overlapping overlays obscure it.",
+          "type": "browser + source"
+        }
+      ],
+      "pages": [
+        {
+          "label": "desktop",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": [
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/llama/desktop-menu.png",
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/llama/desktop-controlled-start.png"
+          ]
+        },
+        {
+          "label": "controlled",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": []
+        },
+        {
+          "label": "mobile",
+          "errors": [],
+          "consoleErrors": [],
+          "blockedRequests": [],
+          "failedRequests": [],
+          "screenshots": [
+            "/srv/agent/workspaces/padra-grammar-20261105/evaluation/llama/mobile-menu.png"
+          ]
+        }
+      ],
+      "syntax": {
+        "status": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "browserVersion": "153.0.8010.12",
+      "initial": {
+        "text": "Sternenwrack\nSternenwrack\n\nSteuerung: WASD oder Pfeiltasten\n\nStart Spiel\nPunkte: 0\nZeit: 0\nSchilde: 0\nFortfahren\nGame Over\n\nPunkte: 0\n\nNochmal",
+        "buttons": [
+          {
+            "text": "Start Spiel",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 600.609375,
+              "y": 433.5,
+              "w": 189,
+              "h": 60
+            }
+          },
+          {
+            "text": "Fortfahren",
+            "id": "resumeButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 601.109375,
+              "y": 378,
+              "w": 188,
+              "h": 60
+            }
+          },
+          {
+            "text": "Nochmal",
+            "id": "restartButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 610.109375,
+              "y": 401.5,
+              "w": 170,
+              "h": 60
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 800,
+            "height": 600,
+            "box": {
+              "width": 796,
+              "height": 596
+            }
+          }
+        ],
+        "viewport": {
+          "width": 1280,
+          "height": 800,
+          "scrollWidth": 1280,
+          "scrollHeight": 800,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 0,
+          "callbacks": 0,
+          "maxPending": 0,
+          "pending": 0,
+          "maxCallbacksSameTimestamp": 0,
+          "lastTimestamp": -1,
+          "sameTimestamp": 0
+        }
+      },
+      "overlayDisplay": {
+        "menu": "flex",
+        "pauseOverlay": "flex",
+        "gameOverOverlay": "flex"
+      },
+      "focus": {
+        "id": "startButton",
+        "outline": "rgb(76, 201, 240) solid 2px"
+      },
+      "normalStart": false,
+      "normalStartError": "locator.click: Timeout 1500ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#startButton')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"startButton\">Start Spiel</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div class=\"hidden\" id=\"gameOverOverlay\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div class=\"hidden\" id=\"gameOverOverlay\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    3 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div class=\"hidden\" id=\"gameOverOverlay\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n",
+      "start": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 505,
+          "y": 300,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 35,
+          "callbacks": 34,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2241.6,
+          "sameTimestamp": 1
+        },
+        "frameCount": 35
+      },
+      "right": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 576.1373411196511,
+          "y": 331.93781376463824,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0.7500000000000001
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 51,
+          "callbacks": 50,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2508.2,
+          "sameTimestamp": 1
+        },
+        "frameCount": 51
+      },
+      "pKey": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 576.1373411196511,
+          "y": 331.93781376463824,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0.7500000000000001
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 51,
+          "callbacks": 50,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2508.2,
+          "sameTimestamp": 1
+        },
+        "frameCount": 51
+      },
+      "escape": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 579.7957854640201,
+          "y": 335.3460075647549,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0.7500000000000001
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 52,
+          "callbacks": 51,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2525,
+          "sameTimestamp": 1
+        },
+        "frameCount": 52
+      },
+      "blur": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 579.7957854640201,
+          "y": 335.3460075647549,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0.7500000000000001
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 52,
+          "callbacks": 51,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2525,
+          "sameTimestamp": 1
+        },
+        "frameCount": 52
+      },
+      "spacePaused": {
+        "running": true,
+        "paused": true,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 583.4542298083892,
+          "y": 338.7542013648716,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0.7500000000000001
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 53,
+          "callbacks": 52,
+          "maxPending": 1,
+          "pending": 1,
+          "maxCallbacksSameTimestamp": 1,
+          "lastTimestamp": 2541.6,
+          "sameTimestamp": 1
+        },
+        "frameCount": 53
+      },
+      "resumed": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 638.3308949739251,
+          "y": 389.877108366622,
+          "radius": 15,
+          "speed": 5,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0.7500000000000001
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 74,
+          "callbacks": 72,
+          "maxPending": 2,
+          "pending": 2,
+          "maxCallbacksSameTimestamp": 2,
+          "lastTimestamp": 2758.2,
+          "sameTimestamp": 2
+        },
+        "frameCount": 68
+      },
+      "restarted": {
+        "running": true,
+        "paused": false,
+        "over": false,
+        "time": "NaN",
+        "finiteTime": false,
+        "ship": {
+          "x": 446.2,
+          "y": 300,
+          "radius": 15,
+          "speed": 4.200000000000001,
+          "maxSpeed": 5,
+          "acceleration": 0.2,
+          "deceleration": 0.1,
+          "angle": 0
+        },
+        "score": 0,
+        "shields": 0,
+        "raf": {
+          "scheduled": 96,
+          "callbacks": 93,
+          "maxPending": 3,
+          "pending": 3,
+          "maxCallbacksSameTimestamp": 3,
+          "lastTimestamp": 2874.9,
+          "sameTimestamp": 3
+        },
+        "frameCount": 22
+      },
+      "controlled": {
+        "bounds": {
+          "x": 15,
+          "y": 585,
+          "r": 15,
+          "w": 800,
+          "h": 600
+        },
+        "collection": {
+          "score": 10,
+          "cells": 1
+        },
+        "hits": {
+          "shields": [
+            2,
+            1,
+            0
+          ],
+          "over": false,
+          "running": true
+        },
+        "target": {
+          "score": 10000,
+          "over": false
+        },
+        "forcedTimeout": {
+          "over": true,
+          "running": false
+        }
+      },
+      "mobile": {
+        "text": "Sternenwrack\nSternenwrack\n\nSteuerung: WASD oder Pfeiltasten\n\nStart Spiel\nPunkte: 0\nZeit: 0\nSchilde: 0\nFortfahren\nGame Over\n\nPunkte: 0\n\nNochmal",
+        "buttons": [
+          {
+            "text": "Start Spiel",
+            "id": "startButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 155.609375,
+              "y": 467,
+              "w": 189,
+              "h": 60
+            }
+          },
+          {
+            "text": "Fortfahren",
+            "id": "resumeButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 156.109375,
+              "y": 400,
+              "w": 188,
+              "h": 60
+            }
+          },
+          {
+            "text": "Nochmal",
+            "id": "restartButton",
+            "disabled": false,
+            "visible": true,
+            "label": null,
+            "box": {
+              "x": 165.109375,
+              "y": 423.5,
+              "w": 170,
+              "h": 60
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "width": 800,
+            "height": 600,
+            "box": {
+              "width": 275.765625,
+              "height": 596
+            }
+          }
+        ],
+        "viewport": {
+          "width": 438,
+          "height": 948,
+          "scrollWidth": 438,
+          "scrollHeight": 948,
+          "scrollX": 0,
+          "scrollY": 0
+        },
+        "raf": {
+          "scheduled": 0,
+          "callbacks": 0,
+          "maxPending": 0,
+          "pending": 0,
+          "maxCallbacksSameTimestamp": 0,
+          "lastTimestamp": -1,
+          "sameTimestamp": 0
+        }
+      },
+      "playability": "Agent completed and syntax valid, but normal game start is obstructed and timer/loop/objective behavior is broken.",
+      "finished": "2026-11-05T20:30:34.495Z"
+    }
+  },
+  "task_config_signatures_equal": true,
+  "prior_same_output_replay": {
+    "padra_warm_decode_s": 23.0337,
+    "padra_warm_wall_s": 35.18908,
+    "all_three_normalized_outputs_identical": true,
+    "limitation": "Single before/after observation, not a randomized repeated A/B."
+  },
+  "startup_port_conflict": {
+    "model_started": false,
+    "evidence": "/srv/agent/workspaces/padra-grammar-20261105/llama-startup-port-conflict.log"
+  },
+  "grammar_scope": "Lazy tool JSON and supported structural schemas; no full strict JSON Schema claim.",
+  "generated_sources_unmodified": true,
+  "quality_rubric": {
+    "task": "/srv/agent/artifacts/local-model-comparison-20261104/aufgabe.md",
+    "purpose": "Apply the same observable requirements to each independently generated game; evaluate outputs, not engine correctness.",
+    "statuses": {
+      "pass": "Direct browser observation or a narrowly stated source check demonstrates the stated criterion.",
+      "partial": "Some required behavior works; specific missing behavior is recorded.",
+      "fail": "A reproducible failure or clearly absent implementation violates the criterion.",
+      "unverified": "Insufficient evidence; never counts as a pass."
+    },
+    "evidence_types": [
+      "browser",
+      "controlled-state browser",
+      "source",
+      "manual visual",
+      "unverified"
+    ],
+    "criteria": [
+      {
+        "id": "files_syntax",
+        "requirement": "Separate index.html, style.css, game.js and README; referenced files exist; JavaScript syntax valid."
+      },
+      {
+        "id": "offline_console",
+        "requirement": "Loads and runs without external resources or uncaught JavaScript errors in tested paths."
+      },
+      {
+        "id": "menu",
+        "requirement": "Initial title, intelligible instructions, explicit target, and start button."
+      },
+      {
+        "id": "start",
+        "requirement": "Start begins a visible playable round and removes obstructing menus."
+      },
+      {
+        "id": "hud",
+        "requirement": "Score, remaining time, and shields visible and updated while playing."
+      },
+      {
+        "id": "movement",
+        "requirement": "WASD and arrow keys move the ship fluently; speed and acceleration usable."
+      },
+      {
+        "id": "bounds",
+        "requirement": "Ship remains entirely within playfield, including on resize."
+      },
+      {
+        "id": "asteroids",
+        "requirement": "Moving asteroids have varied sizes; simulation uses elapsed time with bounded delta."
+      },
+      {
+        "id": "cells",
+        "requirement": "Collecting reachable cells increases score and cells appear at changing positions."
+      },
+      {
+        "id": "damage_invulnerability",
+        "requirement": "A collision costs one shield and grants brief invulnerability with visible feedback."
+      },
+      {
+        "id": "three_hit_loss",
+        "requirement": "Three separated damaging collisions end the round with clear result."
+      },
+      {
+        "id": "difficulty",
+        "requirement": "Difficulty grows over time without obviously unfair initial placement."
+      },
+      {
+        "id": "target_win",
+        "requirement": "Reaching the target ends the round with a clear successful result."
+      },
+      {
+        "id": "timeout",
+        "requirement": "Time expiration ends the round with a clear result."
+      },
+      {
+        "id": "pause_button",
+        "requirement": "Visible controls pause and resume the game without advancing simulation while paused."
+      },
+      {
+        "id": "pause_keys",
+        "requirement": "Escape and P pause/resume; resuming continues the simulation."
+      },
+      {
+        "id": "focus_pause",
+        "requirement": "Window focus loss pauses the game and cannot silently continue play."
+      },
+      {
+        "id": "arrow_scroll",
+        "requirement": "Arrow controls do not scroll the page during play."
+      },
+      {
+        "id": "restart",
+        "requirement": "Restart after ending resets score, shields, time, ship, objects, pause state, and animation loop consistently."
+      },
+      {
+        "id": "touch_mobile",
+        "requirement": "At narrow viewport the layout fits and visible touch direction controls function."
+      },
+      {
+        "id": "keyboard_focus",
+        "requirement": "Buttons keyboard reachable with visible focus state."
+      },
+      {
+        "id": "status_text",
+        "requirement": "Important state changes have visible textual indication; HUD and menus legible."
+      },
+      {
+        "id": "reduced_motion",
+        "requirement": "Decorative animation respects prefers-reduced-motion."
+      },
+      {
+        "id": "record_storage",
+        "requirement": "Personal record persists, never decreases, and unavailable storage does not crash."
+      },
+      {
+        "id": "single_loop",
+        "requirement": "Start, pause/resume, and restart do not create concurrent animation loops."
+      },
+      {
+        "id": "visual_quality",
+        "requirement": "Recognizable spacecraft, stars, cells, and asteroids; coherent legible presentation and event feedback."
+      }
+    ],
+    "limits": [
+      "A small fixed set of browser scenarios cannot establish absence of all bugs or prove long-run playability.",
+      "Controlled-state tests may arrange collisions or set time/score only in a fresh in-memory page; generated source files remain unchanged.",
+      "Random collision behavior and game feel are not rigorously established by source inspection or pixel differences alone.",
+      "Report source-level findings separately from actual browser observations and do not call untested criteria passed.",
+      "No composite quality score unless its rule and evidential limitations are stated."
+    ]
+  }
+}

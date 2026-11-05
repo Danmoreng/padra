@@ -36,12 +36,14 @@ __device__ SelectionCandidate BlockBest(SelectionCandidate best, SelectionCandid
   return best;
 }
 __global__ void SelectTiles(const float *logits, SelectionCandidate *candidates, int count,
-                            int *bad) {
+                            int *bad, const std::uint8_t *allowed = nullptr) {
   __shared__ SelectionCandidate scratch[kSelectionThreads / 32];
   SelectionCandidate best{-INFINITY, INT_MAX};
   bool invalid = false;
   const int begin = blockIdx.x * kSelectionTile, end = min(begin + kSelectionTile, count);
   for (int token = begin + threadIdx.x; token < end; token += kSelectionThreads) {
+    if (allowed && !allowed[token])
+      continue;
     const float value = logits[token];
     if (isfinite(value))
       best = Better(best, {value, token});

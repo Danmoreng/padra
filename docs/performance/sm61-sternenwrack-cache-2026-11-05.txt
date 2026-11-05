@@ -1,0 +1,191 @@
+GTX 1070: automatic follow-up cache and Sternenwrack benchmark, 2026-11-05
+
+Result
+
+Stateless full-history Chat requests and Responses requests without a retained
+root now automatically reuse a compatible resident GPU prefix checkpoint.
+Previously the server only selected the existing checkpoint through an explicit
+session lease; unmodified Pi sends full history without a session ID.
+
+The real-GPU tests and fixed Pi replay pass. Three unchanged requests take
+35.189 s with reuse versus 52.067 s with a fresh namespace on every request
+(32.42% less wall time). All normalized outputs, reasoning, tool names/arguments,
+finish reasons and token counts are identical, including comparison to the
+pre-change binary. GPU memory remains 7311 MiB sampled peak, about 7.14 GiB.
+
+The full coding task remains unsuccessful on Padra: the fourth model call
+aborts with invalid_tool_output while attempting to write game.js. Caching reduces
+time to that same failure from 119.051 s to 92.290 s; this is not a successful
+task time.
+llama.cpp finishes its agent trajectory after 748.789 s, but its generated game
+has significant functional defects. Neither result establishes a successful
+completion-time winner or general coding-quality ranking.
+
+Configuration and reproduction
+
+Hardware: GTX 1070 Max-Q, SM61, physical 8 GiB; CUDA 12.4. Branch at 8c73469 plus
+the existing uncommitted paired Q8 attention candidate and this cache change.
+Cache server source SHA256:
+  06ef7437c4d3072b7b0e3e5c344c5e2f1ccb2f2261ed5db75f8479e686b24bdd
+Immutable binary SHA256:
+  1943c0a63994fb627d2e91336728f188a15c83035dcdcca8db9658ac3e767717
+
+Workspace W=/srv/agent/workspaces/padra-sternenwrack-20261105
+Immutable cache binary: W/stateless-cache-bin/padra-server
+Pre-change binaries: W/baseline131k/
+Full task runner: W/run_game.py
+Fixed request runner: W/replay_pi.py
+Companion JSON: sm61-sternenwrack-cache-2026-11-05.json
+
+Padra: native K3 target, stored/shared Q8 output head, EXL3 K4 MTP draft,
+MTP depth 1, Q8_0 target KV, context 131072, prefill chunk 256, device budget 8 GiB.
+All model computation resides on GPU; no target expert CPU offload.
+llama.cpp: b12117-c6a0ff11a, IQ4_XS target, Q8_0 K/V, N-gram speculation,
+context 131072, batch 512/microbatch 128, one slot, fit target 512 MiB.
+Its log reports 29/29 layers offloaded but ALSO CPU tensor overrides. Thus it
+is not a completely GPU-resident reference. Sampled peak is 7627 MiB.
+These are practical installed configurations, not equal-quantization or equal-
+speculation engine implementations. No BF16-head comparison was run.
+
+All three new full-agent runs use Pi 1.1.0, the identical original task, the same
+read, bash, edit and write schemas, temperature 0.6, top_p 0.95, top_k 20, seed 42,
+max_completion_tokens 16384 and context 131072. Actual HTTP bodies are recorded.
+Pi's thinking-off setting does not disable model reasoning in these captured
+requests: none sends reasoning_effort:none or enable_thinking:false.
+All three runs emit reasoning. There is no session-ID adapter.
+
+Task SHA256:
+  bf97b2f74905bbc376bb754006971e60deefdc0bc1acf1437aa4bb126af59d8c
+Original task: /srv/agent/artifacts/local-model-comparison-20261104/aufgabe.md
+For another run, use a new output directory and fresh server/proxy ports:
+  python3 W/run_game.py --engine padra --out NEW_DIRECTORY \
+    --binary W/stateless-cache-bin/padra-server --server-port PORT --proxy-port PORT2
+  python3 W/replay_pi.py --out NEW_DIRECTORY --port PORT
+  python3 W/replay_pi.py --engine llama --out NEW_DIRECTORY --port PORT
+W and the placeholders above must be replaced with actual paths/values.
+
+Fixed-request performance
+
+Each engine receives the same three captured request bodies, byte for byte.
+No model-generated tools are executed during this replay. Padra performs three
+cold requests with unique credential namespaces, then three with one namespace.
+llama.cpp performs one normal resident sequence in a fresh server. The slightly
+different rendered token counts below are preserved, not treated as identical
+tokenized prompts. Authorization namespaces are a Padra cache-isolation policy;
+they are not a llama.cpp cache-flush mechanism.
+
+Request | Padra input/cache | Padra cold/warm prefill(s) | llama input/cache | llama prefill(s)
+1       | 2756 / 0          |  8.75481 / 8.79460         | 2756 / 0          | 5.551084
+2       | 2918 / 2560       |  9.48449 / 1.49180         | 2919 / 2759       | 0.533854
+3       | 3287 / 2816       | 10.77980 / 1.83480         | 3291 / 2914       | 0.956316
+
+Cache counts in the table refer to the resident sequences; every Padra cold
+request reports zero cached tokens.
+
+The two Padra follow-ups reduce prefill time by 84.27% and 82.98% respectively.
+Total Padra prefill falls 29.0191 -> 12.1212 s. Decode remains 22.9938 -> 23.0337 s;
+the benefit comes from avoiding repeated prompt work, not faster decoding.
+
+First cold request, both 2756 input tokens: Padra 314.8 tok/s prefill,
+llama.cpp 496.5 tok/s. Across all three resident requests, aggregate decode is
+Padra 50.93 tok/s and llama.cpp 50.69 tok/s, using sum(outputs-1)/sum(decode time).
+Output counts differ: Padra 1176 and llama.cpp 1146. The respective 35.19 s and
+29.65 s resident sequence wall times therefore are not a pure engine speed ratio.
+This is one exploratory sequence, not repeated statistical performance evidence.
+
+Full coding task and quality
+
+Configuration             | Agent elapsed | Model calls | Outcome
+Padra before auto cache    | 119.051 s     |  4          | Invalid tool output; no game.js
+Padra with auto cache      |  92.290 s     |  4          | Same failure and generated files
+llama.cpp                  | 748.789 s     | 39          | Agent finished; game partly functional
+
+Padra full-run prefill: 42.5858 -> 15.8157 s; decode: 75.4274 -> 75.5140 s.
+Both attempted 3867 output tokens according to server counters. Pi only reports
+1176 output tokens for the three completed calls; the failed fourth call has
+no final usage record. Likewise 5376 reported cached tokens cover completed
+calls only. Do not compute a whole-run decode rate from Pi's incomplete usage.
+The fourth call delivers the same 8466-byte argument prefix in both runs:
+  d5495ec3bd23d8ebba06d0f77c68a27c4cc552bf25b0b95a542faa2bd0df1735
+Both terminate with invalid_tool_output, "mismatched tool argument bracket".
+The offending token is absent from the public stream because the parser rejects
+it before flushing. The existing evidence does not distinguish malformed model
+continuation from a parser defect conclusively; raw generation capture is the
+appropriate next diagnostic. No unsupported parser relaxation was introduced.
+
+llama.cpp emits 31085 tokens and makes 38 tool calls, mostly repeated attempts to
+repair a JavaScript syntax error. The original historical run took 145.83 s with
+8 model calls and 6391 output tokens. Their first model output matches, but the
+first ls -la tool result differs in timestamps/permissions, after which paths
+diverge. An edit using edits[] is valid under the actual Pi tool schema. There
+is no evidence that making seed 42 explicit caused this divergence.
+A host build overlapped part of the new full llama run; use the isolated
+fixed replay for throughput, not the full-run timing as a controlled speed test.
+
+Independent headless Chromium checks used software rendering and left source
+files unchanged. The new llama game passes syntax and supports arrow movement
+and collection, but immediately shows a NaN timer. WASD does not work, restart
+after game over freezes, and target win, invulnerability, highscore, focus pause
+and usable touch controls are absent or broken. Padra's missing game.js makes
+Start ineffective. Cached and uncached Padra HTML/CSS are byte-identical, so
+the same browser findings apply. Details/screenshots are in W/evaluation/.
+
+Context capacity and cache qualification
+
+Padra admits 131072 with MTP/Q8 head/Q8_0 KV inside the physical 8 GiB device.
+Resident device bytes: 7501737555; required including 700 MiB reserve: 8235740755.
+The 7311 MiB observed peak is unchanged by automatic caching: the existing
+25502720-byte checkpoint snapshot is reused; no additional GPU cache is added.
+Synthetic Q8 attention tests cover the last valid row 131071, complete cache-byte
+and output equality, invalid final pairs, graph replay, memcheck and synccheck.
+The full-capacity native HTTP integration suite also passes.
+
+This establishes allocation, short model serving and attention boundary behavior.
+It is NOT a full-model 131k-token prompt/quality qualification. The longest
+completed llama game request has 46217 input tokens; the Padra failure occurs
+much earlier. At capacity 131072, Padra uses its existing fallback attention
+prefill path, not the SGEMM path used in the earlier 8k benchmark. Do not compare
+those historical 8k numbers as if only the API cache policy had changed.
+
+Cache semantics and validation
+
+There is one resident checkpoint, scoped to the loopback credential namespace.
+Anonymous loopback requests share a namespace. Explicit sessions and stateless
+requests retain separate ownership. Exact canonical token-prefix, runtime,
+generation, capacity and format checks are authoritative. Changed prefixes,
+owners, stale handles or intervening explicit sessions safely replay history.
+No implicit logical session or response record is created for store:false.
+Partial tools, execution failure and running cancellation invalidate retained
+ownership; cancellation while queued preserves an untouched checkpoint.
+SM61 retains complete 256-token expert chunks, preserving existing arithmetic.
+This currently reuses a prompt checkpoint, not an arbitrary multi-session cache
+or the whole previously generated continuation. Small sub-chunk histories may
+therefore show zero cached tokens even though automatic caching is enabled.
+
+Validation artifacts:
+  W/stateless-cache-host-ctest.log: 26/26 host tests passed.
+  W/stateless-cache-final-host-ctest.log: strengthened cache test passed.
+  W/stateless-cache-native/native-http-smoke-result.json: actual CUDA Chat,
+    Responses store:false, identical fresh/cached answers, changed credentials,
+    system/tools, explicit sessions, 40 retained roots, streams and metrics pass.
+  W/replay-padra/: identical cold/warm and pre-change outputs; positive follow-up
+    cached_tokens and unchanged 7311 MiB sampled peak.
+  W/replay-llama/: same request bodies, actual placement and timings recorded.
+  W/context-validation.json: capacity and boundary evidence with scope limits.
+  W/stateless-cache-review.txt: independent ownership/lifecycle review.
+Pinned clang-format 22.1.0, Python syntax and git diff --check pass.
+
+The local launch helper now defaults to 131072, with an optional third context
+argument for smaller runs:
+  /srv/agent/workspaces/padra-mtp-sm61-20261025/launch-padra-mtp-q8.sh
+
+Next work
+
+First capture the rejected raw tool continuation and add a minimized regression
+if it exposes an engine parsing issue. Keep the fixed Pi trace and external
+browser rubric as separate performance and quality gates. Then profile the
+131k-capacity prefill fallback and consider bounded attention tiers without
+increasing admission memory. Cached follow-ups still re-evaluate the preceding
+generated text and a partial chunk; extending reuse is a separate correctness
+and arithmetic-qualification change. The earlier expert/projection priorities
+remain useful after these product-level bottlenecks are addressed.

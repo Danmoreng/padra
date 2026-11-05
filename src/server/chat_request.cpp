@@ -1,4 +1,5 @@
 #include "server/chat_request.h"
+#include "server/tool_grammar.h"
 #include "runtime/kv_checkpoint.h"
 #include "util/json.h"
 #include <set>
@@ -71,6 +72,21 @@ Result<std::string> CanonicalBody(std::string_view body, const json::Value &root
                     std::string(",\"enable_thinking\":") + (thinking ? "true" : "false"));
   }
   return result;
+}
+Result<int> StableCheckpointAnchor(std::string_view render_body, std::span<const int> canonical,
+                                   const text::Tokenizer &tokenizer) {
+  // Keep the original nested tool/schema order. Only omit the generation header
+  // to find a stable prefix; the runtime compares the actual canonical tokens.
+  const auto end = render_body.find_last_not_of(" \t\r\n");
+  std::string history(render_body.substr(0, end));
+  history += ",\"add_generation_prompt\":false}";
+  auto stable = text::RenderChat(history);
+  if (!stable.ok())
+    return stable.status();
+  auto stable_ids = tokenizer.Encode(stable.value());
+  if (!stable_ids.ok())
+    return stable_ids.status();
+  return PlanCheckpointAnchor(canonical, stable_ids.value());
 }
 } // namespace
 Result<bool> ThinkingForEffort(const json::Value &effort) {
@@ -209,6 +225,11 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
   result.id = std::move(id);
   result.body = std::move(canonical).value();
   result.tools = std::move(tool_config).value();
+  if (result.tools.parse) {
+    auto constraint = MakeToolGrammar(root, tokenizer);
+    if (!constraint.ok()) return constraint.status();
+    result.sampling.constraint = std::move(constraint).value();
+  }
   if (auto *session = root.find("session_id"); session && !session->is_null()) {
     if (!session->is_string() || session->as_string().size() != 37 ||
         !session->as_string().starts_with("sess-") ||
@@ -275,6 +296,12 @@ Result<ChatRequest> ParseChatRequest(std::string_view body, const text::Tokenize
     auto status = AttachSession(result, tokenizer, result.session_id);
     if (!status.ok())
       return status;
+  } else {
+    // An optional cache must not reject an otherwise valid stateless request
+    // when its template does not expose a stable prefix.
+    auto anchor = StableCheckpointAnchor(render_body, result.input_ids, tokenizer);
+    if (anchor.ok())
+      result.checkpoint_anchor = anchor.value();
   }
 
   result.tokenize_seconds =
@@ -304,17 +331,7 @@ Status AttachSession(ChatRequest &request, const text::Tokenizer &tokenizer,
       render_body = std::move(omitted).value();
     }
   }
-  // Preserve nested tool/schema order while adding the renderer-only option.
-  const auto end = render_body.find_last_not_of(" \t\r\n");
-  std::string history(render_body.substr(0, end));
-  history += ",\"add_generation_prompt\":false}";
-  auto stable = text::RenderChat(history);
-  if (!stable.ok())
-    return stable.status();
-  auto stable_ids = tokenizer.Encode(stable.value());
-  if (!stable_ids.ok())
-    return stable_ids.status();
-  auto anchor = PlanCheckpointAnchor(request.input_ids, stable_ids.value());
+  auto anchor = StableCheckpointAnchor(render_body, request.input_ids, tokenizer);
   if (!anchor.ok())
     return anchor.status();
   request.body = std::move(body);

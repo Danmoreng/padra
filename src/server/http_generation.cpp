@@ -109,6 +109,7 @@ void HttpServer::Responses(const httplib::Request &request, httplib::Response &r
     }
     spec->chat_body = chat.value().body;
   }
+  chat.value().automatic_prefix_cache = chat.value().session_id.empty();
   chat.value().adapter_bytes = admission::Sum(
       {sizeof(ResponseRequest), spec->chat_body.size(), spec->history.size(), spec->tools.size(),
        spec->metadata.size(), spec->instructions.size(), spec->reasoning.size(),
@@ -170,14 +171,13 @@ void HttpServer::Chat(const httplib::Request &request, httplib::Response &respon
           parsed.status().message());
     return;
   }
-  if (!parsed.value().session_id.empty()) {
-    auto owner = http_detail::SessionOwner(request);
-    if (!owner.ok()) {
-      Error(response, 400, owner.status().message());
-      return;
-    }
-    parsed.value().session_owner = std::move(owner).value();
+  auto owner = http_detail::SessionOwner(request);
+  if (!owner.ok()) {
+    Error(response, 400, owner.status().message());
+    return;
   }
+  parsed.value().session_owner = std::move(owner).value();
+  parsed.value().automatic_prefix_cache = parsed.value().session_id.empty();
   parsed.value().submitted = received;
   const bool stream = parsed.value().stream;
   auto admitted = coordinator_.Submit(std::move(parsed).value(), {true, ApiRoute::Chat, &decision});

@@ -14,6 +14,7 @@ parser.add_argument("--capacity", type=int, default=8192)
 parser.add_argument("--prefill-chunk", type=int, default=2048)
 parser.add_argument("--device-budget-gib", type=int, default=0)
 parser.add_argument("--kv-format", choices=("bf16", "q8", "q8_0"), default="bf16")
+parser.add_argument("--head-format", choices=("bf16", "q8"))
 parser.add_argument("--mtp-artifact", type=pathlib.Path)
 parser.add_argument("--mtp-depth", type=int, choices=range(1, 5), default=1)
 parser.add_argument("--output-dir", type=pathlib.Path, required=True)
@@ -27,20 +28,22 @@ args.output_dir.mkdir(parents=True, exist_ok=True)
 log = args.output_dir / "native-http-smoke-server.log"
 
 
-def request(path, body=None, method=None):
+def request(path, body=None, method=None, headers=None):
     data = None if body is None else json.dumps(body).encode()
+    request_headers = {} if data is None else {"Content-Type": "application/json"}
+    request_headers.update(headers or {})
     req = urllib.request.Request(
         base + path,
         data=data,
         method=method,
-        headers={} if data is None else {"Content-Type": "application/json"},
+        headers=request_headers,
     )
     with urllib.request.urlopen(req, timeout=30) as response:
         return response.read().decode(), response.headers
 
 
-def fetch(path, body=None, method=None):
-    return json.loads(request(path, body, method)[0])
+def fetch(path, body=None, method=None, headers=None):
+    return json.loads(request(path, body, method, headers)[0])
 
 
 with log.open("w") as output:
@@ -57,6 +60,7 @@ with log.open("w") as output:
             str(args.device_budget_gib),
             args.kv_format,
         ] + (["--config", str(args.server_config.resolve())] if args.server_config else [])
+        + (["--head-format", args.head_format] if args.head_format else [])
         + (["--mtp-artifact", str(args.mtp_artifact.resolve()), "--mtp-depth", str(args.mtp_depth),
             "--mtp-draft-experts", "exl3"] if args.mtp_artifact else []),
         stdout=output,
@@ -178,6 +182,68 @@ with log.open("w") as output:
             assert tool_calls[index]["identities"] == 1
             assert tool_calls[index]["name"] == call["function"]["name"]
             assert tool_calls[index]["arguments"] == call["function"]["arguments"]
+        owner_a = {"Authorization": "Bearer native-cache-A"}
+        owner_b = {"Authorization": "Bearer native-cache-B"}
+        owner_c = {"Authorization": "Bearer native-cache-C"}
+        stateless_body = dict(body, messages=[
+            {"role": "system", "content": "Follow the user's instructions."},
+            {"role": "user", "content": cache_padding + "Say hello."},
+        ])
+        cold = fetch("/v1/chat/completions", stateless_body, headers=owner_a)
+        repeated = fetch("/v1/chat/completions", stateless_body, headers=owner_a)
+        assert cold["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        repeated_cached = repeated["usage"]["prompt_tokens_details"]["cached_tokens"]
+        assert 0 < repeated_cached < repeated["usage"]["prompt_tokens"]
+        assert cold["choices"] == repeated["choices"]
+        assert "session_id" not in cold and "session_id" not in repeated
+        stateless_history = stateless_body["messages"] + [
+            cold["choices"][0]["message"],
+            {"role": "user", "content": "What did I ask?"},
+        ]
+        stateless_follow_body = dict(stateless_body, messages=stateless_history)
+        stateless_follow = fetch("/v1/chat/completions", stateless_follow_body, headers=owner_a)
+        stateless_cached = stateless_follow["usage"]["prompt_tokens_details"]["cached_tokens"]
+        assert 0 < stateless_cached < stateless_follow["usage"]["prompt_tokens"]
+        owner_miss = fetch("/v1/chat/completions", stateless_follow_body, headers=owner_b)
+        assert owner_miss["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        assert owner_miss["choices"] == stateless_follow["choices"]
+        changed_history = [{"role": "system", "content": "Answer the user's questions."}] + stateless_history[1:]
+        changed_body = dict(stateless_follow_body, messages=changed_history)
+        prefix_miss = fetch("/v1/chat/completions", changed_body, headers=owner_b)
+        prefix_cold = fetch("/v1/chat/completions", changed_body, headers=owner_c)
+        assert prefix_miss["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        assert prefix_cold["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        assert prefix_miss["choices"] == prefix_cold["choices"]
+        # The real renderer includes tool declarations before the history. A
+        # changed tool prefix must not reuse KV from the preceding tool-free call.
+        tools_miss = fetch("/v1/chat/completions", dict(
+            changed_body, tools=tool_body["tools"], max_completion_tokens=1
+        ), headers=owner_c)
+        assert tools_miss["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+        stateless_responses_body = {
+            "model": model, "input": cache_padding + "Say hello.",
+            "max_output_tokens": 2, "enable_thinking": False, "store": False,
+        }
+        response_cold = fetch("/v1/responses", stateless_responses_body, headers=owner_a)
+        response_repeat = fetch("/v1/responses", stateless_responses_body, headers=owner_a)
+        assert response_cold["usage"]["input_tokens_details"]["cached_tokens"] == 0
+        response_cached = response_repeat["usage"]["input_tokens_details"]["cached_tokens"]
+        assert 0 < response_cached < response_repeat["usage"]["input_tokens"]
+        for response in (response_cold, response_repeat):
+            try:
+                fetch("/v1/responses/" + response["id"], headers=owner_a)
+            except urllib.error.HTTPError as error:
+                assert error.code == 404
+            else:
+                raise AssertionError("stateless prefix cache retained a store:false response")
+        stateless_results = {
+            "chat_repeat_cached_tokens": repeated_cached,
+            "chat_followup_cached_tokens": stateless_cached,
+            "responses_repeat_cached_tokens": response_cached,
+            "owner_and_system_and_tool_prefix_misses": True,
+            "cached_and_fresh_choices_exact": True,
+            "no_implicit_session_or_response_retention": True,
+        }
         session = fetch("/v1/sessions", {"model": model})["id"]
         turn = fetch("/v1/chat/completions", dict(body, session_id=session,
                      messages=[{"role": "user", "content": cache_padding + "Say hello."}]))
@@ -257,11 +323,13 @@ with log.open("w") as output:
             "capacity": args.capacity,
             "prefill_chunk": args.prefill_chunk,
             "device_budget_gib": args.device_budget_gib,
+            "head_format_requested": args.head_format,
             "artifact_identity_verified": True,
             "admin_listener_verified": True,
             "server_config": resolved,
             "chat_and_responses_streams": True,
             "session_followup": True,
+            "stateless_prefix_cache": stateless_results,
             "chat_cached_tokens": cached,
             "responses_cached_tokens": child["usage"]["input_tokens_details"]["cached_tokens"],
             "session_cache_miss_replay": True,

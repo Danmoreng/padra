@@ -77,15 +77,33 @@ remain in place. With MTP, the snapshot additionally retains the draft's BF16
 ring and preceding target hidden state (2 MiB plus 9216 bytes).
 
 Reuse applies to the matching resident Chat session or Responses continuation.
-The runtime validates the canonical token prefix, runtime binding, generation,
-capacity and cache format before restoring. A different GPU session, changed
-prefix, reset or stale snapshot causes a full history replay through the server;
-this is not a multi-session GPU cache. Usage reports the actually reused prefix
-in `cached_tokens`. Restore preserves the original chunk boundaries. An anchor
+Full-history requests without a retained session also reuse the most recent
+compatible stateless checkpoint automatically, without a client cache adapter,
+logical session or stored response record. Stateless reuse is scoped to the same
+loopback credential namespace, derived from the Authorization header; requests
+without a credential share the anonymous loopback namespace. Explicit sessions
+and stateless requests do not share checkpoint ownership.
+
+The runtime validates the exact canonical token prefix, runtime binding,
+generation, capacity and cache format before restoring. Tool declarations,
+system instructions and thinking options participate through the rendered token
+prefix, rather than a client-provided cache key. A different owner or GPU session,
+changed prefix, reset or stale snapshot causes a full history replay. Execution
+failure, cancellation or a partial tool call invalidates retained ownership;
+queued cancellation before execution leaves the previous checkpoint intact.
+This is one resident checkpoint, not a multi-session GPU cache. Usage reports
+the actually reused prefix in `cached_tokens`. Restore preserves the original
+chunk boundaries. An anchor
 within three tokens of a chunk end is moved back to leave four rows, preserving
 the full-chunk expert arithmetic instead of switching to a narrow tail path.
 Q8 trace/snapshot diagnostics and the legacy non-controlled
 runtime are unsupported.
+
+For uncached throughput measurements, use a fresh `Authorization: Bearer ...`
+namespace for each request and assert that usage reports `cached_tokens: 0`.
+`tools/benchmark_http.py` does this automatically for Padra. Keep the namespace
+constant when measuring follow-up reuse, and report cached tokens separately
+from freshly evaluated prompt tokens.
 
 MTP supports both quantized target caches. Its rollback saves and restores the
 encoded rows and their scales without dequantizing history. The draft retains

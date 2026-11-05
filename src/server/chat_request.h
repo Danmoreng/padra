@@ -34,6 +34,8 @@ struct ChatRequest {
   SamplingOptions sampling;
   int outputs = 256;
   bool stream = false, include_usage = false;
+  // Internal HTTP policy; never a client field or an implicit logical session.
+  bool automatic_prefix_cache = false;
   std::chrono::steady_clock::time_point submitted = std::chrono::steady_clock::now();
   double tokenize_seconds = 0;
 };

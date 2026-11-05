@@ -28,4 +28,43 @@ __global__ void Commit(const q8_native::CacheRow* k,const q8_native::CacheRow* v
     reinterpret_cast<unsigned*>(values+target)[i]=reinterpret_cast<const unsigned*>(v+row)[i];
   }
 }
+
+__global__ void PairStates(const SimtBatch* batch, DecodeState* states, int* bad) {
+  const int row = threadIdx.x;
+  if (row >= 2)
+    return;
+  if (batch->rows != 2 || batch->base < 0 || batch->capacity < 2 ||
+      batch->base > batch->capacity - 2) {
+    atomicExch(bad, 1);
+    return;
+  }
+  const int p = batch->base + row;
+  states[row] = {0, p, batch->capacity, batch->capacity - p, p, min(p, 1024), 0, 0};
+}
+
+// Both new KV rows are committed first. The first query reads its overwritten
+// ring-history entry from the encoded rollback snapshot. Keep Pascal's original
+// split counts and float output, preserving the sequential attention arithmetic.
+inline void AttentionPair(const float* queries, const q8_native::CacheRow* keys,
+                          const q8_native::CacheRow* values, float* output,
+                          q8_native::QueryBlock* encoded, const DecodeState* states,
+                          int capacity, bool local, float* scratch,
+                          const q8_native::CacheRow* oldSecondRow, int* bad,
+                          cudaStream_t stream, int maximum) {
+  const int splits = local ? 4 : 32;
+  auto* lse = scratch + splits * 32 * 128;
+  q8_native::EncodeQuery<2><<<dim3(8, 1, 2), 128, 0, stream>>>(queries, encoded, bad);
+  if (local) {
+    q8_native::Split<true, 2><<<dim3(8, splits, 2), 128, 0, stream>>>(
+        encoded, keys, values, scratch, lse, states, capacity, splits, bad, maximum,
+        oldSecondRow);
+    q8_native::Merge<true, float, 2><<<dim3(8, 1, 2), 128, 0, stream>>>(
+        scratch, lse, output, states, splits, bad, maximum);
+  } else {
+    q8_native::Split<false, 2><<<dim3(8, splits, 2), 128, 0, stream>>>(
+        encoded, keys, values, scratch, lse, states, capacity, splits, bad, maximum);
+    q8_native::Merge<false, float, 2><<<dim3(8, 1, 2), 128, 0, stream>>>(
+        scratch, lse, output, states, splits, bad, maximum);
+  }
+}
 }

@@ -10,6 +10,7 @@ Padra implements text/function subsets of Chat Completions and Responses.
 See [API support](api-support.md) for endpoints, accepted options and exclusions.
 MTP is selected at server startup without changing request schemas; see the
 [MTP execution and accounting contract](mtp.md).
+Enabled function tools use [grammar-constrained token selection](tool-grammar.md).
 
 ## Chat Completions
 

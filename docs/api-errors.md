@@ -49,6 +49,20 @@ committed. `client_disconnected`, `session_discarded`, `stream_backpressure` and
 `invalid_tool_output` distinguish other terminal causes. Socket loss can prevent
 delivery of any final event.
 
+`invalid_tool_output` means the generated tool call failed output validation. It
+is a terminal failure, with HTTP 500 when headers are still available, and has no
+`Retry-After` or automatic server-side retry. Tool argument deltas are provisional:
+clients must wait for successful completion and complete, valid arguments before
+executing tools. Do not execute calls from a failed response or treat repaired
+partial arguments as a completed call.
+
+With deterministic generation, repeating an unchanged request with the same seed
+reproduces the same invalid output. A client may instead discard the failed
+assistant attempt and continue from the last valid conversation with explicit
+feedback that the rejected call was not executed and needs complete, valid JSON
+arguments. Bound these corrective attempts and include their time and token costs
+in the overall request budget.
+
 A stored response with an incomplete tool call remains retrievable. Resolving it
 as `previous_response_id` returns `400/response_not_continuable` before prompt
 construction. This code is Padra-specific. Retry the original request or continue

@@ -86,6 +86,14 @@ Pi sends full history and uses no retained response records. Actual cached-token
 usage is reported independently. Explicit stored continuation remains available
 through `previous_response_id`.
 
+Full-history Chat requests without `session_id`, and Responses requests without a
+retained root, automatically reuse a compatible resident prompt checkpoint. This
+keeps no logical session or response record. Reuse requires the same loopback
+credential namespace and an exact canonical token prefix; a different namespace,
+changed prefix, stale checkpoint or intervening explicit session causes a fresh
+prefill. Only one physical checkpoint is resident. See [KV cache storage](kv-cache.md)
+for snapshot boundaries and usage reporting.
+
 ## Accepted restricted values
 
 Responses accepts `truncation: "disabled"`, `background: false`, and
@@ -102,9 +110,12 @@ and Responses `stream_options.include_usage` are unsupported. Terminal Responses
 events include usage without that option.
 
 Function `strict` can be false or null; `strict: true`, required/forced/named tool
-choice and constrained JSON-schema generation are unsupported. Function parameters
-must be an object schema. Completed generated arguments must be a valid JSON
-object; schema compliance is not enforced by constrained decoding.
+choice and structured response formats are unsupported. Function parameters
+must be an object schema. Enabled tools use a lazy token grammar for offered
+names, JSON syntax and supported structural schema fields. Full JSON Schema
+compliance is not guaranteed; see the [grammar contract](tool-grammar.md).
+Malformed generated calls terminate with
+[`invalid_tool_output`](api-errors.md); validation does not repair their arguments.
 
 ## Input and output boundaries
 
