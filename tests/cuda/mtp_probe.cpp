@@ -64,6 +64,8 @@ int main(int argc, char **argv) {
         options.mtp.exl3_experts = depth && c->as_bool();
       if (const auto *c = requests.as_array().front().find("packed_qkv"))
         options.mtp.packed_qkv = c->as_bool();
+      if (const auto *c = requests.as_array().front().find("paired_attention"))
+        options.mtp.paired_attention = c->as_bool();
       if (const auto *c = requests.as_array().front().find("batched_prime"))
         options.mtp.batched_prime = c->as_bool();
       if (const auto *c = requests.as_array().front().find("prefill_chunk"))

@@ -208,8 +208,17 @@ void ExpertProbe(const std::filesystem::path &target, int rate) {
 }
 } // namespace mellum16
 #include "checkpoint_probe.cuh"
+#include "q8_mtp_attention_probe.cuh"
 int main(int argc, char **argv) {
   try {
+    if (argc == 2 && std::string(argv[1]) == "--q8-attention-sanitize") {
+      mellum16::Q8MtpAttentionProbe(true);
+      return 0;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--q8-attention") {
+      mellum16::Q8MtpAttentionProbe();
+      return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--checkpoint") {
       mellum16::CheckpointProbe();
       return 0;

@@ -1184,7 +1184,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
       for (const auto kernel :
            {reinterpret_cast<const void *>(q8_native::EncodeKV<false>),
             reinterpret_cast<const void *>(q8_native::EncodeKV<true>),
-            reinterpret_cast<const void *>(q8_native::EncodeQuery),
+            reinterpret_cast<const void *>(q8_native::EncodeQuery<>),
             reinterpret_cast<const void *>(q8_native::Split<false>),
             reinterpret_cast<const void *>(q8_native::Split<true>),
             reinterpret_cast<const void *>(q8_native::Merge<false, float>),
@@ -1196,6 +1196,14 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             reinterpret_cast<const void *>(q8_native::Commit<PrefillState>),
             reinterpret_cast<const void *>(q8_native::RotateRows<false>),
             reinterpret_cast<const void *>(q8_native::RotateRows<true>)})
+        Check(cudaFuncGetAttributes(&attributes, kernel));
+    if (q8Native && mtpEnabled)
+      for (const auto kernel :
+           {reinterpret_cast<const void *>(q8_native::EncodeQuery<2>),
+            reinterpret_cast<const void *>(q8_native::Split<false, 2>),
+            reinterpret_cast<const void *>(q8_native::Split<true, 2>),
+            reinterpret_cast<const void *>(q8_native::Merge<false, __nv_bfloat16, 2>),
+            reinterpret_cast<const void *>(q8_native::Merge<true, __nv_bfloat16, 2>)})
         Check(cudaFuncGetAttributes(&attributes, kernel));
     if (q8Native)
       for (const auto kernel : padded_single_prefill_attention::SelectedKernels<false>())
@@ -2803,10 +2811,14 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             ";draft-prime=independent-rows/exact-compensated-GEMV/original-KV-rounding";
       }
       if (mtpEnabled && o.mtp.paired_attention && o.mtp.packed_qkv && o.mtp.batched_rows &&
-          perHeadMerge) {
-        result.kernel_profile += "+mtp-paired-attention-v1";
+          (perHeadMerge || q8Native)) {
+        result.kernel_profile +=
+            q8Native ? "+mtp-q8-native-batched-attention-v1" : "+mtp-paired-attention-v1";
         result.math_profile +=
-            ";mtp-attention=exact-two-row-partitions/shared-KV-when-compatible/saved-ring-history";
+            q8Native ? ";mtp-attention=two-row-batched-DP4A/exact-independent-partitions/"
+                       "encoded-saved-ring-history/no-added-workspace"
+                     : ";mtp-attention=exact-two-row-partitions/shared-KV-when-compatible/"
+                       "saved-ring-history";
       }
       if (worker)
         worker->RecordIdentity(result.math_profile, result.kernel_profile, model.weights_sha256,
@@ -3073,7 +3085,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
           return;
         }
         if (q8Native) {
-          q8_native::EncodeQuery<<<8, 128, 0, stream.s>>>(
+          q8_native::EncodeQuery<><<<8, 128, 0, stream.s>>>(
               q, q8NativeQuery.As<q8_native::QueryBlock>(), bad.As<int>());
           const bool local = l % 4 != 3;
           const int splits = local ? 16 : 32;
@@ -3239,7 +3251,7 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
             // The paired path reads overwritten local history from the existing
             // pre-group snapshot. Other shapes preserve sequential KV/attention.
             const bool pairAttention = rows == 2 && o.mtp.paired_attention && o.mtp.packed_qkv &&
-                                       o.mtp.batched_rows && perHeadMerge;
+                                       o.mtp.batched_rows && (perHeadMerge || q8Native);
             for (int l = 0; l < 28; ++l) {
               auto *queries = verifier->qkv.As<float>();
               auto *keys = queries + mtp::kMaxRows * 4096;
@@ -3294,13 +3306,27 @@ static Result<InferenceResult> RunCudaInferenceCore(const InferenceOptions &o,
                 // Final logits and the expert gate arena are dead here. Two
                 // attention workspaces fit in logits; quantization consumes both
                 // BF16 output rows before O reuses gate for its float rows.
-                mtp_attention::Launch(
-                    queries, layers[l].kc, layers[l].vc, verifier->gate.As<__nv_bfloat16>(),
-                    verifier->packed.As<unsigned char>(), verifier->scales.As<float>(),
-                    verifier->states.As<DecodeState>(), layers[l].cap, l % 4 != 3,
-                    verifier->logits.As<float>(),
-                    verifier->backup.As<__nv_bfloat16>() + (l * mtp::kMaxRows + 1) * 1024,
-                    bad.As<int>(), stream.s, contextMaximum);
+                if (q8Native) {
+                  // Q/K/V have been committed. The dead key arena holds both
+                  // encoded queries; existing logits/gate scratch holds attention.
+                  mtp_attention::LaunchQ8Native(
+                      queries, static_cast<const q8_native::CacheRow *>(layers[l].q8.k),
+                      static_cast<const q8_native::CacheRow *>(layers[l].q8.v),
+                      reinterpret_cast<q8_native::QueryBlock *>(keys),
+                      verifier->gate.As<__nv_bfloat16>(), verifier->packed.As<unsigned char>(),
+                      verifier->scales.As<float>(), verifier->states.As<DecodeState>(),
+                      layers[l].cap, l % 4 != 3, verifier->logits.As<float>(),
+                      reinterpret_cast<const q8_native::CacheRow *>(
+                          verifier->backup.As<unsigned char>() + (l * mtp::kMaxRows + 1) * 2048),
+                      bad.As<int>(), stream.s, contextMaximum);
+                } else
+                  mtp_attention::Launch(
+                      queries, layers[l].kc, layers[l].vc, verifier->gate.As<__nv_bfloat16>(),
+                      verifier->packed.As<unsigned char>(), verifier->scales.As<float>(),
+                      verifier->states.As<DecodeState>(), layers[l].cap, l % 4 != 3,
+                      verifier->logits.As<float>(),
+                      verifier->backup.As<__nv_bfloat16>() + (l * mtp::kMaxRows + 1) * 1024,
+                      bad.As<int>(), stream.s, contextMaximum);
                 if (!o.mtp.packed_o) {
                   auto *savedInput = fp8Input;
                   auto *savedScales = fp8Scales;
