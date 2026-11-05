@@ -1,0 +1,85 @@
+Pascal / SM61 integration assessment, 2026-11-05
+
+Repository state
+Local main was fast-forwarded from e61f329 to origin/main b1abeef.
+The only intervening main commit is "Batch Q8_0 MTP attention verification"
+(2026-10-25). It was merged into codex/pascal-sm61-port without conflicts,
+producing 5e58378. The previous Pascal tip e0015f6 is preserved in
+codex/backup-sm61-before-main-merge-20261105. No rebase was performed.
+
+The main change batches query encoding, attention and merge for two verifier
+rows on SM120. The shared Q8 kernels are now templated for one/two rows.
+The Pascal runtime still calls single-row attention sequentially for verifier
+rows (src/cuda/inference_simt.cu, row_limit <= 5 path). The published SM120
+8.28% K3 decode gain does NOT establish a Pascal gain. Pascal retains its
+synchronous staging fallback; cp.async is guarded for SM80 and newer.
+
+Fresh performance baseline
+GTX 1070 Max-Q, 8192 MiB, CUDA 12.4, SM61 SIMT Release, DP4A prefill enabled.
+Native K3 target, stored shared Q8 head, EXL3 K4 MTP draft, depth 1;
+Q8_0 KV, capacity 8192, prefill chunk 256, device budget 8 GiB.
+One warm-up, three measured runs at each prompt length, 1000 generated tokens
+per request, zero prompt-cache reuse. Decode counts 999 post-first-token steps.
+
+Input       Prefill median [range] tok/s       Decode median [range] tok/s
+2000        506.56 [506.00, 509.34]            51.93 [51.91, 52.06]
+4000        512.03 [510.19, 512.90]            52.06 [51.98, 52.09]
+
+Peak sampled system-wide VRAM: 5999 MiB. All six benchmark requests and output
+choices exactly match the saved e0015f6 results. Previous medians were
+505.40/511.31 prefill and 51.97/52.09 decode. These results reproduce the old
+performance level; separate-day measurements do not establish a speed gain.
+llama.cpp was not rebuilt or rebenchmarked in this integration check.
+
+Build and integration evidence
+The merged SM61 build succeeds and all 33 CTest cases pass.
+The separate CUDA-disabled Debug build succeeds and all 25 host tests pass.
+Detailed model/HTTP checks and benchmark identities are in the companion JSON.
+The pinned clang-format 22.1.0 CI check FAILS in 51 files, all changed by the
+Pascal branch relative to main. These pre-existing style changes have not
+been reformatted during this integration assessment.
+SM120 was not built or executed here; the installed CUDA 12.4 compiler does
+not support that target. Earlier cross-build evidence is not a substitute
+for checking this merged revision on the SM120 development machine.
+
+Recommended next work, with separate measured changes
+1. Prefill: profile the current K3 path, then add a 2048-key attention graph
+   between the existing 1024/4096/8192 tiers. For 1025-2048 actual tokens,
+   global attention currently computes a 4096-key matrix and masks the tail.
+   Reduce unnecessary gather, QK, softmax and PV work. Keep chunk256 prefix
+   boundaries, graph admission/reserve and accurate capture inventory.
+   Changing GEMM dimensions may change rounding: rerun frozen logits/NLL,
+   executable code tasks and cache/MTP equivalence before retaining it.
+2. Decode/MTP: port the two-row Q8 verifier attention to the SIMT runtime,
+   using the SM61 synchronous staging path and its existing split counts.
+   Preserve the overwritten local-ring row, active-row/end-of-budget checks,
+   rollback, prefix restore and sequential numerical partition. Validate
+   wrap boundaries and cancellation before measuring launch savings.
+   Then measure D1/D2/D3 on coding prompts; more proposals can cost more than
+   they save. Keep depth 1 until an end-to-end gain is demonstrated.
+3. Further expert/KV work: use operator timings and profiler traces to choose
+   the remaining bottleneck. Prefer weight reuse across verified rows and
+   fewer repeated Q8 KV conversions if measured costs justify them. Avoid
+   permanently expanded weight/cache copies that defeat the 8 GiB target.
+4. Main integration: fix the formatter failures in a separate mechanical
+   commit; keep approximate DP4A opt-in and its quality identity explicit.
+   Re-run CUDA-off/native-text/SDK CI plus SM61 default and DP4A builds.
+   Run SM120 regression checks on the other machine for shared CUDA headers,
+   Q8 attention, prefix snapshots and MTP. Review the large backend addition
+   separately from optional performance changes; attach current measurements
+   and bounded qualification evidence to the eventual PR.
+
+Acceptance for each optimization: same pinned models and sampling settings;
+uncached prefill, warm prefix hits and decode measured separately; paired or
+interleaved baseline/candidate runs; exactness where promised, quality gates
+for changed arithmetic; positive end-to-end benefit and maintained memory
+reserve. Reaching llama.cpp parity is a performance objective, separate from
+establishing a correct, clearly scoped experimental Pascal backend in main.
+
+Raw evidence and reproduction helpers:
+/srv/agent/workspaces/padra-sm61-sync-20261105
+Benchmark runner: /srv/agent/workspaces/padra-sm61-opt-20261025/bench.py
+Build helper: /srv/agent/workspaces/padra-mtp-sm61-20261025/build-padra-sm61.sh
+Launch helper: /srv/agent/workspaces/padra-mtp-sm61-20261025/launch-padra-mtp-q8.sh
+Both helpers select build/sm61-k3-dp4a. This assessment introduces no new
+kernel optimization and does not complete the previously paused four-step goal.
