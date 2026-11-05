@@ -249,7 +249,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
     forward_graph.Capture(stream.s,[&]{forward(0);});
     if(fast_math || !o.simt_reference_attention){middle_graph.Capture(stream.s,[&]{forward(4096);});long_graph.Capture(stream.s,[&]{forward(o.capacity);});}
     head_graph.Capture(stream.s,[&]{Norm<<<1,128,0,stream.s>>>(x,normalized,norm,2304,1);if(o.q8_head)head_q8::Launch(1,head,normalized,buffer("head_input").As<unsigned char>(),logits,bad,stream.s);else head_bf16_prefetch::Projection<<<24576,128,0,stream.s>>>(head,normalized,logits,bad);});
-    DecodeGraph prefill_graph,prefill_1024_graph,prefill_4096_graph;
+    DecodeGraph prefill_graph,prefill_1024_graph,prefill_2048_graph,prefill_4096_graph;
     const bool bounded_prefill=PADRA_PASCAL_DP4A_PREFILL && fast_math && !o.simt_reference_prefill && o.capacity==8192;
     SimtBatch* batch=nullptr;float *bx=nullptr,*bn=nullptr,*br=nullptr,*bq=nullptr,*ba=nullptr,*bk=nullptr,*bv=nullptr,*brouter=nullptr,*bg=nullptr,*bu=nullptr,*bd=nullptr,*bt=nullptr;
     unsigned char* be=nullptr;float* bs=nullptr;float* bscore=nullptr;__nv_bfloat16* bkv=nullptr;
@@ -378,7 +378,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       }
     };
     if(batch)prefill_graph.Capture(stream.s,[&]{prefill(o.capacity);});
-    if(bounded_prefill){prefill_1024_graph.Capture(stream.s,[&]{prefill(1024);});prefill_4096_graph.Capture(stream.s,[&]{prefill(4096);});}
+    if(bounded_prefill){prefill_1024_graph.Capture(stream.s,[&]{prefill(1024);});prefill_2048_graph.Capture(stream.s,[&]{prefill(2048);});prefill_4096_graph.Capture(stream.s,[&]{prefill(4096);});}
     std::array<DecodeGraph,4> draft_graphs,verify_graphs;
     if(draft){
       for(int i=0;i<o.mtp.depth;++i){
@@ -413,7 +413,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       if(batch)identity.kernel_profile+=";layer-batch256-staged-kv-sgemm-exl3-m32-n128-r4-sparse-m8";
       identity.math_profile="mellum16-pascal-fp32-v3;FP8-E4M3-activations/FP32-projections(SGEMM-batch/FMA-vector)/BF16-output;FP32-QK-PV/expf-compensated-softmax/BF16-score-probability-output;EXL3-K4-H128-BF16-input/exact-codec/FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router/head";
     }
-    if(bounded_prefill)identity.kernel_profile+=";prefill-attention-context-1024-4096-8192";
+    if(bounded_prefill)identity.kernel_profile+=";prefill-attention-context-1024-2048-4096-8192";
     identity.execution_profile=batch?"simt-layer-batch256-staged-kv-v1":"simt-token-graph-chunk-commits";identity.prefill_execution=batch?"layer-batch256-graph":"token-graph";identity.decode_execution="token-graph";identity.prefill_chunk=o.prefill_chunk;
     identity.actual_attention_projection="FP8 storage and activations, FP32 SIMT FMA";identity.actual_expert_dispatch=batch?"EXL3 K4 prefill grouped M8/N128; decode selected N128/eight-warps; FP32 FMA":"EXL3 K4 selected N128/eight-warps/FP32 FMA, all prompt rows";
     if(fast_math && batch){identity.actual_attention_projection="FP8 storage and activations; Prefill cuBLAS FP32 SGEMM; Decode FP32 SIMT FMA";identity.actual_expert_dispatch="EXL3 K4 Prefill grouped M32/N128 FP32 tiles, sparse experts M8/N128; Decode selected N128/eight-warps FP32 FMA";}
@@ -450,7 +450,7 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
       const auto head_label=identity.math_profile.find("compensated-router/head");
       if(head_label!=std::string::npos)identity.math_profile.replace(head_label,23,"compensated-router");
       identity.kernel_profile+=";stored-q8-shared-head-dp4a";identity.math_profile+=";head-Q8-block32/BF16-scales/DP4A-FP32";}
-    if(worker){worker->RecordLoad(plan.resident,identity.mtp_resident_bytes);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}if(bounded_prefill){worker->RecordCapture();worker->RecordCapture();}if(draft)for(int i=0;i<2*o.mtp.depth;++i)worker->RecordCapture();worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile,model.weights_sha256,model.manifest_sha256);}
+    if(worker){worker->RecordLoad(plan.resident,identity.mtp_resident_bytes);worker->RecordCapture();worker->RecordCapture();if(batch)worker->RecordCapture();if(fast_math || !o.simt_reference_attention){worker->RecordCapture();worker->RecordCapture();}if(bounded_prefill){worker->RecordCapture();worker->RecordCapture();worker->RecordCapture();}if(draft)for(int i=0;i<2*o.mtp.depth;++i)worker->RecordCapture();worker->RecordGraphAdmission(after_graph);worker->RecordIdentity(identity.math_profile,identity.kernel_profile,model.weights_sha256,model.manifest_sha256);}
     const auto check_numerics=[&]{int value=0;Check(cudaMemcpyAsync(&value,bad,sizeof(value),cudaMemcpyDeviceToHost,stream.s));Check(cudaStreamSynchronize(stream.s));if(value)throw std::runtime_error("nonfinite/invalid SIMT forward; session poisoned");};
     const auto checkpoint_copy=[&](bool restore){
       const std::size_t plane_bytes=1024ULL*(q8_kv?sizeof(q8_native::CacheRow):512*sizeof(__nv_bfloat16));
@@ -510,9 +510,10 @@ Result<InferenceResult> RunSimt(const InferenceOptions& o,CudaModelWorker* worke
           diagnostic_batch_base=executed;diagnostic_batch_rows=rows;diagnostics.position=executed+rows-1;diagnostics.phase="prefill";diagnostics.rows=rows;
           diagnostics.active=!o.simt_diagnostics.empty() && std::any_of(o.simt_diagnostic_positions.begin(),o.simt_diagnostic_positions.end(),[&](int pos){return pos>=executed && pos<executed+rows;});
           SetSimtBatch<<<1,1,0,stream.s>>>(batch,executed,rows,o.capacity,bad);
-          const int maximum_keys=bounded_prefill?(executed+rows<=1024?1024:executed+rows<=4096?4096:o.capacity):o.capacity;
+          const int maximum_keys=bounded_prefill?(executed+rows<=1024?1024:executed+rows<=2048?2048:executed+rows<=4096?4096:o.capacity):o.capacity;
           if(diagnostics.active || o.simt_eager)prefill(maximum_keys);
           else if(bounded_prefill && maximum_keys==1024)prefill_1024_graph.Launch(stream.s);
+          else if(bounded_prefill && maximum_keys==2048)prefill_2048_graph.Launch(stream.s);
           else if(bounded_prefill && maximum_keys==4096)prefill_4096_graph.Launch(stream.s);
           else prefill_graph.Launch(stream.s);
           diagnostics.Flush(stream.s);check_numerics();

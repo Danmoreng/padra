@@ -26,6 +26,12 @@ build/sm61/padra-server /models/K3/native /models/K3/tokenizer.json \
   --mtp-draft-experts exl3 --mtp-depth 1
 ```
 
+At capacity 8192, the DP4A build selects prefill attention graphs bounded at
+1024, 2048, 4096 or 8192 keys according to the absolute end of each chunk.
+Prefix restores use the same chunk grid and graph selection as fresh requests.
+The additional graph is included in capture accounting and post-graph memory
+admission; its scratch buffers are shared with the other prefill graphs.
+
 The verifier batches 2–5 target rows, shares FP8 weight reads and grouped EXL3
 weights, and uses the same per-row attention and Q8 head arithmetic as ordinary
 SM61 decoding. Tentative KV rows are backed up in their stored format and

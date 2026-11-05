@@ -1,0 +1,65 @@
+SM61 bounded 2048-key prefill attention — 2026-11-05
+
+Base: a2651fb (main b1abeef integrated), GTX 1070 Max-Q, physical 8 GiB.
+CUDA 12.4, native K3, shared stored Q8 head, EXL3 K4 draft, Q8_0 target KV,
+context 8192, chunk256, MTP depth 1, optional DP4A prefill enabled.
+
+Change: add a 2048-key attention graph between the existing 1024/4096/8192
+graphs. The absolute end of the current prefill chunk chooses the smallest
+applicable graph. This avoids processing masked future keys in the global
+attention gather, QK, softmax and PV stages for chunks ending at 1025-2048.
+Restored prefixes retain the original whole-chunk grid and absolute positions.
+The graph is included in capture statistics and post-graph admission.
+
+Paired timing
+Three process pairs in AB / BA / AB order. Each process warms up with a
+2000-token prompt and 64 generated tokens, then measures the frozen 2000- and
+4000-token HTTP prompts with 256 generated tokens each. All prompt cache counts
+are zero. Prefill includes first-token selection; decode counts 255 steps.
+Models are never concurrent. Requests, responses, binary/model identities and
+GPU telemetry are retained for every process. Output choices match in all pairs.
+
+Input      Reference prefill     Candidate prefill     Paired gains
+2000       506.32 tok/s          517.92 tok/s           +2.17%, +2.32%, +2.29%
+4000       510.79 tok/s          516.49 tok/s           +0.86%, +1.12%, +1.05%
+
+The table gives medians. Median HTTP request time improves from 8.892 to
+8.803 seconds at 2k and 12.711 to 12.624 seconds at 4k. Decode remains effectively
+unchanged: 51.637 -> 51.642 tok/s at 2k and 52.320 -> 52.333 at 4k. No independent
+decode speedup is attributed to this prefill change. Three pairs establish a
+bounded repeatable gain on this machine, not a broad workload confidence claim.
+
+A separate screening run with 1000 generated tokens gives 521.82/519.34 prefill
+and 52.17/52.13 decode tok/s at 2k/4k; both output responses exactly match the
+saved pre-change 1000-token reference. This single run is not the paired result.
+
+Quality and memory
+All 2304 teacher-forced full-vocabulary logit vectors (98304 floats each) match
+the saved qualified K3 DP4A reference byte-for-byte. The corpus has 18 cases,
+16 source documents, and prompt lengths through 8000. Therefore incremental
+delta NLL and KL are zero on these cases, with 100% top-1 agreement. This does
+not change the existing broader quality_status=unqualified qualification scope.
+The prior 24-task code evaluation was not repeated for this graph-bound change.
+
+No model, KV or attention scratch allocation is added. Sampled system-wide
+VRAM rises from 5999 to 6015 MiB due to the additional graph/driver allocation.
+The existing 700 MiB post-graph reserve is enforced; the physical 8 GiB GPU fits.
+The Q8 head and weight formats remain unchanged. The default DP4A-OFF build
+does not select these bounded graphs.
+
+Validation
+All 33 CTest cases pass. The whole-chunk prefix suite passes all 78 requests
+across D0/D1/D4, preserving restored/fresh and ordinary/speculative tokens,
+final logits/hidden hashes, callback counts and committed/pending state.
+Additional boundary, cache-hit timing and HTTP evidence is recorded in the
+companion JSON. No full-model sanitizer completion is claimed.
+
+Reproduction and artifacts
+Build with PADRA_CUDA_ARCHITECTURE=61, PADRA_CUDA_BACKEND=simt and
+PADRA_PASCAL_DP4A_PREFILL=ON. Kernel identity contains
+prefill-attention-context-1024-2048-4096-8192.
+The candidate build source hash is
+59455dbf77a2746c00a25648505c7c2e41520cda5d99e4841a79dbcb6e012979.
+Raw evidence, immutable baseline executables, paired_bench.py,
+check_prefill2048.py and request protocols are in:
+/srv/agent/workspaces/padra-sm61-opt-20261105

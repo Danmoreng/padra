@@ -1,0 +1,431 @@
+{
+  "base_commit": "a2651fb",
+  "hardware": "GTX 1070 Max-Q, 8 GiB",
+  "protocol": "AB/BA/AB process pairs; one 2000+64 warmup each; 2000/4000 input and 256 output tokens, MTP D1, Q8_0, K3, shared stored Q8 head; no prompt cache hits.",
+  "paired": {
+    "comparisons": [
+      {
+        "pair": 0,
+        "prompt_tokens": 2000,
+        "exact_choices": true,
+        "prefill_speedup": 1.0217049176522777,
+        "decode_speedup": 0.9989734979275607
+      },
+      {
+        "pair": 0,
+        "prompt_tokens": 4000,
+        "exact_choices": true,
+        "prefill_speedup": 1.0085798584759578,
+        "decode_speedup": 0.9992393855592524
+      },
+      {
+        "pair": 1,
+        "prompt_tokens": 2000,
+        "exact_choices": true,
+        "prefill_speedup": 1.0231929423184007,
+        "decode_speedup": 1.000172504446244
+      },
+      {
+        "pair": 1,
+        "prompt_tokens": 4000,
+        "exact_choices": true,
+        "prefill_speedup": 1.0111933698654774,
+        "decode_speedup": 1.0004292554081393
+      },
+      {
+        "pair": 2,
+        "prompt_tokens": 2000,
+        "exact_choices": true,
+        "prefill_speedup": 1.0229188967707699,
+        "decode_speedup": 1.0000952559718317
+      },
+      {
+        "pair": 2,
+        "prompt_tokens": 4000,
+        "exact_choices": true,
+        "prefill_speedup": 1.0105284471428924,
+        "decode_speedup": 1.0001321925706927
+      }
+    ],
+    "medians": {
+      "2000": {
+        "reference": {
+          "prefill_tps": 506.3167640249966,
+          "decode_tps": 51.63717688217296,
+          "wall_s": 8.892211106000104
+        },
+        "candidate": {
+          "prefill_tps": 517.9209856729957,
+          "decode_tps": 51.64209563163952,
+          "wall_s": 8.803299863999882
+        }
+      },
+      "4000": {
+        "reference": {
+          "prefill_tps": 510.7929358473997,
+          "decode_tps": 52.31967728080638,
+          "wall_s": 12.7112575189999
+        },
+        "candidate": {
+          "prefill_tps": 516.4863718514638,
+          "decode_tps": 52.333128741720955,
+          "wall_s": 12.623601129000008
+        }
+      }
+    }
+  },
+  "paired_runs": [
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 3.9426035510000004,
+      "decode_s": 4.9325017319999995,
+      "prefill_tps": 507.2790033612994,
+      "decode_tps": 51.69790379305234,
+      "wall_s": 8.87892455999986,
+      "pair": 0,
+      "variant": "reference"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 7.806513948,
+      "decode_s": 4.867951988,
+      "prefill_tps": 512.3926027218314,
+      "decode_tps": 52.383425438172175,
+      "wall_s": 12.680732985999839,
+      "pair": 0,
+      "variant": "reference"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 3.8588475819999997,
+      "decode_s": 4.937570158000001,
+      "prefill_tps": 518.2894523559859,
+      "decode_tps": 51.64483578766801,
+      "wall_s": 8.800261416000012,
+      "pair": 0,
+      "variant": "candidate"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 7.740104943,
+      "decode_s": 4.871657441,
+      "prefill_tps": 516.7888587373124,
+      "decode_tps": 52.34358184832808,
+      "wall_s": 12.61807312399992,
+      "pair": 0,
+      "variant": "candidate"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 3.862857061,
+      "decode_s": 4.939408917,
+      "prefill_tps": 517.7514902615238,
+      "decode_tps": 51.62561032806266,
+      "wall_s": 8.806150763000005,
+      "pair": 1,
+      "variant": "candidate"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 7.744638035,
+      "decode_s": 4.872630514000001,
+      "prefill_tps": 516.4863718514638,
+      "decode_tps": 52.333128741720955,
+      "wall_s": 12.623601129000008,
+      "pair": 1,
+      "variant": "candidate"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 3.952448082,
+      "decode_s": 4.940260986999999,
+      "prefill_tps": 506.01550191342903,
+      "decode_tps": 51.61670621673981,
+      "wall_s": 8.896627903999843,
+      "pair": 1,
+      "variant": "reference"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 7.831326633,
+      "decode_s": 4.874722117,
+      "prefill_tps": 510.7691439078302,
+      "decode_tps": 52.31067410195928,
+      "wall_s": 12.712421451999944,
+      "pair": 1,
+      "variant": "reference"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 3.950096347,
+      "decode_s": 4.938302506,
+      "prefill_tps": 506.3167640249966,
+      "decode_tps": 51.63717688217296,
+      "wall_s": 8.892211106000104,
+      "pair": 2,
+      "variant": "reference"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 7.8309618620000006,
+      "decode_s": 4.873883274,
+      "prefill_tps": 510.7929358473997,
+      "decode_tps": 52.31967728080638,
+      "wall_s": 12.7112575189999,
+      "pair": 2,
+      "variant": "reference"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 3.861592898,
+      "decode_s": 4.937832148,
+      "prefill_tps": 517.9209856729957,
+      "decode_tps": 51.64209563163952,
+      "wall_s": 8.803299863999882,
+      "pair": 2,
+      "variant": "candidate"
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 256,
+      "cached_tokens": 0,
+      "prefill_s": 7.749372998,
+      "decode_s": 4.873239068,
+      "prefill_tps": 516.1707922734319,
+      "decode_tps": 52.32659355344395,
+      "wall_s": 12.628891439999961,
+      "pair": 2,
+      "variant": "candidate"
+    }
+  ],
+  "screen_1000_output_tokens": [
+    {
+      "rep": 1,
+      "prompt_tokens": 2000,
+      "output_tokens": 1000,
+      "cached_tokens": 0,
+      "prefill_s": 3.832746973,
+      "decode_s": 19.150582224999997,
+      "prefill_tps": 521.8189497217301,
+      "decode_tps": 52.16551581893224,
+      "wall_s": 22.987194973999976
+    },
+    {
+      "rep": 1,
+      "prompt_tokens": 4000,
+      "output_tokens": 1000,
+      "cached_tokens": 0,
+      "prefill_s": 7.70210089,
+      "decode_s": 19.16306917,
+      "prefill_tps": 519.338821592611,
+      "decode_tps": 52.131523981761006,
+      "wall_s": 26.87150980199999
+    }
+  ],
+  "quality": {
+    "reference": "/srv/agent/workspaces/padra-sm61-opt-20261025/k3-quality-dp4a",
+    "candidate": "/srv/agent/workspaces/padra-sm61-opt-20261105/prefill2048-quality",
+    "teacher_forced_tokens": 2304,
+    "vocabulary": 98304,
+    "different_logit_vectors": 0,
+    "differences": []
+  },
+  "ctest": "33/33 pass",
+  "prefix": {
+    "exact": true,
+    "differences": [],
+    "rows_by_depth": {
+      "0": 26,
+      "1": 26,
+      "4": 26
+    },
+    "kv_format": "q8_0",
+    "expert_rate": 3,
+    "chunk": 256,
+    "whole_chunks": true,
+    "probe_sha256": "fa67eabd66ccf10dc0da8074ade75bfe3e73e304acf98f0cdfd67fd432d9b28c",
+    "input_sha256": "980d76420b6a656e9da589fea7959b6c2ef208dbf202a92401cda005859a766b"
+  },
+  "boundary_and_cached_prefix": {
+    "boundary_requests": 18,
+    "boundary_exact": true,
+    "cache_requests": 9,
+    "cache_exact": true,
+    "cache_reused_tokens": 1536,
+    "input_tokens": 2000,
+    "output_tokens": 256,
+    "cached_prepare_prefill_s": [
+      0.988835566,
+      0.993489645,
+      0.996358897
+    ],
+    "fresh_prepare_prefill_s": [
+      3.872856135,
+      3.874848185,
+      3.873637864
+    ],
+    "median_speedup": 3.899021880595444
+  },
+  "http": {
+    "actual_cuda_model": true,
+    "kv_format": "q8_0_token512_block32_f16scale_rot_k128_v64_v2",
+    "capacity": 8192,
+    "prefill_chunk": 256,
+    "device_budget_gib": 8,
+    "artifact_identity_verified": true,
+    "admin_listener_verified": true,
+    "server_config": {
+      "port": 18463,
+      "admin_port": 35911,
+      "context_capacity": 8192,
+      "request_body_bytes": 524288,
+      "queue": {
+        "requests": 8,
+        "bytes": 67108864,
+        "tokens": 65536,
+        "timeout_ms": 5000,
+        "generation_timeout_ms": 30000,
+        "drain_timeout_ms": 5000
+      },
+      "http": {
+        "preparation_requests": 4,
+        "threads": 16,
+        "queued_connections": 32,
+        "admin_threads": 2,
+        "admin_queued_connections": 8,
+        "send_buffer_bytes": 16384,
+        "keep_alive_seconds": 2,
+        "keep_alive_requests": 16,
+        "read_timeout_ms": 5000,
+        "write_timeout_ms": 2000,
+        "heartbeat_ms": 15000,
+        "poll_ms": 20
+      }
+    },
+    "chat_and_responses_streams": true,
+    "session_followup": true,
+    "chat_cached_tokens": 256,
+    "responses_cached_tokens": 256,
+    "session_cache_miss_replay": true,
+    "mtp_depth": 1,
+    "native_tool_request": true,
+    "native_tool_calls": 1,
+    "independent_stored_responses": 40,
+    "stored_lineage_delete": true,
+    "metrics": true,
+    "build_source_sha256": "59455dbf77a2746c00a25648505c7c2e41520cda5d99e4841a79dbcb6e012979",
+    "build_kernel_profile": "baseline-v1",
+    "math_profile": "mellum16-pascal-q8_0-dp4a-v2;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+    "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa8-fp32-sgemm-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;prefill-attention-context-1024-2048-4096-8192;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+    "scope": "Serving smoke test; not numerical quality, sustained load or speed qualification"
+  },
+  "sampled_peak_vram_mib": {
+    "reference": 5999,
+    "candidate": 6015
+  },
+  "reference_binary_sha256": "350adc646aa85a9a42cfc0620c23cab32a31d0b956e317d322496c2928aabdab",
+  "candidate_binary_sha256": "f68ba6c0cd8d19760b58b0afd00587d24bdb9e5621e5e9eb06fde9cdf3319c34",
+  "model_identity": {
+    "object": "list",
+    "data": [
+      {
+        "id": "mellum21-exl3-k3-research",
+        "object": "model",
+        "created": 0,
+        "owned_by": "mellum16",
+        "context_capacity": 8192,
+        "quality_status": "unqualified",
+        "sampling_profiles": [
+          "greedy",
+          "gpu-graph-parameters-penalties-splitmix64-v2"
+        ],
+        "kv_format": "q8_0_token512_block32_f16scale_rot_k128_v64_v2",
+        "execution_profile": "exl3-k3-simt-sm61-layer-batch256-staged-kv--pascal-fp32-v2-attention-tiered-8192-v1-q8_0-token512-block32-f16scale-rot-k128-v64-v2-chunk256-budget8GiB-local-checkpoint-encoded-v1",
+        "prefill_chunk": 256,
+        "device_budget_gib": 8,
+        "active_gpu_sessions": 1,
+        "logical_session_limit": 32,
+        "session_ttl_seconds": 1800,
+        "native_kv_reuse": true,
+        "checkpoint_snapshot_bytes": 25502720,
+        "tokenizer_sha256": "58548a346eb073e5132bf7d8ad17dc6971bca36ade378ca4d2bfbc49bf60da2a",
+        "checkpoint_sha256": "bfa5157b1bcf8919399023f9f943129044835844cc8354cb58ec9dada65299a9",
+        "manifest_sha256": "9032f99eab3b9adf536f722a3721185ee32daa07f96254e9449ef7c69e5c507d",
+        "server_config": {
+          "port": 8101,
+          "admin_port": 45847,
+          "context_capacity": 8192,
+          "request_body_bytes": 524288,
+          "queue": {
+            "requests": 8,
+            "bytes": 67108864,
+            "tokens": 65536,
+            "timeout_ms": 5000,
+            "generation_timeout_ms": 600000,
+            "drain_timeout_ms": 5000
+          },
+          "http": {
+            "preparation_requests": 4,
+            "threads": 16,
+            "queued_connections": 32,
+            "admin_threads": 2,
+            "admin_queued_connections": 8,
+            "send_buffer_bytes": 16384,
+            "keep_alive_seconds": 2,
+            "keep_alive_requests": 16,
+            "read_timeout_ms": 5000,
+            "write_timeout_ms": 2000,
+            "heartbeat_ms": 15000,
+            "poll_ms": 20
+          }
+        },
+        "build_version": "0.1.0",
+        "build_source_sha256": "59455dbf77a2746c00a25648505c7c2e41520cda5d99e4841a79dbcb6e012979",
+        "build_kernel_profile": "baseline-v1",
+        "build_prefill_profile": "global-matrix-v1",
+        "build_q8_prefill_profile": "packed-chunk-v1",
+        "build_exl3_prefill_transport": "async64-v1",
+        "kernel_profile": "exl3-k3-simt-sm61-token-graph-pascal-fp32-v3-lane-window;attention-gqa4-parallel-pv-v2;prefill-gqa8-fp32-sgemm-v1;layer-batch256-staged-kv-sgemm-exl3-m32-n128-r3-sparse-m8;prefill-attention-context-1024-2048-4096-8192;mtp-simt-verify-small;dense-exl3-prefill-dp4a-m32-n128-k64-fused-tail16-v2;q8_0-kv-pascal-sync-dp4a;draft-exl3-k4;prefix-chunk256-bitcopy;stored-q8-shared-head-dp4a",
+        "math_profile": "mellum16-pascal-q8_0-dp4a-v2;FP8-E4M3-activations/FP32-projections/BF16-output;rotated-Q8_0-KV/FP16-scales/DP4A-QK/FP32-online-softmax-PV/BF16-output;prefill-BF16-dequantized-rotated-KV/FP32-attention;EXL3-K3-H128-BF16-input/dense-tail16-prefill-INT8-W-scale-3.453125-over-127-and-H128-A-scales/DP4A-INT32/FP32-block-combine/sparse-and-decode-exact-codec-FP32-FMA/BF16-output;exact-RN-SiLU;compensated-router;head-Q8-block32/BF16-scales/DP4A-FP32",
+        "mtp_depth": 1,
+        "mtp_resident_bytes": 274263284,
+        "test_backend": false
+      }
+    ]
+  },
+  "artifacts": "/srv/agent/workspaces/padra-sm61-opt-20261105"
+}
